@@ -2444,7 +2444,7 @@ const EVENT_CATEGORIES = {
   // Nudges PRD (journeysnudgesemi/Transaction-Event-Based-Nudges-PRD.md).
   // Marked isNew so the wizard visibly flags these as not-yet-built rather
   // than blending them in as if they were audited, current behavior.
-  'Transaction Events': {fields:[], events:['AUTH_TRANSACTION','SETTLED_TRANSACTION'], isNew:true},
+  'Transaction Events': {fields:[], events:['Transaction'], isNew:true},
   'EMI Events': {fields:[], events:['EMI_STATUS_CHANGED'], isNew:true},
 };
 // Event Conditions are attribute-based per event type, not entity-based —
@@ -2820,13 +2820,14 @@ const ELIGIBILITY_META = {
   // event sources don't exist in Quibbler today. See the Transaction
   // Event-Based Nudges PRD for the schema this is drawn from.
   'Transaction': {
+    'Transaction Status':{type:'select', options:['Auth','Settled']},
     'EMI Eligible':      {type:'bool'},
     'Transaction Amount':{type:'number'},
     'Transaction Type':  {type:'select', options:['PURCHASE','REFUND','CASH_ADVANCE']},
     'MCC':                {type:'list'},
   },
   'EMI Request': {
-    'New Status':   {type:'select', options:['Successful','Failed','Expired','Cancelled']},
+    'New Status':   {type:'select', options:['Pending','Successful','Failed','Expired','Cancelled']},
     'Product Type': {type:'select', options:['Single-Txn','Multi-Txn','Outstanding']},
   },
 };
@@ -3178,11 +3179,19 @@ function renderWizStep(stepId){
         <div class="pick-card ${d.userBaseMode==='Smart Tag'?'sel':''}" onclick="fieldUpdate('userBaseMode','Smart Tag');renderWizStep('ELIGIBILITY')">
           <div class="pick-card-icon">${ic('tag')}</div><div><div class="pick-card-title">Smart Tag</div><div class="pick-card-sub">Restrict to customers with (or without) a Smart Tag.</div></div>
         </div>
+        <div class="pick-card ${d.userBaseMode==='Journey/Batch'?'sel':''}" onclick="fieldUpdate('userBaseMode','Journey/Batch');renderWizStep('ELIGIBILITY')">
+          <div class="pick-card-icon">${ic('workflow')}</div><div><div class="pick-card-title">Journey / Batch</div><div class="pick-card-sub">Restrict to one specific journey and batch.</div></div>
+        </div>
       </div>
       ${d.userBaseMode==='Smart Tag' ? `
         <div class="f-group f-row2">
           <div><label class="f-label">Smart Tag</label><select class="f-input" onchange="fieldUpdate('smartTag',this.value)"><option value="">Select tag</option><option>High EMI Propensity</option><option>Dormant 60d</option><option>Recent Complaint</option></select></div>
           <div><label class="f-label">Customers with this tag are</label><select class="f-input" onchange="fieldUpdate('smartTagMode',this.value)"><option>Allowed</option><option>Denied</option></select></div>
+        </div>` : ''}
+      ${d.userBaseMode==='Journey/Batch' ? `
+        <div class="f-group f-row2">
+          <div><label class="f-label">Journey</label><select class="f-input" onchange="fieldUpdate('eventJourney',this.value)"><option value="">Select</option>${JOURNEY_OPTIONS.map(j=>`<option ${d.eventJourney===j?'selected':''}>${j}</option>`).join('')}</select></div>
+          <div><label class="f-label">Batch</label><select class="f-input" onchange="fieldUpdate('eventBatch',this.value)"><option value="">Select</option>${BATCH_OPTIONS.map(b=>`<option ${d.eventBatch===b?'selected':''}>${b}</option>`).join('')}</select></div>
         </div>` : ''}
       ${wizFooter()}`;
   }
@@ -3310,6 +3319,7 @@ function renderWizStep(stepId){
       // manually rebuilt the whole example one row at a time.
       if (!d.triggerConditions || !d.triggerConditions.length || d.triggerConditions[0].entity !== entityForCat) {
         d.triggerConditions = entityForCat==='Transaction' ? [
+          {entity:'Transaction', attribute:'Transaction Status', operator:'Equals', value:'Auth', mandatory:true},
           {entity:'Transaction', attribute:'EMI Eligible', operator:'Equals', value:'True'},
           {entity:'Transaction', attribute:'Transaction Amount', operator:'Greater than or equal to', value:'5000'},
           {entity:'Transaction', attribute:'MCC', operator:'Allowed', value:''},
@@ -3322,10 +3332,6 @@ function renderWizStep(stepId){
       <h1 class="wiz-heading">Configure Event Trigger</h1>
       <p class="wiz-sub">Which event fires this nudge, and under what conditions.</p>
       ${catSelect}
-      <div class="f-group f-row2">
-        <div><label class="f-label">Journey (optional)</label><select class="f-input" onchange="fieldUpdate('eventJourney',this.value)"><option value="">Select</option>${JOURNEY_OPTIONS.map(j=>`<option ${d.eventJourney===j?'selected':''}>${j}</option>`).join('')}</select></div>
-        <div><label class="f-label">Batch (optional)</label><select class="f-input" onchange="fieldUpdate('eventBatch',this.value)"><option value="">Select</option>${BATCH_OPTIONS.map(b=>`<option ${d.eventBatch===b?'selected':''}>${b}</option>`).join('')}</select></div>
-      </div>
       <div class="f-group"><label class="f-label">Event</label>
         <select class="f-input" onchange="fieldUpdate('eventType',this.value);renderWizStep('EVENT_TRIGGER')">
           <option value="">Select event</option>
@@ -3598,8 +3604,11 @@ function reviewSections(){
     sections.push({title:'Event Trigger', stepId:'EVENT_TRIGGER', rows:[
       ['Event Category', d.eventCategory||'—'],
       ['Event Type', d.eventType||'—'],
-      ['Journey', d.eventJourney||'—'],
-      ['Batch', d.eventBatch||'—'],
+      // Journey/Batch is only genuinely an Event Trigger concept for Journey
+      // Events (the event fires on that journey). For Transaction/EMI Events
+      // it's an optional audience restriction, configured in User Base
+      // instead — shown there, not duplicated here.
+      ...(d.eventCategory==='Journey Events' ? [['Journey', d.eventJourney||'—'], ['Batch', d.eventBatch||'—']] : []),
       ['Trigger Conditions', (d.triggerConditions||[]).filter(c=>c.attribute).map(c=>`${c.attribute} ${c.operator} ${(c.values&&c.values.length)?c.values.join(', '):c.value}`).join(' AND ')||'—'],
     ]});
   }
@@ -3613,6 +3622,8 @@ function reviewSections(){
   } else if(wiz.triggerType==='event-based'){
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows: d.userBaseMode==='Smart Tag'
       ? [['Mode','Smart Tag'],['Smart Tag', d.smartTag||'—'],['Access', d.smartTagMode||'Allowed']]
+      : d.userBaseMode==='Journey/Batch'
+      ? [['Mode','Journey / Batch'],['Journey', d.eventJourney||'—'],['Batch', d.eventBatch||'—']]
       : [['Mode','All Customers']] });
   } else {
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows: d.nudgeType==='FILE_UPLOAD' ? [
