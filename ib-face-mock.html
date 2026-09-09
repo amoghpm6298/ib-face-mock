@@ -633,7 +633,7 @@
         <p class="card-sub">Conversion performance by product, last 30 days</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Product</th><th>Volume</th><th>Conversion Rate</th><th>GMV Converted</th></tr></thead>
+            <thead><tr><th>Product</th><th>Volume</th><th>Conv. Rate (of Resolved)</th><th>GMV Converted</th></tr></thead>
             <tbody id="productBreakdownBody"></tbody>
           </table>
         </div>
@@ -703,6 +703,17 @@
     <!-- ===== EXCEPTIONS ===== -->
     <div class="tab-panel" id="panel-exceptions">
       <div class="kpi-grid" id="exceptionKpiGrid"></div>
+
+      <div class="card" style="margin-bottom:20px;" id="mismatchReviewCard">
+        <p class="card-title">Amount Mismatch — Needs Review</p>
+        <p class="card-sub">Settled amount didn't exactly match the auth amount, so this was auto-marked Failed (Phase 1 policy — recompute-and-book isn't automated yet). Review each one and decide whether it's close enough to book manually.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Request ID</th><th>Customer</th><th>Auth Amount</th><th>Settled Amount</th><th>Delta</th><th></th></tr></thead>
+            <tbody id="mismatchReviewBody"></tbody>
+          </table>
+        </div>
+      </div>
 
       <div class="card" style="margin-bottom:20px;">
         <p class="card-title">By Failure Reason</p>
@@ -850,13 +861,25 @@
       <div class="trend-chart" id="trendChart"></div>
     </div>
 
+    <div class="card" style="margin-bottom:20px;" id="authVsSettledCard">
+      <p class="card-title">Auth-Triggered vs. Settled-Only</p>
+      <p class="card-sub">Incremental conversion rate vs. the settled-only baseline — the actual business case for this project (Master PRD, Success Metrics). IBL only: Yes Bank has no auth-path concept to compare against.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>Volume</th><th>Conv. Rate (of Resolved)</th><th>Avg. Time to Book</th></tr></thead>
+          <tbody id="authVsSettledBody"></tbody>
+        </table>
+      </div>
+      <p class="card-sub" id="authVsSettledCallout" style="margin-top:10px;margin-bottom:0;"></p>
+    </div>
+
     <div class="row-flex" style="margin-bottom:20px;">
       <div class="card">
         <p class="card-title">By Product</p>
         <p class="card-sub">Volume, conversion and revenue by product</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Product</th><th>Volume</th><th>Conversion Rate</th><th>GMV Converted</th><th>Revenue Impact</th></tr></thead>
+            <thead><tr><th>Product</th><th>Volume</th><th>Conv. Rate (of Resolved)</th><th>GMV Converted</th><th>Revenue Impact</th></tr></thead>
             <tbody id="analyticsProductBody"></tbody>
           </table>
         </div>
@@ -866,7 +889,7 @@
         <p class="card-sub">Which delivery channel actually converts</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Channel</th><th>Sent</th><th>Clicked</th><th>Converted</th><th>Conv. Rate</th></tr></thead>
+            <thead><tr><th>Channel</th><th>Sent</th><th>Clicked</th><th>Converted</th><th>Conv. Rate (of Sent)</th></tr></thead>
             <tbody id="analyticsChannelBody"></tbody>
           </table>
         </div>
@@ -905,7 +928,7 @@
               <th>Clicked</th>
               <th>Consent Given</th>
               <th>Converted</th>
-              <th>Conv. Rate</th>
+              <th>Conv. Rate (of Sent)</th>
               <th>Revenue Impact</th>
             </tr>
           </thead>
@@ -1364,6 +1387,19 @@ const CASES = [
 // 'type' (Single/Multi/Outstanding) is the internal key used for filtering;
 // TYPE_META maps it to the real product/journey-type name and a badge color
 // so OS-to-EMI / Txn-to-EMI / Multi-Txn-to-EMI are always clearly distinguished.
+// Illustrative period totals for the ingestion/nudge suppression funnel
+// (Reconciliation → Auth/Settlement Files) — not derived from CASES, since
+// a suppressed record never becomes a case at all; this is the one place
+// that gap in the data model is worked around with a standalone mock
+// aggregate instead. IBL only — this is specifically about the auth file.
+const INGESTION_FUNNEL = {
+  totalRecords: 3240,
+  suppressed: { amountBelow: 890, restrictedMcc: 412, blockedAccount: 76 },
+  nudgeSuppressed: { cooldown: 340, dailyCap: 165 },
+  pwaOpened: 640,
+  consented: 268,
+};
+
 const TYPE_META = {
   Single:      {label:'Txn-to-EMI',        badge:'info'},
   Multi:       {label:'Multi-Txn-to-EMI',  badge:'purple'},
@@ -1452,6 +1488,13 @@ function generateCases(count){
     };
     if(state==='FAILED'){
       c.failReason = pick(['Credit limit insufficient at booking','Customer did not respond within window','Settlement amount mismatch','Bank-side eligibility rejected at booking','Booking API returned 5xx'], i);
+      if(c.failReason==='Settlement amount mismatch'){
+        // Deliberate mix of small deltas (plausibly worth a manual "book
+        // anyway") and large ones (clearly a real mismatch) — deterministic
+        // on i, not random, so the demo is reproducible.
+        const deltaPct = [0.02,-0.03,0.15,-0.35,0.04,-0.08,0.22][i%7];
+        c.settledAmount = Math.max(100, Math.round(amount * (1+deltaPct)));
+      }
     }
     if(type==='Multi'){
       const nTx = 2 + (i%3);
@@ -1473,6 +1516,57 @@ function generateCases(count){
 }
 
 CASES.push(...generateCases(78));
+
+// Settled-direct IBL cases — the "existing behavior, not new" path (Master
+// PRD use case 8): customer picks an already-settled transaction on Screen
+// 1 instead of a Pending auth one, booked immediately, no recon wait. None
+// of the IBL cases above ever take this path — stagesFor(bank,type) always
+// returns the auth-first order for IBL Single/Multi, so without this cohort
+// there'd be no real IBL data to compare the new auth-consent path against,
+// which is exactly the "incremental conversion rate vs. the settled-only
+// baseline" success metric the Master PRD names as the actual business case
+// for this project. Tagged `entryPath:'settled'` rather than taught to
+// stagesFor()/the drawer stepper — the stepper will show Auth Received /
+// Recon Matched as not-yet-reached for these cases rather than N/A, a known
+// minor display gap, not a rendering bug (the underlying stamps are simply
+// absent, same as any case that hasn't reached a stage yet).
+function generateSettledDirectIBLCases(count){
+  const out = [];
+  const shortOrder = ['SETTLEMENT_RECEIVED','CONSENT_REQUESTED','CONSENT_GIVEN','BOOKING_INITIATED'];
+  const outcomeCycle = ['BOOKED','BOOKED','BOOKED','BOOKED','IN_FLIGHT','FAILED','BOOKED'];
+  for(let i=0;i<count;i++){
+    const type = i%6===0 ? 'Multi' : 'Single';
+    const outcome = pick(outcomeCycle, i);
+    const name = pick(FIRST,i+11)+' '+pick(LAST,i+17)[0]+'.';
+    const campaign = 'Settled Txn — Direct (IBL)';
+    const channel = pick(CHANNELS,i+3);
+    const amount = 12000 + (i*1931)%85000;
+
+    let day = 3 + (i%18), hour = (i*5)%24;
+    const advance = (h)=>{ hour += h; while(hour>=24){hour-=24; day++;} };
+    const stampNow = ()=> `${String(day).padStart(2,'0')} Aug, ${String(hour).padStart(2,'0')}:${String((i*11)%60).padStart(2,'0')}`;
+    const reachIdx = outcome==='IN_FLIGHT' ? (i % shortOrder.length) : shortOrder.length-1;
+    const stamps = {};
+    for(let s=0;s<=reachIdx;s++){ stamps[shortOrder[s]] = stampNow(); advance(1 + (s*2%5)); }
+    if(outcome!=='IN_FLIGHT') stamps[outcome] = stampNow();
+    const state = outcome==='IN_FLIGHT' ? shortOrder[reachIdx] : outcome;
+
+    const nudgeSent = stamps.SETTLEMENT_RECEIVED || '—';
+    out.push({
+      id: 'TEMI-3' + (9000 + i*3),
+      bank:'IBL', customer:name, type, channel, campaign, amount, state, stamps,
+      entryPath:'settled',
+      nudge:{name:campaign, channel, sent:nudgeSent, delivered:nudgeSent, clicked: state==='SETTLEMENT_RECEIVED' ? '—' : nudgeSent},
+      customerId:'CUST-'+(129000+i*13),
+      accountId:'ACC-'+(789000+i*13),
+      programId:PROGRAMS.IBL[i%PROGRAMS.IBL.length].id, programName:PROGRAMS.IBL[i%PROGRAMS.IBL.length].name,
+      journeyId: journeyIdFor(campaign),
+      ...(state==='FAILED' ? {failReason: pick(['Credit limit insufficient at booking','Bank-side eligibility rejected at booking'], i)} : {}),
+    });
+  }
+  return out;
+}
+CASES.push(...generateSettledDirectIBLCases(22));
 
 /* ---------------- State ---------------- */
 let viewingAs = 'IBL';
@@ -1498,22 +1592,28 @@ function renderOverview(){
   const booked = cases.filter(c=>c.state==='BOOKED').length;
   const partial = cases.filter(c=>c.state==='PARTIAL').length;
   const failed = cases.filter(c=>c.state==='FAILED').length;
-  const inFlight = total - booked - partial - failed;
+  const expired = cases.filter(c=>c.state==='EXPIRED').length;
+  const cancelled = cases.filter(c=>c.state==='CANCELLED').length;
+  const inFlight = total - booked - partial - failed - expired - cancelled;
   const gmv = cases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').reduce((s,c)=>s+c.amount,0);
-  const convRate = total ? Math.round(((booked+partial)/total)*100) : 0;
+  // Resolved-only denominator: a case still Pending hasn't had a chance to
+  // convert yet, so counting it against the rate just drags a fresh batch's
+  // number toward zero for no real reason. Rate = of everything that has
+  // actually finished, what share converted.
+  const resolved = booked+partial+failed+expired+cancelled;
+  const convRate = resolved ? Math.round(((booked+partial)/resolved)*100) : 0;
 
   const kpis = [
-    {label:'Requests in Flight', value: inFlight, trend:null},
-    {label:'Converted (period)', value: booked+partial, trend:'+12%', dir:'up'},
-    {label:'Conversion Rate', value: convRate+'%', trend:'+3%', dir:'up'},
-    {label:'GMV Converted', value: '₹'+(gmv/100000).toFixed(1)+'L', trend:'+9%', dir:'up'},
-    {label:'Revenue Impact (est.)', value: '₹'+((gmv*0.10)/100000).toFixed(1)+'L', trend:'+11%', dir:'up'},
+    {label:'Requests in Flight', value: inFlight},
+    {label:'Converted', value: booked+partial},
+    {label:'Conversion Rate (of resolved)', value: convRate+'%'},
+    {label:'GMV Converted', value: '₹'+(gmv/100000).toFixed(1)+'L'},
+    {label:'Revenue Impact (est., 10% take rate)', value: '₹'+((gmv*0.10)/100000).toFixed(1)+'L'},
   ];
   document.getElementById('kpiGrid').innerHTML = kpis.map(k=>`
     <div class="kpi-card">
       <div class="kpi-label">${k.label}</div>
       <div class="kpi-value">${k.value}</div>
-      ${k.trend ? `<div class="kpi-trend ${k.dir}">▲ ${k.trend} vs prior period</div>` : ''}
     </div>`).join('');
 
   // By-product comparison strip — every product shown, never blended into
@@ -1522,7 +1622,8 @@ function renderOverview(){
   document.getElementById('productBreakdownBody').innerHTML = PRODUCT_KEYS.map(p=>{
     const pc = cases.filter(c=>c.type===p);
     const pBooked = pc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
-    const pRate = pc.length ? Math.round((pBooked/pc.length)*100) : 0;
+    const pResolved = pc.filter(c=>TERMINAL.includes(c.state)).length;
+    const pRate = pResolved ? Math.round((pBooked/pResolved)*100) : 0;
     const pGmv = pc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').reduce((s,c)=>s+c.amount,0);
     const tm = TYPE_META[p];
     return `<tr onclick="overviewProduct='${p}';renderOverview();">
@@ -1538,7 +1639,11 @@ function renderOverview(){
     `<div class="tab ${p===overviewProduct?'active':''}" onclick="overviewProduct='${p}';renderOverview();">${TYPE_META[p].label}</div>`
   ).join('');
 
-  const pCases = cases.filter(c=>c.type===overviewProduct);
+  // Settled-direct cases (entryPath:'settled') follow a structurally
+  // different, shorter path — they don't belong in a funnel built around
+  // stagesFor()'s auth-first stage order (see Auth-Triggered vs.
+  // Settled-Only on the Analytics page for where they do show up).
+  const pCases = cases.filter(c=>c.type===overviewProduct && c.entryPath!=='settled');
   const order = stagesFor(viewingAs, overviewProduct);
   const pBookedCount = pCases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
   document.getElementById('funnelSub').textContent = `${bankLabel(viewingAs)} · ${TYPE_META[overviewProduct].label} — entry stage is ${STAGE_META[order[0]].label}`;
@@ -1581,6 +1686,36 @@ function hashCode(str){
   return h;
 }
 function pseudoRetries(id){ return hashCode(id) % 4; }
+
+function formatStamp(date){
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const hh = String(date.getHours()).padStart(2,'0'), mm = String(date.getMinutes()).padStart(2,'0');
+  return `${date.getDate()} ${MONTH_ABBR[date.getMonth()]}, ${hh}:${mm}`;
+}
+
+// Ops override for an amount-mismatch Failed case — uses the same booking
+// action the automated path would have taken (Reconciliation, Trigger A),
+// just with a human confirming the settled amount instead of an automated
+// recompute (Master PRD: recompute-and-book is Phase 2, not built yet).
+function resolveMismatch(id, decision){
+  const c = CASES.find(x=>x.id===id);
+  if(!c) return;
+  const now = maxDatasetDate() || new Date();
+  c.auditLog = c.auditLog || [];
+  if(decision==='booked'){
+    c.state = 'BOOKED';
+    c.stamps.BOOKED = formatStamp(now);
+    c.amount = c.settledAmount;
+    c.auditLog.push({who:'Ops (manual override)', what:`Booked manually at the settled amount (₹${c.settledAmount.toLocaleString('en-IN')}) after amount-mismatch review`, when: formatStamp(now)});
+  } else {
+    c.mismatchResolved = true;
+    c.auditLog.push({who:'Ops (manual review)', what:`Confirmed Failed — settled amount ₹${c.settledAmount.toLocaleString('en-IN')} judged not close enough to the auth amount to book`, when: formatStamp(now)});
+  }
+  renderExceptions();
+  renderOverview();
+  renderRequests();
+  renderRecon();
+}
 
 const PAGE_SIZE = 10;
 let requestsPage = 1;
@@ -1669,16 +1804,42 @@ function onExceptionsFilterChange(){ exceptionsPage = 1; renderExceptions(); }
 
 function renderExceptions(){
   const failedCases = scopedCases().filter(c=>c.state==='FAILED');
+  const expiredCases = scopedCases().filter(c=>c.state==='EXPIRED');
+  const cancelledCases = scopedCases().filter(c=>c.state==='CANCELLED');
+  const mismatchQueue = failedCases.filter(c=>c.failReason==='Settlement amount mismatch' && !c.mismatchResolved);
 
   // KPIs
   const slaBreached = failedCases.filter(c=>timeInStage(c)>=24).length;
-  const retriedTotal = failedCases.reduce((s,c)=>s+pseudoRetries(c.id),0);
   document.getElementById('exceptionKpiGrid').innerHTML = [
     {label:'Open Exceptions', value: failedCases.length},
     {label:'SLA Breached', value: slaBreached},
-    {label:'Retries So Far', value: retriedTotal},
+    {label:'Amount Mismatch — Needs Review', value: mismatchQueue.length},
     {label:'Avg. Time Since Failure', value: failedCases.length ? Math.round(failedCases.reduce((s,c)=>s+timeInStage(c),0)/failedCases.length)+'h' : '—'},
+    {label:'Expired (7d, no settlement match)', value: expiredCases.length},
+    {label:'Cancelled (reversed)', value: cancelledCases.length},
   ].map(k=>`<div class="kpi-card"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
+
+  // Amount Mismatch review queue — the one Failed reason that's an
+  // automated stand-in for logic we haven't built yet (Master PRD Section
+  // 6: recompute-and-book on a mismatch is explicitly Phase 2), not a real
+  // rejection like a blocked card. Ops can override it here using the same
+  // booking action the automated path would have taken.
+  document.getElementById('mismatchReviewCard').style.display = mismatchQueue.length ? '' : 'none';
+  document.getElementById('mismatchReviewBody').innerHTML = mismatchQueue.map(c=>{
+    const delta = c.settledAmount - c.amount;
+    const deltaPct = Math.round((delta/c.amount)*100);
+    return `<tr>
+      <td class="mono">${c.id}</td>
+      <td>${c.customer}</td>
+      <td>₹${c.amount.toLocaleString('en-IN')}</td>
+      <td>₹${c.settledAmount.toLocaleString('en-IN')}</td>
+      <td><span class="badge ${Math.abs(deltaPct)<=5?'warning':'error'}">${delta>0?'+':''}${deltaPct}%</span></td>
+      <td style="white-space:nowrap;">
+        <button class="btn secondary small" onclick="event.stopPropagation();resolveMismatch('${c.id}','booked')">Book Anyway</button>
+        <button class="btn secondary small" onclick="event.stopPropagation();resolveMismatch('${c.id}','failed')">Confirm Failed</button>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="card-sub">No mismatch cases waiting on review for this bank.</td></tr>';
 
   // By-reason summary
   const byReason = {};
@@ -1833,7 +1994,50 @@ function renderRecon(){
         </div>
       </div>`;
   } else {
+    // Ingestion/nudge suppression funnel — the part of the Auditability &
+    // Dashboard Visibility requirement (Master PRD) that a CASES-derived
+    // view can never show: a transaction suppressed at ingestion or by a
+    // nudge guardrail never becomes a case at all, so without this the
+    // dashboard only ever shows survivors, never the funnel's real shape.
+    // Illustrative period totals, not derived from CASES — CASES is a
+    // curated sample, not a full historical record.
+    const f = INGESTION_FUNNEL;
+    const suppressedTotal = f.suppressed.amountBelow + f.suppressed.restrictedMcc + f.suppressed.blockedAccount;
+    const passedIngestion = f.totalRecords - suppressedTotal;
+    const nudgeSuppressedTotal = f.nudgeSuppressed.cooldown + f.nudgeSuppressed.dailyCap;
+    const nudgeSent = passedIngestion - nudgeSuppressedTotal;
+    const funnelSteps = [
+      {label:'Auth records received', count:f.totalRecords},
+      {label:'Passed ingestion suppression', count:passedIngestion},
+      {label:'Nudge sent', count:nudgeSent},
+      {label:'PWA opened', count:f.pwaOpened},
+      {label:'Consented', count:f.consented},
+    ];
+    const fMax = funnelSteps[0].count || 1;
     body.innerHTML = `
+      <div class="card" style="margin-bottom:20px;">
+        <p class="card-title">Ingestion &amp; Nudge Funnel — Auth File</p>
+        <p class="card-sub">What happened to every auth record, not just the ones that became a visible request — Auditability requirement (Master PRD). Last 30 days, illustrative.</p>
+        <div style="margin-bottom:14px;">
+          ${funnelSteps.map(s=>`
+            <div class="funnel-row">
+              <div class="funnel-label">${s.label}</div>
+              <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((s.count/fMax)*100)}%"></div></div>
+              <div class="funnel-count">${s.count.toLocaleString('en-IN')}</div>
+              <div class="funnel-pct">${Math.round((s.count/fMax)*100)}%</div>
+            </div>`).join('')}
+        </div>
+        <div class="row-flex">
+          <div>
+            <p class="card-sub" style="margin-bottom:6px;"><b>Suppressed at ingestion</b> (${suppressedTotal.toLocaleString('en-IN')})</p>
+            <p class="card-sub" style="margin:0;">Below ₹2,500: ${f.suppressed.amountBelow.toLocaleString('en-IN')} · Restricted MCC: ${f.suppressed.restrictedMcc.toLocaleString('en-IN')} · Blocked account/card: ${f.suppressed.blockedAccount.toLocaleString('en-IN')}</p>
+          </div>
+          <div>
+            <p class="card-sub" style="margin-bottom:6px;"><b>Suppressed by nudge guardrails</b> (${nudgeSuppressedTotal.toLocaleString('en-IN')})</p>
+            <p class="card-sub" style="margin:0;">Cooldown: ${f.nudgeSuppressed.cooldown.toLocaleString('en-IN')} · Daily cap: ${f.nudgeSuppressed.dailyCap.toLocaleString('en-IN')}</p>
+          </div>
+        </div>
+      </div>
       <div class="card">
         <p class="card-title">Auth File → Settlement File → Recon</p>
         <p class="card-sub">Txn-to-EMI / Multi-Txn-to-EMI hybrid only. Auth transactions collected pre-settlement for consent; settlement file arrives later and is reconciled before booking.</p>
@@ -1992,6 +2196,7 @@ function openDrawer(id){
       <div style="margin-top:16px;">
         <div class="audit-item"><b>System</b> — case created from nudge campaign "${c.nudge.name}"</div>
         ${c.failReason ? `<div class="audit-item"><b>System</b> — flagged: ${c.failReason}</div>` : ''}
+        ${(c.auditLog||[]).map(a=>`<div class="audit-item"><b>${a.who}</b> — ${a.what} <span style="color:var(--gray-400);">(${a.when})</span></div>`).join('')}
       </div>
     </div>
   `;
@@ -2216,6 +2421,10 @@ function parseStamp(s){
 }
 
 function caseEntryDate(c){
+  // entryPath:'settled' cases never get an AUTH_RECEIVED stamp — the
+  // default stagesFor(...)[0] entry-point assumption only holds for the
+  // auth-first path.
+  if(c.entryPath==='settled') return parseStamp(c.stamps.SETTLEMENT_RECEIVED);
   return parseStamp(c.stamps[stagesFor(c.bank,c.type)[0]]);
 }
 
@@ -2272,6 +2481,40 @@ function renderAnalytics(){
       <div class="trend-label">${d.date.getDate()} ${MONTH_ABBR[d.date.getMonth()]}</div>
     </div>`).join('') : '<p class="card-sub">No bookings in this range.</p>';
 
+  // Auth-Triggered vs. Settled-Only — IBL only (Yes Bank has no auth-path
+  // concept to compare against). entryPath defaults to 'auth' for every
+  // existing IBL Single/Multi case, since that's the only path they've ever
+  // modeled; only the dedicated settled-direct cohort is tagged 'settled'.
+  document.getElementById('authVsSettledCard').style.display = bank==='IBL' ? '' : 'none';
+  if(bank==='IBL'){
+    const iblCases = cases.filter(c=>c.type==='Single'||c.type==='Multi');
+    const groups = {
+      'Auth-triggered (new path)': iblCases.filter(c=>c.entryPath!=='settled'),
+      'Settled-only (existing baseline)': iblCases.filter(c=>c.entryPath==='settled'),
+    };
+    const rowsAVS = Object.entries(groups).map(([label,gc])=>{
+      const gBooked = gc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL');
+      const gResolved = gc.filter(c=>TERMINAL.includes(c.state)).length;
+      const rate = gResolved ? Math.round((gBooked.length/gResolved)*100) : 0;
+      const durations = gBooked.map(c=>{
+        const stampVals = Object.values(c.stamps).map(parseStamp).filter(Boolean);
+        const entry = stampVals.length ? new Date(Math.min(...stampVals)) : null;
+        const done = parseStamp(c.stamps[c.state]);
+        return (entry && done) ? (done-entry)/3600000 : null;
+      }).filter(v=>v!==null);
+      const avgHrs = durations.length ? (durations.reduce((s,v)=>s+v,0)/durations.length) : null;
+      return {label, volume:gc.length, rate, avgHrs};
+    });
+    document.getElementById('authVsSettledBody').innerHTML = rowsAVS.map(r=>`
+      <tr><td><b>${r.label}</b></td><td>${r.volume}</td><td>${r.rate}%</td><td>${r.avgHrs!==null ? r.avgHrs.toFixed(1)+'h' : '—'}</td></tr>
+    `).join('');
+    const [authRow, settledRow] = rowsAVS;
+    const lift = (authRow.rate - settledRow.rate);
+    document.getElementById('authVsSettledCallout').innerHTML = (authRow.volume && settledRow.volume)
+      ? `${lift>=0?'▲':'▼'} Auth-triggered conversion is ${Math.abs(lift)} point${Math.abs(lift)===1?'':'s'} ${lift>=0?'higher':'lower'} than the settled-only baseline, this period.`
+      : 'Not enough volume in one of the two groups yet to compare, for this range.';
+  }
+
   // By-channel table
   const CHANNELS = ['SMS','WhatsApp','PWA','Email'];
   document.getElementById('analyticsChannelBody').innerHTML = CHANNELS.map(ch=>{
@@ -2293,7 +2536,8 @@ function renderAnalytics(){
   document.getElementById('analyticsProductBody').innerHTML = PRODUCT_KEYS.map(p=>{
     const pc = cases.filter(c=>c.type===p);
     const pBooked = pc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL');
-    const rate = pc.length ? Math.round((pBooked.length/pc.length)*100) : 0;
+    const pResolved = pc.filter(c=>TERMINAL.includes(c.state)).length;
+    const rate = pResolved ? Math.round((pBooked.length/pResolved)*100) : 0;
     const gmv = pBooked.reduce((s,c)=>s+c.amount,0);
     const tm = TYPE_META[p];
     return `<tr onclick="analyticsProduct='${p}';renderAnalytics();">
@@ -2310,7 +2554,9 @@ function renderAnalytics(){
     `<div class="tab ${p===analyticsProduct?'active':''}" onclick="analyticsProduct='${p}';renderAnalytics();">${TYPE_META[p].label}</div>`
   ).join('');
 
-  const pCases = cases.filter(c=>c.type===analyticsProduct);
+  // Same exclusion as Overview's funnel — settled-direct cases follow a
+  // different path shape and don't belong in the auth-first funnel.
+  const pCases = cases.filter(c=>c.type===analyticsProduct && c.entryPath!=='settled');
   const order = stagesFor(bank, analyticsProduct);
   const pConverted = pCases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
   document.getElementById('analyticsFunnelSub').textContent = `${bankLabel(bank)} · ${TYPE_META[analyticsProduct].label}`;
