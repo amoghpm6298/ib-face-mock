@@ -195,6 +195,7 @@
   .funnel-bar-track{flex:1;height:18px;background:var(--gray-100);border-radius:5px;overflow:hidden;}
   .funnel-bar-fill{height:100%;background:var(--blue-cta);border-radius:5px;}
   .funnel-count{width:64px;text-align:right;font-size:13px;font-weight:700;color:var(--neutral-900);flex-shrink:0;}
+  .funnel-meta{margin-left:8px;font-size:11.5px;color:var(--gray-500);flex-shrink:0;white-space:nowrap;}
   .funnel-pct{width:44px;text-align:right;font-size:11.5px;color:var(--gray-500);flex-shrink:0;}
 
   .dropoff-callout{
@@ -1037,7 +1038,7 @@
         </div>
         <div class="segment-cell">
           <p class="segment-label">By State</p>
-          <div id="statePie"></div>
+          <div id="stateBars"></div>
         </div>
       </div>
     </div>
@@ -1054,7 +1055,7 @@
         </div>
         <div class="segment-cell">
           <p class="segment-label">By Interest Rate Offered</p>
-          <div id="interestRatePie"></div>
+          <div id="interestRateBars"></div>
         </div>
       </div>
     </div>
@@ -1560,6 +1561,23 @@ function renderPieChart(containerId, rows, extraFn){
       <div class="pie-donut" style="background:conic-gradient(${stops});"></div>
       <div class="pie-legend">${legendHtml}</div>
     </div>` : '<p class="card-sub">No data for this range.</p>';
+}
+
+// Ranked horizontal bar list — for cuts with too many categories for a
+// donut to stay readable (double-digit categories turn into slivers and
+// a legend taller than the chart). Sorted by volume so the biggest cuts
+// surface first, same "biggest thing on top" convention as Rejection
+// Reasons already uses on this page.
+function renderRankedBarList(containerId, rows, labelWidth){
+  const sorted = [...rows].sort((a,b)=>b.volume-a.volume);
+  const max = sorted.length ? sorted[0].volume : 1;
+  document.getElementById(containerId).innerHTML = sorted.length ? sorted.map(r=>`
+    <div class="funnel-row">
+      <div class="funnel-label" style="width:${labelWidth||120}px;">${r.label}</div>
+      <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((r.volume/max)*100)}%;"></div></div>
+      <div class="funnel-count">${r.volume.toLocaleString('en-IN')}</div>
+      <div class="funnel-meta">${fmtRateN(r.booked,r.volume)} conv.</div>
+    </div>`).join('') : '<p class="card-sub">No data for this range.</p>';
 }
 
 // A bare percentage lies about its own confidence — "100%" off 2 resolved
@@ -3431,8 +3449,8 @@ function renderAnalytics(){
   renderPieChart('creditLimitPie', groupByRows(c=>creditLimitBandFor(c.creditLimit).label, CREDIT_LIMIT_BANDS.map(b=>b.label)), r=>fmtRateN(r.booked,r.volume)+' conv.');
   renderPieChart('ageBandPie', groupByRows(c=>c.ageBand, AGE_BANDS), r=>fmtRateN(r.booked,r.volume)+' conv.');
   renderPieChart('processingFeePie', groupByRows(c=>c.processingFeeOffered+'%', PROCESSING_FEE_OPTIONS.map(f=>f+'%')), r=>fmtRateN(r.booked,r.volume)+' conv.');
-  renderPieChart('interestRatePie', groupByRows(c=>c.interestRateOffered+'%', INTEREST_RATE_OPTIONS.map(r=>r+'%')), r=>fmtRateN(r.booked,r.volume)+' conv.');
-  renderPieChart('statePie', groupByRows(c=>c.customerState, CUSTOMER_STATES), r=>fmtRateN(r.booked,r.volume)+' conv.');
+  renderRankedBarList('interestRateBars', groupByRows(c=>c.interestRateOffered+'%', INTEREST_RATE_OPTIONS.map(r=>r+'%')), 50);
+  renderRankedBarList('stateBars', groupByRows(c=>c.customerState, CUSTOMER_STATES), 120);
 
   // Funnel, Time-in-Stage, and Amount Bucket always render now — the
   // Product filter is always scoped to exactly one product (no "All
