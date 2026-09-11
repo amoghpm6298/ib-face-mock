@@ -974,13 +974,18 @@
     </div>
     <div class="card" style="margin-bottom:20px;" id="nudgesSentVsConversionCard">
       <p class="card-title">Nudge Funnel by Day<span id="nudgesSentVsConversionProductLabel"></span></p>
-      <p class="card-sub">Sent → Landing Page Visited (clicked the nudge, the first real step) → Converted. Do more nudges sent on a given day actually carry through, or is there drop-off/lag?</p>
+      <p class="card-sub">Sent → Landing Page Visited (clicked the nudge, the first real step). Do more nudges sent on a given day actually carry through, or is there drop-off/lag?</p>
       <div class="trend-legend">
         <span><span class="trend-legend-dot" style="background:var(--blue-cta);"></span>Nudges Sent</span>
         <span><span class="trend-legend-dot" style="background:var(--warning-border);"></span>Landing Page Visited</span>
-        <span><span class="trend-legend-dot" style="background:var(--purple-text);"></span>Converted</span>
       </div>
       <div class="trend-chart" id="nudgesSentVsConversionTrend"></div>
+      <!-- Converted intentionally isn't a third bar sharing Sent/Visited's
+      scale — real EMI conversion is well under 5% end-to-end, so a bar
+      for it would round to invisible next to volume in the thousands.
+      Shown as its own rate trend, own scale, right below. -->
+      <p class="card-sub" style="margin-top:18px;margin-bottom:6px;"><b>Conversion Rate</b> — of those who visited, day by day</p>
+      <div class="trend-chart" id="nudgeConversionRateTrend" style="height:70px;"></div>
     </div>
 
     <div class="card">
@@ -1876,6 +1881,7 @@ CASES.forEach((c,i)=>{
   c.errorScreenViews = c.apiErrorCount + (i%19===0 ? 1 : 0);
   if(c.apiErrorCount>0){ c.apiErrorType = pick(API_ERROR_TYPES, i); c.apiErrorAt = deriveEventTimestamp(c.stamps, i+11); }
   if(c.errorScreenViews>c.apiErrorCount) c.errorScreenAt = deriveEventTimestamp(c.stamps, i+29);
+  c.nudgeReach = computeNudgeReach(c.id+'|reach');
   const custSeed = seedFromId(c.customerId);
   c.creditLimit = 50000 + (custSeed*317) % 700000;
   c.customerState = CUSTOMER_STATES[custSeed % CUSTOMER_STATES.length];
@@ -2044,6 +2050,7 @@ function generateCases(count){
     c.errorScreenViews = c.apiErrorCount + (i%19===0 ? 1 : 0);
     if(c.apiErrorCount>0){ c.apiErrorType = pick(API_ERROR_TYPES, i); c.apiErrorAt = deriveEventTimestamp(stamps, i+11); }
     if(c.errorScreenViews>c.apiErrorCount) c.errorScreenAt = deriveEventTimestamp(stamps, i+29);
+    c.nudgeReach = computeNudgeReach(c.id+'|reach');
     const custSeed = seedFromId(c.customerId);
     c.creditLimit = 50000 + (custSeed*317) % 700000;
     c.customerState = CUSTOMER_STATES[custSeed % CUSTOMER_STATES.length];
@@ -2198,6 +2205,7 @@ function generateSettledDirectIBLCases(count){
       ...((i%19===0) ? {errorScreenAt: deriveEventTimestamp(stamps, i+29)} : {}),
       ...(state==='FAILED' ? {failReason: pick(['Credit limit insufficient at booking','Bank-side eligibility rejected at booking'], i)} : {}),
     };
+    c.nudgeReach = computeNudgeReach(c.id+'|reach');
     const custSeed = seedFromId(c.customerId);
     c.creditLimit = 50000 + (custSeed*317) % 700000;
     c.customerState = CUSTOMER_STATES[custSeed % CUSTOMER_STATES.length];
@@ -3355,6 +3363,27 @@ function deriveEventTimestamp(stamps, seed){
   return `${String(t.getDate()).padStart(2,'0')} ${months[t.getMonth()]}, ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
 }
 
+// A stored case represents one PLACED EMI request — but the nudge that led
+// to it reached far more people than just this one converter. Real EMI
+// conversion is well under 5% end-to-end (landing page visit -> booked),
+// not the ~50%+ this file would otherwise show if nudge volume were read
+// straight off case counts (every case already guarantees reaching
+// consent — see the Pending state-model rebuild — so a naive per-case
+// count would show Sent≈Visited≈Consented, all flat at 100%). Each case
+// carries its own fixed reach trio so summing across ANY grouping (by
+// day, by campaign) stays internally consistent — no separate ratio
+// applied at render time that could drift between different aggregations.
+function computeNudgeReach(seedStr){
+  const h = hashCode(seedStr);
+  // ~15-39 total landing-page visitors per case's send-cohort (avg ~27) for
+  // every 1 who actually goes on to consent and place a request — this is
+  // the real conversion-defining ratio (Visited → Consented ≈ 3.7%).
+  const visited = 15 + (h % 25);
+  const delivered = Math.round(visited / 0.30); // ~30% click-through on delivered nudges
+  const sent = Math.round(delivered / 0.96); // ~96% delivery rate
+  return {sent, delivered, visited};
+}
+
 function caseEntryDate(c){
   // entryPath:'settled' cases never get an AUTH_RECEIVED stamp — the
   // default stagesFor(...)[0] entry-point assumption only holds for the
@@ -3561,15 +3590,21 @@ function renderAnalytics(){
   // Landing Page Visited = clicked the nudge — that's literally what
   // clicking a nudge link does, land on Screen 1 of the PWA journey. The
   // first real step after a nudge goes out, before any conversion signal.
+  // Sent/Visited use each case's real upstream nudge reach (nudgeReach),
+  // not a per-case +1 — every stored case already guarantees having
+  // clicked and consented (it's a placed request), so counting cases
+  // directly would show Sent≈Visited≈Consented, all flat at 100% and
+  // nowhere near the real sub-5% end-to-end conversion rate. Converted
+  // stays a real, unmultiplied count — that's ground truth, not reach.
   const sentByDay = {}, visitByDay = {}, convByDay = {};
   filteredCases.forEach(c=>{
     if(c.nudge.sent && c.nudge.sent!=='—'){
       const d = parseStamp(c.nudge.sent);
-      if(d){ const k = d.getMonth()+'-'+d.getDate(); sentByDay[k] = (sentByDay[k]||0)+1; }
+      if(d){ const k = d.getMonth()+'-'+d.getDate(); sentByDay[k] = (sentByDay[k]||0)+c.nudgeReach.sent; }
     }
     if(c.nudge.clicked && c.nudge.clicked!=='—'){
       const d = parseStamp(c.nudge.clicked);
-      if(d){ const k = d.getMonth()+'-'+d.getDate(); visitByDay[k] = (visitByDay[k]||0)+1; }
+      if(d){ const k = d.getMonth()+'-'+d.getDate(); visitByDay[k] = (visitByDay[k]||0)+c.nudgeReach.visited; }
     }
     if(c.state==='BOOKED'||c.state==='PARTIAL'){
       const d = parseStamp(c.stamps[c.state]);
@@ -3592,17 +3627,32 @@ function renderAnalytics(){
     const [mo,da] = k.split('-').map(Number);
     return {date:new Date(2026,mo,da), sent:sentByDay[k]||0, visit:visitByDay[k]||0, conv:convByDay[k]||0};
   }).sort((a,b)=>a.date-b.date);
-  const bothMax = Math.max(1, ...bothDayKeys.map(d=>Math.max(d.sent,d.visit,d.conv)));
+  // Sent/Visited only — comparable magnitudes (~3x apart), a shared linear
+  // scale reads correctly. Converted stays out of this scale entirely
+  // (see the rate trend below) rather than rounding to an invisible sliver.
+  const bothMax = Math.max(1, ...bothDayKeys.map(d=>Math.max(d.sent,d.visit)));
   document.getElementById('nudgesSentVsConversionTrend').innerHTML = bothDayKeys.length ? bothDayKeys.map(d=>`
     <div class="trend-bar-col">
-      <div class="trend-tooltip">${d.sent} sent · ${d.visit} visited · ${d.conv} converted · ${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
+      <div class="trend-tooltip">${d.sent.toLocaleString('en-IN')} sent · ${d.visit.toLocaleString('en-IN')} visited · ${d.conv} converted (${d.visit?((d.conv/d.visit)*100).toFixed(1):'0'}%) · ${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
       <div class="trend-bar-pair">
-        <div style="width:7px;border-radius:3px 3px 0 0;background:var(--blue-cta);height:${Math.max(3,Math.round((d.sent/bothMax)*130))}px;"></div>
-        <div style="width:7px;border-radius:3px 3px 0 0;background:var(--warning-border);height:${Math.max(3,Math.round((d.visit/bothMax)*130))}px;"></div>
-        <div style="width:7px;border-radius:3px 3px 0 0;background:var(--purple-text);height:${Math.max(3,Math.round((d.conv/bothMax)*130))}px;"></div>
+        <div style="width:8px;border-radius:3px 3px 0 0;background:var(--blue-cta);height:${Math.max(3,Math.round((d.sent/bothMax)*130))}px;"></div>
+        <div style="width:8px;border-radius:3px 3px 0 0;background:var(--warning-border);height:${Math.max(3,Math.round((d.visit/bothMax)*130))}px;"></div>
       </div>
       <div class="trend-label">${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
     </div>`).join('') : '<p class="card-sub">No activity for this product in this range.</p>';
+
+  // Conversion Rate — its own scale entirely, not forced onto Sent/
+  // Visited's axis. Real EMI conversion is under 5% end-to-end, so this
+  // reads the actual daily percentage rather than an invisible bar.
+  const rateMax = Math.max(1, ...bothDayKeys.map(d=>d.visit?(d.conv/d.visit)*100:0));
+  document.getElementById('nudgeConversionRateTrend').innerHTML = bothDayKeys.length ? bothDayKeys.map(d=>{
+    const rate = d.visit ? (d.conv/d.visit)*100 : 0;
+    return `<div class="trend-bar-col">
+      <div class="trend-tooltip">${rate.toFixed(1)}% converted (${d.conv} of ${d.visit.toLocaleString('en-IN')} visited) · ${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
+      <div class="trend-bar" style="width:8px;background:var(--purple-text);height:${Math.max(3,Math.round((rate/rateMax)*45))}px;"></div>
+      <div class="trend-label">${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
+    </div>`;
+  }).join('') : '';
 
   // By-channel — donut of share of nudges sent, conv. rate in the legend
   // (a rate can't be a pie slice, it doesn't sum to a whole).
@@ -3852,18 +3902,25 @@ function renderAnalytics(){
     groups[c.journeyId].cases.push(c);
   });
   const rows = Object.values(groups).map(g=>{
-    const sent = g.cases.filter(c=>c.nudge.sent!=='—').length;
-    const delivered = g.cases.filter(c=>c.nudge.delivered!=='—').length;
-    const clicked = g.cases.filter(c=>c.nudge.clicked!=='—').length;
+    // Sent/Delivered/Clicked sum each case's real upstream nudge reach
+    // (nudgeReach) — every case here already guarantees having clicked and
+    // consented (it's a placed request), so counting cases directly would
+    // show Sent≈Delivered≈Clicked≈Consented, all equal to the case count.
+    // Consented is the real, unmultiplied case count — that's ground
+    // truth for "how many requests this campaign actually produced."
+    const sent = g.cases.reduce((s,c)=>s+c.nudgeReach.sent,0);
+    const delivered = g.cases.reduce((s,c)=>s+c.nudgeReach.delivered,0);
+    const clicked = g.cases.reduce((s,c)=>s+c.nudgeReach.visited,0);
     const consented = g.cases.filter(c=>c.stamps.CONSENT_GIVEN).length;
     const converted = g.cases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
     // Converted Amount = real ₹ amount of the converted subset — a real
     // transacted figure, no assumed take rate standing in for it. "Volume"
     // is deliberately not repeated here as a ₹ figure: everywhere else in
     // this file (By-Product, By-Channel, By-MCC, By-Program) "Volume" means
-    // count, and Sent already serves as this table's count.
+    // count — here that's Consented, the real request count this campaign
+    // produced (Sent is upstream reach, not this table's row count).
     const convertedAmount = g.cases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').reduce((s,c)=>s+c.amount,0);
-    return {...g, sent, delivered, clicked, consented, converted, rate: sent?Math.round((converted/sent)*100):0, convertedAmount};
+    return {...g, sent, delivered, clicked, consented, converted, rate: sent?+((converted/sent)*100).toFixed(2):0, convertedAmount};
   }).sort((a,b)=>b.sent-a.sent);
 
   const nudgeTotalPages = Math.max(1, Math.ceil(rows.length/PAGE_SIZE));
@@ -3875,9 +3932,9 @@ function renderAnalytics(){
     <tr onclick="openJourneyModal('${r.cases[0].id}')">
       <td><b>${r.name}</b><br><span class="mono" style="font-size:11px;">${r.journeyId}</span></td>
       <td>${r.channel}</td>
-      <td>${r.sent}</td>
-      <td>${r.delivered}</td>
-      <td>${r.clicked}</td>
+      <td>${r.sent.toLocaleString('en-IN')}</td>
+      <td>${r.delivered.toLocaleString('en-IN')}</td>
+      <td>${r.clicked.toLocaleString('en-IN')}</td>
       <td>${r.consented}</td>
       <td>${r.converted}</td>
       <td>${r.rate}%</td>
