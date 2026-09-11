@@ -1932,8 +1932,28 @@ function genStampsFor(bank, type, terminal, seedHour){
   // Eligibility Checked, Consent Requested) is Nudge/Journey territory, not
   // an EMI Conversions request at all.
   const consentGivenIdx = order.indexOf('CONSENT_GIVEN');
+  // Weighted toward the genuine wait point(s), not a uniform spread across
+  // every post-consent index — a uniform pick treats "waiting on the
+  // settlement file" (Consent Given, the real wait) the same as "stuck
+  // between two steps that are supposed to happen in the same synchronous
+  // pass" (Settlement Received → Reconciliation Matched → Booking
+  // Initiated), which should be rare. A plain seedHour%N pick here also
+  // shares a common factor with whatever gated this case into existence
+  // in the first place (type/bank/outcome selectors upstream all key off
+  // the same `i`), so it can collapse to a near-constant for a filtered
+  // subset instead of spreading — exactly what happened: 267 of 268
+  // auth-triggered Pending cases landed on Settlement Received specifically,
+  // almost none on Consent Given. Hashed and explicitly weighted instead.
+  const MEDIUM_WAIT_STAGES_R = new Set(['EMI_REQUESTED','BOOKING_FILE_SENT']);
+  const realWaitIndices = [];
+  if(order[consentGivenIdx+1]==='SETTLEMENT_RECEIVED') realWaitIndices.push(consentGivenIdx);
+  for(let i=consentGivenIdx;i<order.length;i++){ if(MEDIUM_WAIT_STAGES_R.has(order[i])) realWaitIndices.push(i); }
+  if(!realWaitIndices.length) realWaitIndices.push(consentGivenIdx); // Yes Bank / settled-direct: no file wait, but still a brief pause right after consent
+  const reachRoll = hashCode(bank+'|'+type+'|reach|'+seedHour);
   const reachIdx = terminal==='IN_FLIGHT'
-    ? consentGivenIdx + (seedHour % (order.length - consentGivenIdx))
+    ? (reachRoll % 100 < 85
+        ? realWaitIndices[reachRoll % realWaitIndices.length]
+        : consentGivenIdx + (reachRoll % (order.length - consentGivenIdx))) // rare: a genuine anomaly, stuck partway through what should be instant
     : order.length-1;
 
   let day, hour;
@@ -2144,9 +2164,16 @@ function generateSettledDirectIBLCases(count){
     // PRD Section 11) — reachIdx for an in-flight case never lands before
     // Consent Given, same constraint genStampsFor() uses for every other
     // path.
+    // Weighted toward Consent Given itself, not a uniform pick — settled-
+    // direct has no real wait after consent (booking is instant, no
+    // settlement file left to wait for), so an in-flight case should
+    // almost always be found right at Consent Given, not "stuck" at
+    // Booking Initiated, which should be rare (a genuine anomaly), same
+    // reasoning and same hash-based fix as genStampsFor()'s reachIdx.
     const consentGivenIdx = shortOrder.indexOf('CONSENT_GIVEN');
+    const reachRoll = hashCode('settled|reach|'+i);
     const reachIdx = outcome==='IN_FLIGHT'
-      ? consentGivenIdx + (i % (shortOrder.length - consentGivenIdx))
+      ? (reachRoll % 100 < 85 ? consentGivenIdx : consentGivenIdx + (reachRoll % (shortOrder.length - consentGivenIdx)))
       : shortOrder.length-1;
     const stamps = {};
     // Real delay only through Consent Given — that's the customer's own
