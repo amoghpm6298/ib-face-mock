@@ -1509,10 +1509,23 @@ const STAGE_META = {
   CONSENT_GIVEN:            {label:'Consent Given',              badge:'purple'},
   SETTLEMENT_RECEIVED:      {label:'Settlement Received',        badge:'warning'},
   RECON_MATCHED:            {label:'Reconciliation Matched',     badge:'warning'},
-  EMI_REQUESTED:            {label:'EMI Requested (Pending)',    badge:'purple'},
+  EMI_REQUESTED:            {label:'EMI Requested',              badge:'purple'},
   BOOKING_FILE_SENT:        {label:'Booking File Sent',          badge:'warning'},
   CONFIRMATION_FILE_RECEIVED:{label:'Confirmation File Received',badge:'warning'},
   BOOKING_INITIATED:        {label:'Booking Initiated',          badge:'info'},
+  // The only non-terminal value `c.state` can actually hold (Master PRD
+  // Section 11's Consolidated Status Model — "Pending: customer consented
+  // to convert... not yet matched," set "at the moment of consent"). Every
+  // stage above this point (Auth Received, Consent Requested, Eligibility
+  // Checked) happens *before* a request exists at all — that's Nudge/
+  // Journey tracking, not EMI Conversions — and every stage after it
+  // (Settlement Received, Reconciliation Matched, Booking Initiated, EMI
+  // Requested, Booking File Sent, Confirmation File Received) is internal
+  // processing that resolves to a terminal outcome in the same pass, never
+  // something a case is found "currently at." Those stage names still
+  // exist as real timestamps in `stamps` for the Journey Timeline — they
+  // were never states a case's own `state` field should hold.
+  PENDING:                  {label:'Pending',                    badge:'purple'},
   BOOKED:                   {label:'Booked',                     badge:'success'},
   FAILED:                   {label:'Failed',                     badge:'error'},
   PARTIAL:                  {label:'Partial Success',            badge:'warning'},
@@ -1643,17 +1656,13 @@ const CASES = [
       {id:'TXN-8843', amount:31500, billed:false, status:'FAILED', reason:'Unbilled booking API returned 5xx'},
     ] },
 
-  { id:'TEMI-30161', bank:'IBL', customer:'Rohan Gupta', type:'Outstanding', channel:'PWA', campaign:'OS-to-EMI Cross-sell', amount:212000, state:'BOOKING_FILE_SENT',
+  { id:'TEMI-30161', bank:'IBL', customer:'Rohan Gupta', type:'Outstanding', channel:'PWA', campaign:'OS-to-EMI Cross-sell', amount:212000, state:'PENDING',
     stamps:{ELIGIBILITY_CHECKED:'06 Aug, 10:00', CONSENT_REQUESTED:'06 Aug, 10:05', CONSENT_GIVEN:'06 Aug, 15:12', EMI_REQUESTED:'06 Aug, 15:14', BOOKING_FILE_SENT:'06 Aug, 15:45'},
     nudge:{name:'OS-to-EMI Cross-sell', channel:'PWA', sent:'06 Aug, 10:05', delivered:'06 Aug, 10:05', clicked:'06 Aug, 15:10'} },
 
-  { id:'TEMI-30170', bank:'IBL', customer:'Simran Kaur', type:'Single', channel:'SMS', campaign:'Festive EMI Push', amount:21400, state:'CONSENT_GIVEN',
+  { id:'TEMI-30170', bank:'IBL', customer:'Simran Kaur', type:'Single', channel:'SMS', campaign:'Festive EMI Push', amount:21400, state:'PENDING',
     stamps:{AUTH_RECEIVED:'07 Aug, 06:00', CONSENT_REQUESTED:'07 Aug, 06:05', CONSENT_GIVEN:'07 Aug, 09:40'},
     nudge:{name:'Festive EMI Push', channel:'SMS', sent:'07 Aug, 06:05', delivered:'07 Aug, 06:06', clicked:'07 Aug, 09:38'} },
-
-  { id:'TEMI-30172', bank:'IBL', customer:'Devendra Rao', type:'Single', channel:'Email', campaign:'Furniture Category Push', amount:58900, state:'AUTH_RECEIVED',
-    stamps:{AUTH_RECEIVED:'07 Aug, 12:00'},
-    nudge:{name:'Furniture Category Push', channel:'Email', sent:'—', delivered:'—', clicked:'—'} },
 
   { id:'TEMI-30111', bank:'IBL', customer:'Ananya Iyer', type:'Single', channel:'SMS', campaign:'Electronics Category Push', amount:15600, state:'FAILED',
     stamps:{AUTH_RECEIVED:'02 Aug, 09:00', CONSENT_REQUESTED:'02 Aug, 09:05', CONSENT_GIVEN:'02 Aug, 20:00', SETTLEMENT_RECEIVED:'03 Aug, 03:00', RECON_MATCHED:'03 Aug, 03:30', BOOKING_INITIATED:'03 Aug, 04:00', FAILED:'03 Aug, 04:10'},
@@ -1672,13 +1681,9 @@ const CASES = [
     stamps:{SETTLEMENT_RECEIVED:'05 Aug, 22:00', CONSENT_REQUESTED:'05 Aug, 22:02', CONSENT_GIVEN:'06 Aug, 08:15', BOOKING_INITIATED:'06 Aug, 08:16', BOOKED:'06 Aug, 08:20'},
     nudge:{name:'Settled Txn Nudge', channel:'PWA', sent:'05 Aug, 22:02', delivered:'05 Aug, 22:02', clicked:'06 Aug, 08:13'} },
 
-  { id:'YEMI-500240', bank:'YES', customer:'Isha Malhotra', type:'Outstanding', channel:'SMS', campaign:'OS Cross-sell', amount:145000, state:'CONSENT_GIVEN',
+  { id:'YEMI-500240', bank:'YES', customer:'Isha Malhotra', type:'Outstanding', channel:'SMS', campaign:'OS Cross-sell', amount:145000, state:'PENDING',
     stamps:{ELIGIBILITY_CHECKED:'07 Aug, 05:00', CONSENT_REQUESTED:'07 Aug, 05:05', CONSENT_GIVEN:'07 Aug, 10:10'},
     nudge:{name:'OS Cross-sell', channel:'SMS', sent:'07 Aug, 05:05', delivered:'07 Aug, 05:06', clicked:'07 Aug, 10:08'} },
-
-  { id:'YEMI-500244', bank:'YES', customer:'Nikhil Bhatt', type:'Single', channel:'SMS', campaign:'Settled Txn Nudge', amount:27800, state:'SETTLEMENT_RECEIVED',
-    stamps:{SETTLEMENT_RECEIVED:'07 Aug, 13:00'},
-    nudge:{name:'Settled Txn Nudge', channel:'SMS', sent:'07 Aug, 13:02', delivered:'07 Aug, 13:02', clicked:'—'} },
 
   { id:'YEMI-500198', bank:'YES', customer:'Zoya Khan', type:'Single', channel:'WhatsApp', campaign:'Settled Txn Nudge', amount:19500, state:'FAILED',
     stamps:{SETTLEMENT_RECEIVED:'02 Aug, 20:00', CONSENT_REQUESTED:'02 Aug, 20:02', CONSENT_GIVEN:'03 Aug, 07:00', BOOKING_INITIATED:'03 Aug, 07:05', FAILED:'03 Aug, 07:12'},
@@ -1693,7 +1698,7 @@ const CASES = [
     stamps:{AUTH_RECEIVED:'06 Aug, 09:30', CONSENT_REQUESTED:'06 Aug, 09:35', CONSENT_GIVEN:'06 Aug, 12:10', CANCELLED:'07 Aug, 04:15'},
     nudge:{name:'Festive EMI Push', channel:'WhatsApp', sent:'06 Aug, 09:35', delivered:'06 Aug, 09:36', clicked:'06 Aug, 12:08'} },
 
-  { id:'YEMI-500251', bank:'YES', customer:'Meera Joshi', type:'Multi', channel:'PWA', campaign:'Multi Consolidation Pilot', amount:76500, state:'BOOKING_INITIATED',
+  { id:'YEMI-500251', bank:'YES', customer:'Meera Joshi', type:'Multi', channel:'PWA', campaign:'Multi Consolidation Pilot', amount:76500, state:'PENDING',
     stamps:{SETTLEMENT_RECEIVED:'07 Aug, 02:00', CONSENT_REQUESTED:'07 Aug, 02:05', CONSENT_GIVEN:'07 Aug, 09:00', BOOKING_INITIATED:'07 Aug, 09:10'},
     nudge:{name:'Multi Consolidation Pilot', channel:'PWA', sent:'07 Aug, 02:05', delivered:'07 Aug, 02:05', clicked:'07 Aug, 08:58'},
     txns:[
@@ -1893,32 +1898,98 @@ function pick(arr,n){ return arr[n % arr.length]; }
 
 function genStampsFor(bank, type, terminal, seedHour){
   const order = stagesFor(bank, type);
-  const steps = order.concat(TERMINAL.includes(terminal) ? [] : []);
   const stamps = {};
-  let day = 2 + (seedHour % 20); // 02–21 Aug — wide enough that "Last 7 days" actually excludes something
-  let hour = seedHour % 24;
+  // Only two things in this journey are a genuine wait on someone/something
+  // outside our own system: the customer's own response time (Consent
+  // Requested → Consent Given) and, for IBL's auth-triggered path only,
+  // waiting for a settlement file to actually arrive (Consent Given →
+  // Settlement Received — Master PRD Section 8, Trigger A/B). Everything
+  // else in this order is a system-internal step that should land in the
+  // same instant it's triggered, not accrue hours of "wait": Auth Received
+  // and Settlement Received both immediately trigger the next system
+  // action (request consent / run reconciliation — Trigger A runs *as the
+  // file arrives*, not on a delay), Reconciliation Matched immediately
+  // fires the booking API call (Section 8: "call the same EMI booking
+  // API... mark the request Successful" — one synchronous call, not a
+  // separate wait), and Booking Initiated resolves in the same call. Yes
+  // Bank books via a direct, synchronous API call for every product too —
+  // no file exchange at all — so its own Consent Given is instant as well
+  // (settlement is already resolved for that path, unlike IBL auth-
+  // triggered's Consent Given, which really is waiting on a file).
+  const INSTANT_STAGES = new Set(['AUTH_RECEIVED','SETTLEMENT_RECEIVED','RECON_MATCHED','BOOKING_INITIATED']);
+  const isInstant = (i) => INSTANT_STAGES.has(order[i]) || (bank==='YES' && order[i]==='CONSENT_GIVEN');
+  // A case can't exist as a Pending EMI request before consent — Master PRD
+  // Section 11: Pending is set "at the moment of consent." An in-flight
+  // case's internal processing can still be found anywhere from Consent
+  // Given onward (that's real Journey Timeline detail worth keeping), but
+  // never earlier — everything before Consent Given (Auth Received/
+  // Eligibility Checked, Consent Requested) is Nudge/Journey territory, not
+  // an EMI Conversions request at all.
+  const consentGivenIdx = order.indexOf('CONSENT_GIVEN');
+  const reachIdx = terminal==='IN_FLIGHT'
+    ? consentGivenIdx + (seedHour % (order.length - consentGivenIdx))
+    : order.length-1;
+
+  let day, hour;
+  if(terminal==='IN_FLIGHT'){
+    // Anchor backward from "now" (24 Aug, noon — this file's established
+    // today, same bound the date-range filters use) instead of picking a
+    // random start day independent of how far the case has progressed.
+    // Previously every in-flight case's start day was random across
+    // 02–21 Aug regardless of reachIdx, so a case that only reached its
+    // very first stage could just as easily have "started" three weeks
+    // ago — trivially past any Stuck threshold no matter what, which is
+    // why every single in-flight case was reading as Stuck.
+    let totalElapsedHours = 0;
+    for(let i=0;i<reachIdx;i++){ if(!isInstant(i)) totalElapsedHours += 2 + (i*3 % 9); }
+    const lastStage = order[reachIdx];
+    // Hashed, not a plain seedHour*k%m — reachIdx itself is a function of
+    // seedHour, so a linear function of seedHour here shares a common
+    // factor with that modulus for whichever seedHour values reach a given
+    // lastStage, collapsing to a near-constant instead of a spread (the
+    // same class of bug as the earlier Multi-outcome modulo collision this
+    // session already fixed once).
+    const h = hashCode(bank+'|'+type+'|'+lastStage+'|'+seedHour);
+    // Three recency tiers, by what the case is actually waiting on: a long
+    // spread (up to the ~7-day Trigger-B expiry window) only when Consent
+    // Given is genuinely waiting on a settlement file to arrive (IBL
+    // auth-triggered — the next stage in its order is Settlement Received);
+    // a medium spread for Outstanding's own two real file-based waits (EMI
+    // Requested waiting for the next outbound batch, Booking File Sent
+    // waiting on the bank's confirmation file); everything else is a
+    // system-internal step that should resolve almost immediately, so a
+    // case still found there is the rare, real anomaly Stuck exists to
+    // catch — small, mostly-recent window.
+    const waitingOnSettlementFile = lastStage==='CONSENT_GIVEN' && order[reachIdx+1]==='SETTLEMENT_RECEIVED';
+    const MEDIUM_WAIT_STAGES = new Set(['EMI_REQUESTED','BOOKING_FILE_SENT']);
+    let recencyHours;
+    if(waitingOnSettlementFile) recencyHours = h % 160;
+    else if(MEDIUM_WAIT_STAGES.has(lastStage)) recencyHours = h % 72;
+    else recencyHours = h % 30;
+    const nowAbsHours = 24*24 + 12; // 24 Aug, noon
+    const startAbsHours = Math.max(24, nowAbsHours - recencyHours - totalElapsedHours);
+    day = Math.floor(startAbsHours/24);
+    hour = startAbsHours % 24;
+  } else {
+    day = 2 + (seedHour % 20); // 02–21 Aug — wide enough that "Last 7 days" actually excludes something
+    hour = seedHour % 24;
+  }
   const advance = (h)=>{ hour += h; while(hour>=24){hour-=24; day++;} };
   const stampNow = ()=> `${String(day).padStart(2,'0')} Aug, ${String(hour).padStart(2,'0')}:${String((seedHour*7)%60).padStart(2,'0')}`;
 
-  const reachIdx = terminal==='IN_FLIGHT' ? (seedHour % order.length) : order.length-1;
-  // Yes Bank books via a direct, synchronous API call for every product —
-  // no file exchange at all (unlike IBL, which is file-based for OS-to-EMI
-  // and hybrid auth/settlement/recon-gated for Txn/Multi-Txn). Once the
-  // customer consents, booking is immediate: no advance() between Consent
-  // Given and Booking Initiated, or between Booking Initiated and the
-  // terminal state. Real delay still applies earlier (eligibility check /
-  // settlement ingestion → consent), same customer-engagement time every
-  // path has. IBL's timing is untouched — its delays are real (settlement/
-  // recon file waits), not something this file should collapse away.
   for(let i=0;i<=reachIdx;i++){
     stamps[order[i]] = stampNow();
-    const isYesInstantStage = bank==='YES' && (order[i]==='CONSENT_GIVEN' || order[i]==='BOOKING_INITIATED');
-    if(!isYesInstantStage) advance(2 + (i*3 % 9));
+    if(!isInstant(i)) advance(2 + (i*3 % 9));
   }
   if(terminal!=='IN_FLIGHT'){
     stamps[terminal] = stampNow();
   }
-  const finalState = terminal==='IN_FLIGHT' ? order[reachIdx] : terminal;
+  // A case is never found resting at whichever granular internal stage
+  // it happens to have reached — those are all either pre-request (not
+  // modeled as `state` at all, see reachIdx above) or resolve to a
+  // terminal outcome in the same pass. The only non-terminal `state` an
+  // EMI Conversions request can ever hold is Pending.
+  const finalState = terminal==='IN_FLIGHT' ? 'PENDING' : terminal;
   return {stamps, state:finalState};
 }
 
@@ -1956,7 +2027,10 @@ function generateCases(count){
     const c = {
       id: (bank==='IBL'?'TEMI-':'YEMI-') + (31000 + i*3 + (bank==='IBL'?0:500000)),
       bank, customer:name, type, channel, campaign, amount, state, stamps,
-      nudge:{name:campaign, channel, sent:nudgeSent, delivered:nudgeSent, clicked: state==='AUTH_RECEIVED'||state==='SETTLEMENT_RECEIVED' ? '—' : nudgeSent},
+      // Every case here has reached at least Consent Given (reachIdx never
+      // lands earlier — see genStampsFor()), so it's always been clicked;
+      // "not yet clicked" isn't a state an EMI request can exist in.
+      nudge:{name:campaign, channel, sent:nudgeSent, delivered:nudgeSent, clicked: nudgeSent},
       customerId:'CUST-'+(120500+i*13),
       accountId:'ACC-'+(780500+i*13),
       programId:prog.id, programName:prog.name,
@@ -2059,31 +2133,59 @@ function generateSettledDirectIBLCases(count){
     const channel = pick(CHANNELS,i+3);
     const amount = 12000 + (i*1931)%85000;
 
-    let day = 3 + (i%18), hour = (i*5)%24;
-    const advance = (h)=>{ hour += h; while(hour>=24){hour-=24; day++;} };
-    const stampNow = ()=> `${String(day).padStart(2,'0')} Aug, ${String(hour).padStart(2,'0')}:${String((i*11)%60).padStart(2,'0')}`;
-    const reachIdx = outcome==='IN_FLIGHT' ? (i % shortOrder.length) : shortOrder.length-1;
+    // A case can't exist as a Pending EMI request before consent (Master
+    // PRD Section 11) — reachIdx for an in-flight case never lands before
+    // Consent Given, same constraint genStampsFor() uses for every other
+    // path.
+    const consentGivenIdx = shortOrder.indexOf('CONSENT_GIVEN');
+    const reachIdx = outcome==='IN_FLIGHT'
+      ? consentGivenIdx + (i % (shortOrder.length - consentGivenIdx))
+      : shortOrder.length-1;
     const stamps = {};
     // Real delay only through Consent Given — that's the customer's own
     // engagement/decision time (open the nudge, review details, OTP,
-    // confirm), same kind of gap the auth-triggered path has too. Once
-    // consented, booking is immediate: the transaction is already settled,
-    // so there's no settlement file or recon wait left, unlike every other
-    // gap in this journey — Booking Initiated and Booked land in the same
-    // synchronous call, not hours apart.
+    // confirm), same kind of gap the auth-triggered path has too. Detecting
+    // an already-settled, EMI-eligible transaction triggers the consent
+    // request in the same instant (no wait before Settlement Received —
+    // same "detection triggers the next system action immediately"
+    // principle genStampsFor() uses for Auth Received/Settlement Received/
+    // Reconciliation Matched). Once consented, booking is immediate too:
+    // the transaction is already settled, so there's no settlement file or
+    // recon wait left — Booking Initiated and Booked land in the same
+    // synchronous call, not hours apart. So an in-flight case here is
+    // never found genuinely "waiting" anywhere for long — it's always
+    // recent, same as any other instant-stage anomaly elsewhere.
+    let day, hour;
+    if(outcome==='IN_FLIGHT'){
+      let totalElapsedHours = 0;
+      for(let s=0;s<reachIdx;s++){ if(shortOrder[s]==='CONSENT_REQUESTED') totalElapsedHours += 1 + (s*2%5); }
+      const h = hashCode('settled|'+shortOrder[reachIdx]+'|'+i);
+      const recencyHours = h % 30;
+      const nowAbsHours = 24*24 + 12;
+      const startAbsHours = Math.max(24, nowAbsHours - recencyHours - totalElapsedHours);
+      day = Math.floor(startAbsHours/24);
+      hour = startAbsHours % 24;
+    } else {
+      day = 3 + (i%18); hour = (i*5)%24;
+    }
+    const advance = (h)=>{ hour += h; while(hour>=24){hour-=24; day++;} };
+    const stampNow = ()=> `${String(day).padStart(2,'0')} Aug, ${String(hour).padStart(2,'0')}:${String((i*11)%60).padStart(2,'0')}`;
     for(let s=0;s<=reachIdx;s++){
       stamps[shortOrder[s]] = stampNow();
-      if(shortOrder[s]!=='CONSENT_GIVEN' && shortOrder[s]!=='BOOKING_INITIATED') advance(1 + (s*2%5));
+      if(shortOrder[s]!=='SETTLEMENT_RECEIVED' && shortOrder[s]!=='CONSENT_GIVEN' && shortOrder[s]!=='BOOKING_INITIATED') advance(1 + (s*2%5));
     }
     if(outcome!=='IN_FLIGHT') stamps[outcome] = stampNow();
-    const state = outcome==='IN_FLIGHT' ? shortOrder[reachIdx] : outcome;
+    // Only non-terminal state an EMI request can hold — see genStampsFor().
+    const state = outcome==='IN_FLIGHT' ? 'PENDING' : outcome;
 
     const nudgeSent = stamps.SETTLEMENT_RECEIVED || '—';
     const c = {
       id: 'TEMI-3' + (9000 + i*3),
       bank:'IBL', customer:name, type, channel, campaign, amount, state, stamps,
       entryPath:'settled',
-      nudge:{name:campaign, channel, sent:nudgeSent, delivered:nudgeSent, clicked: state==='SETTLEMENT_RECEIVED' ? '—' : nudgeSent},
+      // Every case here has reached at least Consent Given (see reachIdx
+      // above), so it's always been clicked.
+      nudge:{name:campaign, channel, sent:nudgeSent, delivered:nudgeSent, clicked: nudgeSent},
       customerId:'CUST-'+(129000+i*13),
       accountId:'ACC-'+(789000+i*13),
       programId:PROGRAMS.IBL[i%PROGRAMS.IBL.length].id, programName:PROGRAMS.IBL[i%PROGRAMS.IBL.length].name,
@@ -2206,7 +2308,9 @@ function scopedCases(){
 function populateStateFilter(){
   const sel = document.getElementById('fState');
   const relevantStates = [...new Set(CASES.filter(c=>c.bank===viewingAs && c.type===conversionsProduct).map(c=>c.state))];
-  const order = [...stagesFor(viewingAs, conversionsProduct), ...TERMINAL];
+  // c.state only ever holds Pending or a terminal value now — no need for
+  // stagesFor()'s granular internal-stage order here anymore.
+  const order = ['PENDING', ...TERMINAL];
   relevantStates.sort((a,b)=>order.indexOf(a)-order.indexOf(b));
   const prev = sel.value;
   sel.innerHTML = '<option value="">All states</option>' + relevantStates.map(k=>`<option value="${k}">${STAGE_META[k].label}</option>`).join('');
@@ -2223,7 +2327,13 @@ function populateStateFilter(){
 // legitimately about ops triage lag on a FAILED case); callers decide
 // whether "stuck" framing applies, this just returns the real hours.
 function timeInStage(c){
-  const d = parseStamp(c.stamps[c.state]);
+  // A terminal state has its own discrete stamp (stamps.BOOKED, etc.) —
+  // Pending doesn't (it's a derived/collapsed status, not a logged event),
+  // so it falls back to whichever internal stage stamp is actually latest,
+  // i.e. how long since this request's last real movement.
+  const d = c.state==='PENDING'
+    ? Object.values(c.stamps).map(parseStamp).filter(Boolean).sort((a,b)=>b-a)[0]
+    : parseStamp(c.stamps[c.state]);
   if(!d) return 0;
   return Math.max(0, Math.round((maxDatasetDate() - d) / 3600000));
 }
@@ -2821,10 +2931,10 @@ function renderRecon(){
               const cancelled = b.cases.filter(c=>c.state==='CANCELLED').length;
               // "Still open" = consented but not yet resolved either way —
               // waiting on the settlement file to arrive, or arrived but not
-              // yet matched. Both are the same customer-facing "Pending"
-              // state (Section 9 of the master PRD), so counted together
-              // rather than splitting by which file has landed.
-              const stillOpenCases = b.cases.filter(c=>c.state==='CONSENT_GIVEN' || c.state==='SETTLEMENT_RECEIVED');
+              // yet matched. Both are the same customer-facing Pending
+              // state (Master PRD Section 11), so counted together rather
+              // than splitting by which file has landed.
+              const stillOpenCases = b.cases.filter(c=>c.state==='PENDING');
               // Of those still open, how many are closing in on the 7-day
               // expiry window — measured from the original auth, per the
               // master PRD's rule, not from consent or settlement receipt.
@@ -2859,7 +2969,12 @@ function openDrawer(id){
   const order = stagesFor(c.bank, c.type);
   const meta = STAGE_META[c.state];
   const isTerminal = TERMINAL.includes(c.state);
-  const currentIdx = isTerminal ? order.length : order.indexOf(c.state);
+  // Derived from stamp presence, not c.state — c.state is just Pending for
+  // every non-terminal case now, so it can't point at a stepper position
+  // itself. The "current" step is whichever one comes right after the
+  // last one that actually has a stamp.
+  const lastStampedIdx = order.reduce((m,s,i)=>c.stamps[s]?i:m, -1);
+  const currentIdx = isTerminal ? order.length : lastStampedIdx + 1;
 
   // Stage steps and journey-health events (API error / error screen) are
   // built as one list, sorted chronologically, rather than a fixed stage
