@@ -226,7 +226,12 @@
   contained like everything else in this file. For "share of a whole"
   cuts with few enough categories to actually read at a glance; not used
   for anything with more than ~8 slices. */
-  .pie-wrap{display:flex;align-items:center;gap:28px;flex-wrap:wrap;}
+  /* flex-start, not center — center vertically aligns the donut against
+  its own legend's height, and legend height varies with category count
+  (Channel: 5 rows, Credit Limit: 4), so two donuts side by side would
+  sit at different Y offsets relative to their labels above. flex-start
+  anchors every donut to the same position regardless of category count. */
+  .pie-wrap{display:flex;align-items:flex-start;gap:28px;flex-wrap:wrap;}
   .pie-donut{width:148px;height:148px;border-radius:50%;position:relative;flex-shrink:0;}
   .pie-donut::after{content:'';position:absolute;top:24%;left:24%;width:52%;height:52%;background:#fff;border-radius:50%;}
   .pie-legend{display:flex;flex-direction:column;gap:9px;font-size:13px;flex:1;min-width:180px;}
