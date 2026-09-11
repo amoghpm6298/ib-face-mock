@@ -302,6 +302,17 @@
     font-size:13px;color:var(--warning-text);font-weight:600;gap:8px;
   }
   .attn-card a{color:var(--blue-cta);font-weight:700;cursor:pointer;}
+  .health-strip{display:flex;gap:12px;flex-wrap:wrap;}
+  .health-chip{
+    flex:1;min-width:200px;border-radius:10px;padding:12px 16px;
+    display:flex;flex-direction:column;gap:2px;border:1px solid;
+  }
+  .health-chip.ok{border-color:var(--success-border);background:var(--success-bg);}
+  .health-chip.warn{border-color:var(--warning-border);background:#fffaf0;}
+  .health-chip-label{font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:6px;}
+  .health-chip.ok .health-chip-label{color:var(--success-text);}
+  .health-chip.warn .health-chip-label{color:var(--warning-text);}
+  .health-chip-detail{font-size:12.5px;color:var(--gray-600);}
 
   /* Filters bar */
   .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;}
@@ -772,8 +783,13 @@
           <option value="">All reasons</option>
         </select>
         <label class="chk-wrap"><input type="checkbox" id="efSla" onchange="onExceptionsFilterChange()"> SLA breached only</label>
+        <label class="chk-wrap"><input type="checkbox" id="efHideReviewed" checked onchange="onExceptionsFilterChange()"> Hide reviewed</label>
       </div>
 
+      <!-- Sorted worst-first by default (longest since failure) and with a
+      per-row Reviewed toggle — a work queue you clear, not a static list
+      you only filter. Reviewed state is in-memory (resets on reload),
+      same as any other client-side mock state on this page. -->
       <div class="table-wrap">
         <table>
           <thead>
@@ -785,6 +801,7 @@
               <th>Failed At Stage</th>
               <th>Retries</th>
               <th>Since Failure</th>
+              <th>Reviewed</th>
             </tr>
           </thead>
           <tbody id="exceptionsBody"></tbody>
@@ -799,6 +816,11 @@
     <!-- ===== RECONCILIATION ===== -->
     <div class="tab-panel" id="panel-recon">
       <div class="tabs" id="reconSegment" style="margin-bottom:20px;"></div>
+      <!-- Glanceable pass/fail before the detailed file tables — this tab is
+      checked to confirm nothing's broken, not read start to finish, so the
+      answer to "is everything healthy" shouldn't require reading every row
+      of every table below to conclude. -->
+      <div id="reconHealthStrip" style="margin-bottom:20px;"></div>
       <div id="reconBody"></div>
     </div>
   </div>
@@ -2624,8 +2646,10 @@ function renderExceptions(){
 
   // KPIs
   const slaBreached = failedCases.filter(c=>timeInStage(c)>=24).length;
+  const reviewedCount = failedCases.filter(c=>reviewedExceptionIds.has(c.id)).length;
   document.getElementById('exceptionKpiGrid').innerHTML = [
-    {label:'Open Exceptions', value: failedCases.length},
+    {label:'Open Exceptions', value: failedCases.length - reviewedCount},
+    {label:'Reviewed', value: reviewedCount},
     {label:'SLA Breached', value: slaBreached},
     {label:'Amount Mismatch — Needs Review', value: mismatchQueue.length},
     {label:'Avg. Time Since Failure', value: failedCases.length ? Math.round(failedCases.reduce((s,c)=>s+timeInStage(c),0)/failedCases.length)+'h' : '—'},
@@ -2680,12 +2704,18 @@ function renderExceptions(){
 
   const reasonFilter = document.getElementById('efReason').value;
   const slaOnly = document.getElementById('efSla').checked;
+  const hideReviewed = document.getElementById('efHideReviewed').checked;
 
   let rows = failedCases.filter(c=>{
     if(reasonFilter && c.failReason!==reasonFilter) return false;
     if(slaOnly && timeInStage(c)<24) return false;
+    if(hideReviewed && reviewedExceptionIds.has(c.id)) return false;
     return true;
   });
+  // Worst-first by default — a queue surfaces what needs attention most,
+  // not insertion order. Same "sort by severity" ops would actually want
+  // when working through a backlog, not just a filterable list.
+  rows.sort((a,b)=>timeInStage(b)-timeInStage(a));
 
   const totalPages = Math.max(1, Math.ceil(rows.length/PAGE_SIZE));
   if(exceptionsPage>totalPages) exceptionsPage = totalPages;
@@ -2698,7 +2728,8 @@ function renderExceptions(){
     const tm = TYPE_META[c.type];
     const hrs = timeInStage(c);
     const retries = pseudoRetries(c.id);
-    return `<tr onclick="openDrawer('${c.id}')">
+    const isReviewed = reviewedExceptionIds.has(c.id);
+    return `<tr onclick="openDrawer('${c.id}')" style="${isReviewed?'opacity:.5;':''}">
       <td class="mono">${c.id}</td>
       <td>${c.customer}</td>
       <td><span class="badge ${tm.badge}">${tm.label}</span></td>
@@ -2706,10 +2737,16 @@ function renderExceptions(){
       <td>${failedAtStage(c)}</td>
       <td>${retries}</td>
       <td>${hrs}h ${hrs>=24?'<span class="age-flag">SLA</span>':''}</td>
+      <td><label class="chk-wrap" onclick="event.stopPropagation();"><input type="checkbox" ${isReviewed?'checked':''} onchange="toggleExceptionReviewed('${c.id}')"></label></td>
     </tr>`;
   }).join('');
 }
 function goToExceptionsPage(p){ exceptionsPage = p; renderExceptions(); }
+let reviewedExceptionIds = new Set();
+function toggleExceptionReviewed(id){
+  if(reviewedExceptionIds.has(id)) reviewedExceptionIds.delete(id); else reviewedExceptionIds.add(id);
+  renderExceptions();
+}
 
 // Earliest actual timestamp for a given stamp key across a group of cases —
 // not just "the first case in array order," which can produce nonsensical
@@ -2729,6 +2766,60 @@ function earliestStamp(cases, key){
 let reconView = 'booking';
 
 function switchRecon(v){ reconView = v; renderRecon(); }
+
+// Glanceable pass/fail before the detailed file tables below — this tab
+// exists to confirm nothing's broken, rarely, not to be read start to
+// finish every time. Scoped to whichever segment is actually showing,
+// since IBL's auth path, IBL's booking-file path, and Yes Bank's
+// API-based path each have genuinely different things worth checking.
+function renderReconHealthStrip(){
+  const chips = [];
+  const alloc = (viewingAs==='IBL' ? ALLOCATION_FILE_HISTORY : ALLOCATION_FILE_HISTORY_YES)[0];
+  chips.push({
+    ok: alloc.status==='Ingested',
+    label: 'Allocation File',
+    detail: `${alloc.status} · ${alloc.receivedAt} · ${alloc.accountsAllocated.toLocaleString('en-IN')} accounts`
+  });
+
+  if(reconView==='auth'){
+    const jobsOk = RECON_JOB_HEALTH.triggerA.status==='ok' && RECON_JOB_HEALTH.triggerB.status==='ok';
+    chips.push({
+      ok: jobsOk,
+      label: 'Reconciliation Jobs',
+      detail: jobsOk ? `Trigger A/B both last ran on schedule` : `One or more triggers didn't run on schedule`
+    });
+    const pendingCases = scopedCases().filter(c=>c.state==='PENDING');
+    const nearingExpiry = pendingCases.filter(c=>{
+      const authDate = parseStamp(c.stamps.AUTH_RECEIVED);
+      if(!authDate) return false;
+      return (maxDatasetDate()-authDate)/(24*3600*1000) >= 5;
+    }).length;
+    chips.push({
+      ok: nearingExpiry===0,
+      label: 'Still Open',
+      detail: `${pendingCases.length} pending${nearingExpiry ? ` · ${nearingExpiry} nearing 7-day expiry` : ''}`
+    });
+  } else if(reconView==='booking'){
+    const pendingConfirm = scopedCases().filter(c=>c.stamps.BOOKING_FILE_SENT && !c.stamps.CONFIRMATION_FILE_RECEIVED).length;
+    chips.push({
+      ok: pendingConfirm<20,
+      label: 'Booking Files',
+      detail: `${pendingConfirm} awaiting a confirmation file back`
+    });
+  } else if(reconView==='targeting'){
+    chips.push({
+      ok: true,
+      label: 'Booking — API-Based',
+      detail: `Synchronous, no file exchange to wait on`
+    });
+  }
+
+  document.getElementById('reconHealthStrip').innerHTML = `<div class="health-strip">${chips.map(c=>`
+    <div class="health-chip ${c.ok?'ok':'warn'}">
+      <div class="health-chip-label">${c.ok?'✓':'⚠'} ${c.label}</div>
+      <div class="health-chip-detail">${c.detail}</div>
+    </div>`).join('')}</div>`;
+}
 
 function renderRecon(){
   // Segments are scoped to the bank being viewed — a bank-scoped view (which
@@ -2753,6 +2844,8 @@ function renderRecon(){
   document.getElementById('reconSegment').innerHTML = segments.map(s=>
     `<div class="tab ${s.id===reconView?'active':''}" onclick="switchRecon('${s.id}')">${s.label}</div>`
   ).join('');
+
+  renderReconHealthStrip();
 
   const body = document.getElementById('reconBody');
 
