@@ -215,6 +215,48 @@
     padding:5px 9px;border-radius:6px;white-space:nowrap;display:none;pointer-events:none;z-index:5;
   }
   .trend-bar-col:hover .trend-tooltip{display:block;}
+  .trend-bar-pair{display:flex;align-items:flex-end;gap:2px;height:100%;width:100%;justify-content:center;}
+  .trend-bar-a{width:8px;background:var(--blue-cta);border-radius:3px 3px 0 0;}
+  .trend-bar-b{width:8px;background:var(--purple-text);border-radius:3px 3px 0 0;}
+  .trend-legend{display:flex;gap:16px;align-items:center;margin-bottom:10px;font-size:12px;color:var(--gray-600);}
+  .trend-legend-dot{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px;}
+
+  /* CSS-only donut chart (conic-gradient) — no charting library, self-
+  contained like everything else in this file. For "share of a whole"
+  cuts with few enough categories to actually read at a glance; not used
+  for anything with more than ~8 slices. */
+  .pie-wrap{display:flex;align-items:center;gap:28px;flex-wrap:wrap;}
+  .pie-donut{width:148px;height:148px;border-radius:50%;position:relative;flex-shrink:0;}
+  .pie-donut::after{content:'';position:absolute;top:24%;left:24%;width:52%;height:52%;background:#fff;border-radius:50%;}
+  .pie-legend{display:flex;flex-direction:column;gap:9px;font-size:13px;flex:1;min-width:180px;}
+  .pie-legend-item{display:flex;align-items:baseline;gap:8px;}
+  .pie-legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0;margin-top:2px;}
+  .pie-legend-label{font-weight:600;color:var(--neutral-900);}
+  .pie-legend-meta{color:var(--gray-500);font-size:12px;}
+
+  /* Section headers for EMI Analytics' story grouping — a visual break
+  when scrolling a page with ~15+ cards, not just an implicit card order. */
+  .section-heading{
+    font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--gray-500);margin:0 0 12px;padding-top:24px;border-top:1px solid var(--gray-200);
+  }
+  .section-heading.first{margin-top:0;padding-top:0;border-top:none;}
+  /* Multiple small donuts folded into one outer card instead of one card
+  per donut — same content, fewer card boundaries to visually parse. */
+  .segment-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px 36px;}
+  /* 3-up variant — for an odd cell count that would otherwise wrap 2+1
+  and leave the last row's second slot blank, same wasted-space problem
+  fixed elsewhere on this page. */
+  .segment-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px 32px;}
+  .segment-grid-3 .segment-cell:nth-child(-n+3){padding-top:0;border-top:none;}
+  @media (max-width: 760px){
+    .segment-grid, .segment-grid-3{grid-template-columns:1fr;}
+    .segment-cell:nth-child(-n+2){padding-top:16px;border-top:1px solid var(--gray-100,#f2f4f7);}
+    .segment-cell:first-child{padding-top:0;border-top:none;}
+  }
+  .segment-cell{padding-top:16px;border-top:1px solid var(--gray-100,#f2f4f7);}
+  .segment-cell:nth-child(-n+2){padding-top:0;border-top:none;}
+  .segment-label{font-size:12.5px;font-weight:700;color:var(--neutral-900);margin:0 0 10px;}
 
   table{width:100%;border-collapse:collapse;font-size:13px;}
   thead th{
@@ -603,67 +645,59 @@
         <h1 class="page-title">EMI Conversions</h1>
         <p class="page-sub">End-to-end visibility into every EMI conversion attempt, across channels.</p>
       </div>
-      <div class="viewing-as">
-        <label>Viewing as</label>
-        <select id="viewingAs" onchange="onViewingAsChange()">
-          <option value="IBL">IndusInd Bank (IBL)</option>
-          <option value="YES">Yes Bank</option>
-        </select>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+        <!-- Defaults to All time, unlike Analytics' 30-day default — an ops
+        queue shouldn't silently hide an old still-open request just
+        because it's outside a default window; that's exactly the kind of
+        thing ops needs to see, not miss. -->
+        <div class="viewing-as">
+          <label>Date range</label>
+          <select id="conversionsRange" onchange="onConversionsRangeChange()">
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="all" selected>All time</option>
+            <option value="custom">Custom range</option>
+          </select>
+        </div>
+        <div class="viewing-as" id="conversionsCustomRangeWrap" style="display:none;">
+          <label>From</label>
+          <input type="date" id="conversionsRangeFrom" min="2026-07-26" max="2026-08-24" onchange="renderRequests();renderExceptions();renderRecon();">
+          <label style="margin-left:8px;">To</label>
+          <input type="date" id="conversionsRangeTo" min="2026-07-26" max="2026-08-24" onchange="renderRequests();renderExceptions();renderRecon();">
+        </div>
+        <!-- One global Product filter for the whole page (Overview, Requests,
+        Exceptions, Reconciliation all read from it) — mirrors EMI Analytics'
+        pattern, so switching products behaves identically on both pages
+        instead of each tab having its own disconnected local control. -->
+        <div class="viewing-as">
+          <label>Product</label>
+          <select id="conversionsProductFilter" onchange="onConversionsProductChange()">
+            <option value="Single">Txn-to-EMI</option>
+            <option value="Multi">Multi-Txn-to-EMI</option>
+            <option value="Outstanding">OS-to-EMI</option>
+          </select>
+        </div>
+        <div class="viewing-as">
+          <label>Viewing as</label>
+          <select id="viewingAs" onchange="onViewingAsChange()">
+            <option value="IBL">IndusInd Bank (IBL)</option>
+            <option value="YES">Yes Bank</option>
+          </select>
+        </div>
       </div>
     </div>
 
     <div class="tabs">
-      <div class="tab active" data-tab="overview" onclick="switchTab('overview')">Overview</div>
-      <div class="tab" data-tab="requests" onclick="switchTab('requests')">Requests</div>
+      <div class="tab active" data-tab="requests" onclick="switchTab('requests')">Requests</div>
       <div class="tab" data-tab="exceptions" onclick="switchTab('exceptions')">Exceptions</div>
       <div class="tab" data-tab="recon" onclick="switchTab('recon')">Reconciliation</div>
     </div>
 
-    <!-- ===== OVERVIEW ===== -->
-    <div class="tab-panel active" id="panel-overview">
-      <div class="attn-strip">
-        <div class="attn-card">⚠ Requests need attention <a onclick="switchTab('exceptions')">View Exceptions →</a></div>
-        <div class="attn-card">📥 Settlement batches pending recon <a onclick="switchTab('recon')">View Reconciliation →</a></div>
-      </div>
-
-      <div class="kpi-grid" id="kpiGrid"></div>
-
-      <div class="card" style="margin-bottom:20px;">
-        <p class="card-title">By Product</p>
-        <p class="card-sub">Conversion performance by product, last 30 days</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Product</th><th>Volume</th><th>Conv. Rate (of Resolved)</th><th>GMV Converted</th></tr></thead>
-            <tbody id="productBreakdownBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="row-flex">
-        <div class="card" style="flex:1 1 100%;">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-            <div>
-              <p class="card-title" style="margin-bottom:0;">Conversion Funnel</p>
-              <p class="card-sub" id="funnelSub">—</p>
-            </div>
-            <div class="tabs" style="border-bottom:none;margin-bottom:0;" id="productSegment"></div>
-          </div>
-          <div id="funnelBody"></div>
-        </div>
-      </div>
-    </div>
-
     <!-- ===== REQUESTS ===== -->
-    <div class="tab-panel" id="panel-requests">
+    <div class="tab-panel active" id="panel-requests">
       <div class="filters">
         <select id="fState" onchange="onRequestsFilterChange()">
           <option value="">All states</option>
-        </select>
-        <select id="fType" onchange="onRequestsFilterChange()">
-          <option value="">All products</option>
-          <option value="Single">Txn-to-EMI</option>
-          <option value="Multi">Multi-Txn-to-EMI</option>
-          <option value="Outstanding">OS-to-EMI</option>
         </select>
         <select id="fChannel" onchange="onRequestsFilterChange()">
           <option value="">All channels</option>
@@ -671,8 +705,9 @@
           <option value="WhatsApp">WhatsApp</option>
           <option value="PWA">PWA</option>
           <option value="Email">Email</option>
+          <option value="RCS">RCS</option>
         </select>
-        <input type="text" id="fSearch" placeholder="Search Request ID or customer" oninput="onRequestsFilterChange()">
+        <input type="text" id="fSearch" placeholder="Search Request ID, customer, or bank transaction ref" oninput="onRequestsFilterChange()">
         <label class="chk-wrap"><input type="checkbox" id="fStuck" onchange="onRequestsFilterChange()"> Stuck &gt; 24h</label>
         <button class="btn secondary small" onclick="clearFilters()">Clear filters</button>
       </div>
@@ -725,12 +760,6 @@
         <select id="efReason" onchange="onExceptionsFilterChange()">
           <option value="">All reasons</option>
         </select>
-        <select id="efProduct" onchange="onExceptionsFilterChange()">
-          <option value="">All products</option>
-          <option value="Single">Txn-to-EMI</option>
-          <option value="Multi">Multi-Txn-to-EMI</option>
-          <option value="Outstanding">OS-to-EMI</option>
-        </select>
         <label class="chk-wrap"><input type="checkbox" id="efSla" onchange="onExceptionsFilterChange()"> SLA breached only</label>
       </div>
 
@@ -745,7 +774,6 @@
               <th>Failed At Stage</th>
               <th>Retries</th>
               <th>Since Failure</th>
-              <th></th>
             </tr>
           </thead>
           <tbody id="exceptionsBody"></tbody>
@@ -839,10 +867,25 @@
       <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
         <div class="viewing-as">
           <label>Date range</label>
-          <select id="analyticsRange" onchange="renderAnalytics()">
+          <select id="analyticsRange" onchange="onAnalyticsRangeChange()">
             <option value="7">Last 7 days</option>
             <option value="30" selected>Last 30 days</option>
             <option value="all">All time</option>
+            <option value="custom">Custom range</option>
+          </select>
+        </div>
+        <div class="viewing-as" id="analyticsCustomRangeWrap" style="display:none;">
+          <label>From</label>
+          <input type="date" id="analyticsRangeFrom" min="2026-07-26" max="2026-08-24" onchange="renderAnalytics()">
+          <label style="margin-left:8px;">To</label>
+          <input type="date" id="analyticsRangeTo" min="2026-07-26" max="2026-08-24" onchange="renderAnalytics()">
+        </div>
+        <div class="viewing-as">
+          <label>Product</label>
+          <select id="analyticsProductFilter" onchange="renderAnalytics()">
+            <option value="Single">Txn-to-EMI</option>
+            <option value="Multi">Multi-Txn-to-EMI</option>
+            <option value="Outstanding">OS-to-EMI</option>
           </select>
         </div>
         <div class="viewing-as">
@@ -855,63 +898,78 @@
       </div>
     </div>
 
+    <div class="section-heading first">Headline &amp; Momentum</div>
+    <!-- Real business KPI terminology (Requested/Success/Pending/Reject
+    Count+Volume, plus Average) — matches what the business actually tracks
+    today, per product. The Product filter above is always scoped to one
+    product (no "All Products" state), so this always shows that product's
+    numbers — never blended across products, same reason the funnel/Time-
+    in-Stage cards below are also always product-specific. -->
+    <div class="card" style="margin-bottom:20px;" id="businessKpiCard">
+      <p class="card-title">Business KPIs<span id="businessKpiProductLabel"></span></p>
+      <div id="businessKpiSections"></div>
+    </div>
+
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Bookings Trend</p>
       <p class="card-sub" id="trendSub">EMI bookings per day</p>
       <div class="trend-chart" id="trendChart"></div>
     </div>
 
-    <div class="card" style="margin-bottom:20px;" id="authVsSettledCard">
-      <p class="card-title">Auth-Triggered vs. Settled-Only</p>
-      <p class="card-sub">Incremental conversion rate vs. the settled-only baseline — the actual business case for this project (Master PRD, Success Metrics). IBL only: Yes Bank has no auth-path concept to compare against.</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th></th><th>Volume</th><th>Conv. Rate (of Resolved)</th><th>Avg. Time to Book</th></tr></thead>
-          <tbody id="authVsSettledBody"></tbody>
-        </table>
-      </div>
-      <p class="card-sub" id="authVsSettledCallout" style="margin-top:10px;margin-bottom:0;"></p>
-    </div>
 
-    <div class="row-flex" style="margin-bottom:20px;">
-      <div class="card">
-        <p class="card-title">By Product</p>
-        <p class="card-sub">Volume, conversion and revenue by product</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Product</th><th>Volume</th><th>Conv. Rate (of Resolved)</th><th>GMV Converted</th><th>Revenue Impact</th></tr></thead>
-            <tbody id="analyticsProductBody"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="card">
-        <p class="card-title">By Channel</p>
-        <p class="card-sub">Which delivery channel actually converts</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Channel</th><th>Sent</th><th>Clicked</th><th>Converted</th><th>Conv. Rate (of Sent)</th></tr></thead>
-            <tbody id="analyticsChannelBody"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-bottom:20px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <div>
-          <p class="card-title" style="margin-bottom:0;">Conversion Funnel</p>
-          <p class="card-sub" id="analyticsFunnelSub">—</p>
-        </div>
-        <div class="tabs" style="border-bottom:none;margin-bottom:0;" id="analyticsProductSegment"></div>
-      </div>
+    <!-- ===== Where the funnel breaks, and why (story section 3) ===== -->
+    <div class="section-heading">Funnel &amp; Drop-off</div>
+    <div class="card" style="margin-bottom:20px;" id="funnelCard">
+      <p class="card-title">Conversion Funnel</p>
+      <p class="card-sub" id="analyticsFunnelSub">—</p>
       <div id="analyticsFunnelBody"></div>
       <div id="dropoffCallout"></div>
     </div>
-
-    <div class="card" style="margin-bottom:20px;">
+    <div class="card" style="margin-bottom:20px;" id="stageTimingCard">
       <p class="card-title">Time in Stage</p>
       <p class="card-sub">Average time between consecutive stages — where conversions are actually slowing down</p>
       <div id="stageTimingBody"></div>
+    </div>
+
+    <!-- Real reject-reason vocabulary per product (Outstanding's is
+    genuinely different from Single/Multi's — file-based, no settlement-
+    matching or booking-API concept at all) — same reasons shown as a chart
+    in Exceptions on EMI Conversions; this is the table view, on the
+    insights page, scoped to whichever product is selected above. Sits
+    right after the funnel/timing it explains — the funnel shows *where*
+    people are lost, this shows *why*, not scattered among unrelated cuts. -->
+    <div class="card" style="margin-bottom:20px;" id="rejectReasonsCard">
+      <p class="card-title">Rejection Reasons<span id="rejectReasonsProductLabel"></span></p>
+      <p class="card-sub" id="rejectReasonsSub">Where this product's Failed requests are actually failing</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Reason</th><th>Count</th><th>% of Rejects</th></tr></thead>
+          <tbody id="rejectReasonsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== Nudge performance — what's actually driving people into the
+    funnel above (story section 4). Works for every product, not just
+    Txn-to-EMI — OS-to-EMI cross-sell nudges are real nudges too, so this
+    reads off filteredCases (product-scoped by the global filter, same as
+    By Channel/Nudge→Conversion below), not the auth-path-only cases the
+    funnel/timing cards above use. ===== -->
+    <div class="section-heading">Nudge Performance</div>
+    <div class="card" style="margin-bottom:20px;" id="nudgesSentTrendCard">
+      <p class="card-title">Nudges Sent<span id="nudgesSentTrendProductLabel"></span></p>
+      <p class="card-sub">Nudges sent per day, this product</p>
+      <div class="trend-chart" id="nudgesSentTrend"></div>
+    </div>
+    <div class="card" style="margin-bottom:20px;" id="nudgesSentVsConversionCard">
+      <p class="card-title">Nudge Funnel by Day<span id="nudgesSentVsConversionProductLabel"></span></p>
+      <p class="card-sub">Sent → Landing Page Visited (clicked the nudge, the first real step) → Converted. Do more nudges sent on a given day actually carry through, or is there drop-off/lag?</p>
+      <div class="trend-legend">
+        <span><span class="trend-legend-dot" style="background:var(--blue-cta);"></span>Nudges Sent</span>
+        <span><span class="trend-legend-dot" style="background:var(--warning-border);"></span>Landing Page Visited</span>
+        <span><span class="trend-legend-dot" style="background:var(--purple-text);"></span>Converted</span>
+      </div>
+      <div class="trend-chart" id="nudgesSentVsConversionTrend"></div>
     </div>
 
     <div class="card">
@@ -929,12 +987,163 @@
               <th>Consent Given</th>
               <th>Converted</th>
               <th>Conv. Rate (of Sent)</th>
-              <th>Revenue Impact</th>
+              <th>Converted Amount</th>
             </tr>
           </thead>
           <tbody id="nudgeCorrelationBody"></tbody>
         </table>
       </div>
+      <!-- Same reasoning — a live nudge program runs far more campaigns at
+      once than fit on one screen; paginated instead of assuming a small,
+      fixed campaign count. -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">
+        <p class="card-sub" id="nudgeCorrelationCount" style="margin:0;"></p>
+        <div class="pagination" id="nudgeCorrelationPagination"></div>
+      </div>
+    </div>
+
+    <!-- ===== Who's converting — segment cuts (story section 5) =====
+    Paired by visual weight, not just topic — a compact donut next to a
+    12-row unpaginated table left one side of the row mostly blank space,
+    so donuts pair with donuts and same-length tables pair with each
+    other, not by whichever two cuts happened to be adjacent. -->
+    <div class="section-heading">Who's Converting</div>
+    <!-- Channel + Credit Limit — no natural third partner once Age moved
+    to pair with State and Processing Fee moved to pair with Interest
+    Rate, so this stays a 2-up card. -->
+    <div class="card" style="margin-bottom:20px;">
+      <p class="card-title">By Channel &amp; Credit Limit</p>
+      <p class="card-sub">Share of volume and conversion rate across each dimension — orthogonal to product</p>
+      <div class="segment-grid">
+        <div class="segment-cell">
+          <p class="segment-label">By Channel</p>
+          <div id="analyticsChannelPie"></div>
+        </div>
+        <div class="segment-cell">
+          <p class="segment-label">By Credit Limit Band</p>
+          <div id="creditLimitPie"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Customer profile cuts, grouped together side by side. -->
+    <div class="card" style="margin-bottom:20px;">
+      <p class="card-title">Customer Segments</p>
+      <p class="card-sub">Share of volume and conversion rate — customer's age band and state, both orthogonal to product</p>
+      <div class="segment-grid">
+        <div class="segment-cell">
+          <p class="segment-label">By Age Band</p>
+          <div id="ageBandPie"></div>
+        </div>
+        <div class="segment-cell">
+          <p class="segment-label">By State</p>
+          <div id="statePie"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Offer terms, grouped together side by side — both are the actual
+    pricing terms offered on the conversion, not customer attributes. -->
+    <div class="card" style="margin-bottom:20px;">
+      <p class="card-title">Offer Terms</p>
+      <p class="card-sub">Share of volume and conversion rate — the processing fee and interest rate actually offered on each conversion</p>
+      <div class="segment-grid">
+        <div class="segment-cell">
+          <p class="segment-label">By Processing Fee Offered</p>
+          <div id="processingFeePie"></div>
+        </div>
+        <div class="segment-cell">
+          <p class="segment-label">By Interest Rate Offered</p>
+          <div id="interestRatePie"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row-flex" style="margin-bottom:20px;">
+      <div class="card">
+        <p class="card-title">By Merchant Category</p>
+        <p class="card-sub">Only ever categories that passed ingestion suppression (Section 6) — a case can't exist here otherwise</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Category</th><th>Volume</th><th>Conv. Rate</th><th>GMV Converted</th></tr></thead>
+            <tbody id="analyticsMccBody"></tbody>
+          </table>
+        </div>
+        <!-- 5 rows/page — paired below with Amount Bucket (4 rows, no
+        pagination needed), both short tables of similar height. -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">
+          <p class="card-sub" id="analyticsMccCount" style="margin:0;"></p>
+          <div class="pagination" id="analyticsMccPagination"></div>
+        </div>
+      </div>
+      <!-- Does ticket size predict conversion? A ₹2L Outstanding balance and
+      a ₹2L Single transaction aren't comparable in the same bucket set the
+      same way a Channel or MCC cut would be — but within one product, this
+      is exactly the kind of cut ops actually wants: is Reject rate worse on
+      large tickets, does volume cluster in a range no nudge is currently
+      tuned for, etc. Product-gated, same as the funnel above. -->
+      <div class="card" id="amountBucketCard">
+        <p class="card-title" id="amountBucketTitle">Conversion by Amount Bucket</p>
+        <p class="card-sub" id="amountBucketSub">Where volume concentrates, and whether conversion holds up at higher ticket sizes</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th id="amountBucketColHeader">Amount Bucket</th><th>Volume</th><th>Conv. Rate</th><th>GMV Converted</th></tr></thead>
+            <tbody id="amountBucketBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <p class="card-title">By Program</p>
+      <p class="card-sub">Volume and amount booked by card program — orthogonal to product, so this isn't gated by the Product filter above. No conversion rate shown here — this data doesn't track a program's true eligible-account base, only the requests it happened to generate.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Program</th><th>Volume</th><th>Total Amount Booked</th></tr></thead>
+          <tbody id="byProgramBody"></tbody>
+        </table>
+      </div>
+      <!-- A real issuer portfolio runs dozens of live programs — this stays
+      paginated rather than dumping every row inline, same reasoning as
+      Requests/Exceptions on the Conversions page. -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">
+        <p class="card-sub" id="byProgramCount" style="margin:0;"></p>
+        <div class="pagination" id="byProgramPagination"></div>
+      </div>
+    </div>
+
+    <div class="section-heading">Technical Health</div>
+    <!-- Which kind of API error is actually happening, not just the raw
+    count shown in Business KPIs above — same "technical diagnostic,
+    secondary to business metrics" placement as Journey Errors Trend below. -->
+    <div class="card" id="apiErrorTypesCard">
+      <p class="card-title">API Error Types<span id="apiErrorTypesProductLabel"></span></p>
+      <p class="card-sub">Breakdown of journey-level API errors by type — a customer-facing frontend/API hiccup, distinct from a business rejection reason</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Error Type</th><th>Count</th></tr></thead>
+          <tbody id="apiErrorTypesBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Trend view of the journey-health totals shown in Business KPIs
+    above — attributed to each case's entry date (when the customer was
+    actually in the journey UI), so a spike (e.g. an API outage on one day)
+    is visible over time, not just buried in a period total. Sits at the
+    bottom, below the primary conversion/funnel/nudge sections — a
+    technical diagnostic signal, secondary to the core business metrics
+    everything above it represents (matches where the real reference
+    screenshots placed these same tiles, too). Same visibility rule as
+    businessKpiCard — one product at a time. -->
+    <div class="card" style="margin-top:20px;" id="journeyErrorsTrendCard">
+      <p class="card-title">Journey Errors Trend<span id="journeyErrorsTrendProductLabel"></span></p>
+      <p class="card-sub">API errors and error screens per day — attributed to each case's journey entry date</p>
+      <div class="trend-legend">
+        <span><span class="trend-legend-dot" style="background:var(--error-border);"></span>API Errors</span>
+        <span><span class="trend-legend-dot" style="background:var(--warning-border);"></span>Error Screens</span>
+      </div>
+      <div class="trend-chart" id="journeyErrorsTrend"></div>
     </div>
   </div>
 </div>
@@ -1309,6 +1518,63 @@ function stagesFor(bank, type){
 }
 function bankLabel(b){ return b==='IBL' ? 'IndusInd (IBL)' : 'Yes Bank'; }
 
+// At this business's real scale, ₹ amounts read in Crore, not Lakh — the
+// real reference screenshots this file was built from say "Total Volume:
+// 22.86 Cr" and "Requested Volume: 69.21 Cr", not lakhs. Adaptive: once a
+// figure crosses ₹1 Cr it switches units, so a genuinely small slice (a
+// single merchant category, a niche program) doesn't read as an awkward
+// "₹0.08 Cr" — it stays in Lakh until it's actually big enough for Crore
+// to be the natural unit, same judgment call any real finance dashboard
+// makes.
+function fmtAmount(n){
+  return n>=10000000 ? '₹'+(n/10000000).toFixed(2)+' Cr' : '₹'+(n/100000).toFixed(1)+'L';
+}
+
+// 12 distinct colors — enough for Interest Rate (12 values) and State (12
+// states) to each get their own slice color with no repeats, not just the
+// original 8-color set built for smaller cuts.
+const PIE_COLORS = ['#0a66ef','#6941c6','#f97066','#fcb022','#12b76a','#0e9384','#875bf7','#fd6f8e','#e04f16','#155eef','#ba24d5','#667085'];
+// Composition/share-of-whole cuts read faster as a donut than a table —
+// the eye picks up "SMS is nearly half" instantly, where a table makes you
+// read every row and do the comparison yourself. Only used where the
+// category count stays small enough to actually read (<=8) — Volume is
+// always the slice size (the one number that legitimately sums to 100%);
+// rate/amount go in the legend text instead, since a rate doesn't sum to a
+// whole and would be a meaningless pie.
+function renderPieChart(containerId, rows, extraFn){
+  const total = rows.reduce((s,r)=>s+r.volume,0) || 1;
+  let acc = 0;
+  const stops = rows.map((r,i)=>{
+    const start = (acc/total)*360; acc += r.volume; const end = (acc/total)*360;
+    return `${PIE_COLORS[i%PIE_COLORS.length]} ${start}deg ${end}deg`;
+  }).join(', ');
+  const legendHtml = rows.map((r,i)=>{
+    const pct = Math.round((r.volume/total)*100);
+    return `<div class="pie-legend-item">
+      <span class="pie-legend-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]};margin-top:3px;"></span>
+      <div><div class="pie-legend-label">${r.label}</div><div class="pie-legend-meta">${r.volume.toLocaleString()} (${pct}%)${extraFn?' · '+extraFn(r):''}</div></div>
+    </div>`;
+  }).join('');
+  document.getElementById(containerId).innerHTML = rows.length ? `
+    <div class="pie-wrap">
+      <div class="pie-donut" style="background:conic-gradient(${stops});"></div>
+      <div class="pie-legend">${legendHtml}</div>
+    </div>` : '<p class="card-sub">No data for this range.</p>';
+}
+
+// A bare percentage lies about its own confidence — "100%" off 2 resolved
+// cases reads identically to "100%" off 200. Every rate cut on this page
+// (By Program, By MCC, Amount Bucket, Auth-vs-Settled) shows the fraction
+// alongside the percentage so a reader can judge that for themselves, and
+// the fraction is flagged when the denominator is small enough that the
+// rate could swing wildly on one more data point.
+function fmtRateN(numerator, denominator){
+  if(!denominator) return '—';
+  const rate = Math.round((numerator/denominator)*100);
+  const lowN = denominator < 5;
+  return `${rate}%<span class="mono" style="font-size:11px;margin-left:5px;color:var(${lowN?'--warning-text':'--gray-400'});">(${numerator}/${denominator})</span>`;
+}
+
 /* ---------------- Mock data ---------------- */
 const CASES = [
   { id:'TEMI-30142', bank:'IBL', customer:'Aarav Mehta', type:'Single', channel:'SMS', campaign:'Festive EMI Push', amount:48500, state:'BOOKED',
@@ -1400,6 +1666,32 @@ const INGESTION_FUNNEL = {
   consented: 268,
 };
 
+// Job health for Reconciliation's two triggers (Master PRD Section 8) —
+// ops visibility into whether the scheduled jobs are actually running, not
+// just what they found. Illustrative, same reasoning as INGESTION_FUNNEL.
+const RECON_JOB_HEALTH = {
+  triggerA: { label:'Trigger A — on settlement file arrival', lastRun:'22 Aug, 03:40', recordsProcessed: 214, status:'ok' },
+  triggerB: { label:'Trigger B — daily 7-day expiry sweep', lastRun:'22 Aug, 00:15', recordsProcessed: 46, status:'ok' },
+};
+
+// Yes Bank's own allocation file — same monthly cadence/concept as IBL's,
+// a separate instance since these are different banks' own file transfers.
+const ALLOCATION_FILE_HISTORY_YES = [
+  {batchId:'ALLOC-YES-2026-08', receivedAt:'04 Aug, 05:00', accountsAllocated:31460, status:'Ingested'},
+  {batchId:'ALLOC-YES-2026-07', receivedAt:'03 Jul, 05:00', accountsAllocated:29875, status:'Ingested'},
+];
+
+// The allocation file (Master PRD Section 6, step 1) — sent in the first
+// week of every month, unchanged from the existing Txn-to-EMI process.
+// Only accounts in this file are eligible for the auth-consent flow at
+// all; it's the very first ingestion trigger, ahead of the auth file.
+// Illustrative, same reasoning as INGESTION_FUNNEL/RECON_JOB_HEALTH — not
+// derived from CASES, monthly cadence doesn't fit this mock's ~20-day span.
+const ALLOCATION_FILE_HISTORY = [
+  {batchId:'ALLOC-IBL-2026-08', receivedAt:'03 Aug, 06:00', accountsAllocated:48210, status:'Ingested'},
+  {batchId:'ALLOC-IBL-2026-07', receivedAt:'02 Jul, 06:00', accountsAllocated:46875, status:'Ingested'},
+];
+
 const TYPE_META = {
   Single:      {label:'Txn-to-EMI',        badge:'info'},
   Multi:       {label:'Multi-Txn-to-EMI',  badge:'purple'},
@@ -1410,10 +1702,96 @@ function journeyIdFor(name){
   return 'JRN-'+(h%90000+10000);
 }
 
+// Merchant categories a case can actually carry — deliberately excludes
+// every restricted MCC (fuel, jewelry, cash, gambling, etc., Section 6).
+// A case only exists here at all because it passed ingestion suppression,
+// so it can never be one of the restricted categories in the first place.
+const MCC_CATEGORIES = ['Electronics','Travel','Lifestyle','Furniture','Healthcare','Education','Dining','Home Appliances'];
+
+// Customer/offer group-by dimensions — not in the Master PRD, not
+// previously modeled anywhere in this file. Credit limit/state/age are
+// customer-level (derived from customerId so the same customer reads
+// consistently across cases, not per-case-random); processing fee/interest
+// rate offered are offer-level (genuinely vary per conversion, deterministic
+// on i like everything else in this file). No causal link is engineered
+// between any of these and outcome — the resulting conversion rate per
+// bucket is whatever this file's existing outcome generation already
+// produces, not force-fit to match any particular narrative.
+const CREDIT_LIMIT_BANDS = [
+  {label:'Below ₹1L', min:0, max:100000},
+  {label:'₹1L – 3L', min:100000, max:300000},
+  {label:'₹3L – 5L', min:300000, max:500000},
+  {label:'₹5L+', min:500000, max:Infinity},
+];
+function creditLimitBandFor(amount){
+  return CREDIT_LIMIT_BANDS.find(b=>amount>=b.min && amount<b.max) || CREDIT_LIMIT_BANDS[CREDIT_LIMIT_BANDS.length-1];
+}
+const AGE_BANDS = ['Under 30','30-39','40-49','50-59','60+'];
+const CUSTOMER_STATES = ['Maharashtra','Telangana','Delhi','Uttar Pradesh','Gujarat','Tamil Nadu','Karnataka','West Bengal','Rajasthan','Punjab','Kerala','Haryana'];
+const PROCESSING_FEE_OPTIONS = [0, 0.5, 1, 1.5, 2];
+const INTEREST_RATE_OPTIONS = [12,13,14,15,16,17,18,19,20,21,22,24];
+// Stable per-customer seed from customerId's trailing digits — so the same
+// customer's credit limit/state/age band don't change across their
+// different cases, unlike offer terms which genuinely can vary per case.
+function seedFromId(idStr){
+  const m = (idStr||'').match(/(\d+)/);
+  return m ? parseInt(m[1],10) : 0;
+}
+
+// Shared bucket scheme across products — deliberately generic (not tuned
+// separately per product) so the table itself shows where each product's
+// volume actually clusters, rather than pre-deciding it via custom ranges.
+const AMOUNT_BUCKETS = [
+  {label:'< ₹25k', min:0, max:25000},
+  {label:'₹25k – 50k', min:25000, max:50000},
+  {label:'₹50k – 100k', min:50000, max:100000},
+  {label:'₹100k – 200k', min:100000, max:200000},
+  {label:'₹200k+', min:200000, max:Infinity},
+];
+function amountBucketFor(amount){
+  return AMOUNT_BUCKETS.find(b=>amount>=b.min && amount<b.max) || AMOUNT_BUCKETS[AMOUNT_BUCKETS.length-1];
+}
+
+// Journey-level technical error TYPE — a case with apiErrorCount>0 gets one
+// of these, so the Journey Errors section can show which kind of failure
+// is actually happening, not just a raw count. Distinct from failReason
+// (a business/backend rejection) — these are frontend/API-layer symptoms.
+const API_ERROR_TYPES = ['Timeout', '5xx Server Error', 'Invalid Session Token', 'Rate Limited', 'Malformed Response'];
+
 /* ---------------- Identifiers (Account / Customer / Program / Journey) ---------------- */
+// A real issuer's card portfolio runs to dozens of live programs, not two —
+// kept realistic-length here (not literally 100) so the mock stays legible,
+// but enough that By Program (EMI Analytics) actually needs its pagination,
+// not just has it wired for a future that never shows up in the demo.
 const PROGRAMS = {
-  IBL: [ {id:'PRG-IBL-2201', name:'IndusInd Legend Credit Card'}, {id:'PRG-IBL-2210', name:'IndusInd Pinnacle Card'} ],
-  YES: [ {id:'PRG-YES-1105', name:'Yes Bank Prosperity Rewards'}, {id:'PRG-YES-1120', name:'Yes Bank BYOM Elite'} ],
+  IBL: [
+    {id:'PRG-IBL-2201', name:'IndusInd Legend Credit Card'},
+    {id:'PRG-IBL-2210', name:'IndusInd Pinnacle Card'},
+    {id:'PRG-IBL-2215', name:'IndusInd Platinum Aura Edge'},
+    {id:'PRG-IBL-2220', name:'IndusInd Tiger Credit Card'},
+    {id:'PRG-IBL-2225', name:'IndusInd EazyDiner Signature'},
+    {id:'PRG-IBL-2230', name:'IndusInd Celesta'},
+    {id:'PRG-IBL-2235', name:'IndusInd Avios Visa Infinite'},
+    {id:'PRG-IBL-2240', name:'IndusInd Nexxt Credit Card'},
+    {id:'PRG-IBL-2245', name:'IndusInd Duo Credit Card'},
+    {id:'PRG-IBL-2250', name:'IndusInd Iconia'},
+    {id:'PRG-IBL-2255', name:'IndusInd Zenith'},
+    {id:'PRG-IBL-2260', name:'IndusInd Crest'},
+  ],
+  YES: [
+    {id:'PRG-YES-1105', name:'Yes Bank Prosperity Rewards'},
+    {id:'PRG-YES-1120', name:'Yes Bank BYOM Elite'},
+    {id:'PRG-YES-1130', name:'Yes Bank Prosperity Edge'},
+    {id:'PRG-YES-1140', name:'Yes Bank Marquis Credit Card'},
+    {id:'PRG-YES-1150', name:'Yes Bank Wellness Plus'},
+    {id:'PRG-YES-1160', name:'Yes First Preferred'},
+    {id:'PRG-YES-1170', name:'Yes First Exclusive'},
+    {id:'PRG-YES-1180', name:'Yes Bank Kiwi Credit Card'},
+    {id:'PRG-YES-1190', name:'Yes Bank Ace Credit Card'},
+    {id:'PRG-YES-1200', name:'Yes Bank Reserv'},
+    {id:'PRG-YES-1210', name:'Yes Bank Elite+ Credit Card'},
+    {id:'PRG-YES-1220', name:'Yes Bank Premia'},
+  ],
 };
 let __seq = 100;
 CASES.forEach((c,i)=>{
@@ -1421,18 +1799,41 @@ CASES.forEach((c,i)=>{
   c.customerId = 'CUST-'+(118000+__seq);
   c.accountId  = 'ACC-'+(778000+__seq);
   c.journeyId  = journeyIdFor(c.campaign);
+  // Bank-side reference (RRN-style) — what a support agent or the bank
+  // actually has on hand from a customer call, unlike our own internal
+  // TEMI-/YEMI- case ID. Requests search (Section 6) matches on this too.
+  c.bankTxnRef = String(240800000000 + __seq*37).slice(0,12);
+  c.mccCategory = MCC_CATEGORIES[i % MCC_CATEGORIES.length];
   const progs = PROGRAMS[c.bank];
   const p = progs[i % progs.length];
   c.programId = p.id;
   c.programName = p.name;
+  // Journey-level technical health (Count of API Error / Error Screen
+  // View) — a distinct concept from failReason: this is a frontend/API
+  // hiccup the customer hit *during* the journey UI, independent of
+  // whether the case ultimately succeeded or failed (a customer can hit
+  // an API error, retry, and still convert). Deterministic on i, not
+  // Math.random, same convention as the rest of this file's mock data.
+  c.apiErrorCount = i%13===0 ? 1 : (i%37===0 ? 2 : 0);
+  c.errorScreenViews = c.apiErrorCount + (i%19===0 ? 1 : 0);
+  if(c.apiErrorCount>0) c.apiErrorType = pick(API_ERROR_TYPES, i);
+  const custSeed = seedFromId(c.customerId);
+  c.creditLimit = 50000 + (custSeed*317) % 700000;
+  c.customerState = CUSTOMER_STATES[custSeed % CUSTOMER_STATES.length];
+  c.ageBand = AGE_BANDS[custSeed % AGE_BANDS.length];
+  c.processingFeeOffered = PROCESSING_FEE_OPTIONS[i % PROCESSING_FEE_OPTIONS.length];
+  c.interestRateOffered = INTEREST_RATE_OPTIONS[i % INTEREST_RATE_OPTIONS.length];
 });
 
 /* ---------------- Bulk-generate additional cases for scale ---------------- */
 const FIRST = ['Aditya','Riya','Vikram','Sneha','Arjun','Divya','Rahul','Pooja','Manish','Neha','Sanjay','Kavya','Rohit','Anjali','Suresh','Tanvi','Amit','Ishita','Vivek','Shreya','Kunal','Meenal','Harsh','Nidhi','Gaurav','Swati','Yash','Preeti','Abhinav','Ritu'];
 const LAST = ['Sharma','Verma','Iyer','Reddy','Kapoor','Menon','Chawla','Bhatia','Nair','Rao','Desai','Malhotra','Pillai','Chatterjee','Agarwal','Bose','Trivedi','Sethi','Kulkarni','Joshi'];
-const IBL_CAMPAIGNS = ['Festive EMI Push','Electronics Category Push','Furniture Category Push','Multi-Txn Consolidation','OS-to-EMI Cross-sell','Travel Category Push'];
-const YES_CAMPAIGNS = ['Settled Txn Nudge','OS Cross-sell','Multi Consolidation Pilot','Healthcare Category Push'];
-const CHANNELS = ['SMS','WhatsApp','PWA','Email'];
+// A live nudge program runs many more campaigns than this at once — kept
+// realistic-length (not literally 100) so Nudge → Conversion's pagination
+// (EMI Analytics) actually has something to page through in the demo.
+const IBL_CAMPAIGNS = ['Festive EMI Push','Electronics Category Push','Furniture Category Push','Multi-Txn Consolidation','OS-to-EMI Cross-sell','Travel Category Push','Dining Category Push','Education Category Push','High-Ticket Retention Push','Weekend Flash EMI','Grocery Category Push','Home Appliances Push'];
+const YES_CAMPAIGNS = ['Settled Txn Nudge','OS Cross-sell','Multi Consolidation Pilot','Healthcare Category Push','Travel Season Push','Electronics Festive Push','First EMI Nudge','Lapsed Customer Win-back'];
+const CHANNELS = ['SMS','WhatsApp','PWA','Email','RCS'];
 
 function pick(arr,n){ return arr[n % arr.length]; }
 
@@ -1446,9 +1847,19 @@ function genStampsFor(bank, type, terminal, seedHour){
   const stampNow = ()=> `${String(day).padStart(2,'0')} Aug, ${String(hour).padStart(2,'0')}:${String((seedHour*7)%60).padStart(2,'0')}`;
 
   const reachIdx = terminal==='IN_FLIGHT' ? (seedHour % order.length) : order.length-1;
+  // Yes Bank books via a direct, synchronous API call for every product —
+  // no file exchange at all (unlike IBL, which is file-based for OS-to-EMI
+  // and hybrid auth/settlement/recon-gated for Txn/Multi-Txn). Once the
+  // customer consents, booking is immediate: no advance() between Consent
+  // Given and Booking Initiated, or between Booking Initiated and the
+  // terminal state. Real delay still applies earlier (eligibility check /
+  // settlement ingestion → consent), same customer-engagement time every
+  // path has. IBL's timing is untouched — its delays are real (settlement/
+  // recon file waits), not something this file should collapse away.
   for(let i=0;i<=reachIdx;i++){
     stamps[order[i]] = stampNow();
-    advance(2 + (i*3 % 9));
+    const isYesInstantStage = bank==='YES' && (order[i]==='CONSENT_GIVEN' || order[i]==='BOOKING_INITIATED');
+    if(!isYesInstantStage) advance(2 + (i*3 % 9));
   }
   if(terminal!=='IN_FLIGHT'){
     stamps[terminal] = stampNow();
@@ -1464,10 +1875,21 @@ function generateCases(count){
   // structurally impossible for one bank, since i%10 always shares i%2's
   // parity when the cycle length is a multiple of 2.
   const outcomeCycle = ['BOOKED','BOOKED','BOOKED','BOOKED','IN_FLIGHT','IN_FLIGHT','IN_FLIGHT','FAILED','BOOKED'];
+  // Multi is selected by i%9===0 — the exact same length as outcomeCycle,
+  // so pick(outcomeCycle, i) collapsed to outcomeCycle[0]='BOOKED' for
+  // *every* Multi case (i%9 is always 0 whenever type==='Multi'), and the
+  // i%11===0 PARTIAL check suffered the same fate (only ever true at
+  // multiples of 99). Real symptom: Auth-vs-Settled showed a literal 100%
+  // conversion rate for every Multi cohort, since generateCases() could
+  // never produce a Failed/Pending Multi case at all. Fixed with a
+  // dedicated counter that only advances on Multi cases, decoupled from
+  // the i%9 gate that selects Multi in the first place.
+  let multiSeed = 0;
   for(let i=0;i<count;i++){
     const bank = i%2===0 ? 'IBL' : 'YES';
     const type = i%9===0 ? 'Multi' : (i%4===0 ? 'Outstanding' : 'Single');
-    const outcome = type==='Multi' && i%11===0 ? 'PARTIAL' : pick(outcomeCycle, i);
+    const outcome = type==='Multi' ? (multiSeed%11===0 ? 'PARTIAL' : pick(outcomeCycle, multiSeed)) : pick(outcomeCycle, i);
+    if(type==='Multi') multiSeed++;
     const name = pick(FIRST,i)+' '+pick(LAST,i+3)[0]+'.';
     const campaign = bank==='IBL' ? pick(IBL_CAMPAIGNS,i) : pick(YES_CAMPAIGNS,i);
     const channel = pick(CHANNELS,i+2);
@@ -1485,9 +1907,32 @@ function generateCases(count){
       accountId:'ACC-'+(780500+i*13),
       programId:prog.id, programName:prog.name,
       journeyId: journeyIdFor(campaign),
+      bankTxnRef: String(241100000000 + i*4127).slice(0,12),
+      mccCategory: MCC_CATEGORIES[i % MCC_CATEGORIES.length],
     };
+    // Journey-level technical health — see the hand-authored-cases backfill
+    // loop above for why this is separate from failReason.
+    c.apiErrorCount = i%13===0 ? 1 : (i%37===0 ? 2 : 0);
+    c.errorScreenViews = c.apiErrorCount + (i%19===0 ? 1 : 0);
+    if(c.apiErrorCount>0) c.apiErrorType = pick(API_ERROR_TYPES, i);
+    const custSeed = seedFromId(c.customerId);
+    c.creditLimit = 50000 + (custSeed*317) % 700000;
+    c.customerState = CUSTOMER_STATES[custSeed % CUSTOMER_STATES.length];
+    c.ageBand = AGE_BANDS[custSeed % AGE_BANDS.length];
+    c.processingFeeOffered = PROCESSING_FEE_OPTIONS[i % PROCESSING_FEE_OPTIONS.length];
+    c.interestRateOffered = INTEREST_RATE_OPTIONS[i % INTEREST_RATE_OPTIONS.length];
     if(state==='FAILED'){
-      c.failReason = pick(['Credit limit insufficient at booking','Customer did not respond within window','Settlement amount mismatch','Bank-side eligibility rejected at booking','Booking API returned 5xx'], i);
+      // Outstanding (OS-to-EMI) gets its own real reject-reason vocabulary —
+      // these are the actual reasons the business tracks for it (weighted
+      // roughly toward the real relative frequency: "Purchase principal O/S
+      // is not available" and "Account Overlimit" dominate in the real
+      // data). Genuinely different reasons from Single/Multi's — OS-to-EMI
+      // is file-based with no settlement-matching or booking-API concept at
+      // all, so "Settlement amount mismatch"/"Booking API returned 5xx"
+      // never made sense for it in the first place.
+      c.failReason = type==='Outstanding'
+        ? pick(['Purchase principal O/S is not available','Purchase principal O/S is not available','Account Overlimit','Account Overlimit','Failed in Same Day Dedupe check','Account status is other than normal','PLAN NOT VALID FOR EPP TRANSACTION','Not eligible in this month','DUPLICATE RECORD REJECT','Failed in Across File Dedupe check','Transaction previously converted to EMI'], i)
+        : pick(['Credit limit insufficient at booking','Customer did not respond within window','Settlement amount mismatch','Bank-side eligibility rejected at booking','Booking API returned 5xx'], i);
       if(c.failReason==='Settlement amount mismatch'){
         // Deliberate mix of small deltas (plausibly worth a manual "book
         // anyway") and large ones (clearly a real mismatch) — deterministic
@@ -1515,7 +1960,20 @@ function generateCases(count){
   return out;
 }
 
-CASES.push(...generateCases(78));
+// Scaled up from 78 — with 12 programs/bank and 8-12 campaigns/bank now in
+// the mix (both expanded earlier for the same reason), 78 cases spread too
+// thin: most programs/campaigns landed on 2-3 cases each, which is why
+// rates kept reading as suspicious 100%/0% noise. More volume in the same
+// Aug 2-21 date window (genStampsFor's day range doesn't grow with count,
+// it's a fixed mod-20 cycle) means denser days, not a longer fake history.
+// Client-demo scale: the real reference screenshots this file is built
+// from show "Total Volume: 22.86 Cr" for Txn-to-EMI alone and "Requested
+// Volume: 69.21 Cr" for OS-to-EMI alone. 900 cases at this file's ticket
+// sizes tops out well under 1 Cr for most per-program/per-category cuts —
+// nowhere near that order of magnitude. Scaled up so aggregate ₹ figures
+// actually read as Crore-scale at every level of cut, not just the
+// whole-dataset total.
+CASES.push(...generateCases(3200));
 
 // Settled-direct IBL cases — the "existing behavior, not new" path (Master
 // PRD use case 8): customer picks an already-settled transaction on Screen
@@ -1530,9 +1988,13 @@ CASES.push(...generateCases(78));
 // Recon Matched as not-yet-reached for these cases rather than N/A, a known
 // minor display gap, not a rendering bug (the underlying stamps are simply
 // absent, same as any case that hasn't reached a stage yet).
+// Shared with the Conversion Funnel (renderAnalytics) — both branches of
+// the same Txn-to-EMI/Multi-Txn-to-EMI journey need the same source of
+// truth for the settled-direct path's (shorter) stage order.
+const SETTLED_DIRECT_STAGE_ORDER = ['SETTLEMENT_RECEIVED','CONSENT_REQUESTED','CONSENT_GIVEN','BOOKING_INITIATED'];
 function generateSettledDirectIBLCases(count){
   const out = [];
-  const shortOrder = ['SETTLEMENT_RECEIVED','CONSENT_REQUESTED','CONSENT_GIVEN','BOOKING_INITIATED'];
+  const shortOrder = SETTLED_DIRECT_STAGE_ORDER;
   const outcomeCycle = ['BOOKED','BOOKED','BOOKED','BOOKED','IN_FLIGHT','FAILED','BOOKED'];
   for(let i=0;i<count;i++){
     const type = i%6===0 ? 'Multi' : 'Single';
@@ -1547,12 +2009,22 @@ function generateSettledDirectIBLCases(count){
     const stampNow = ()=> `${String(day).padStart(2,'0')} Aug, ${String(hour).padStart(2,'0')}:${String((i*11)%60).padStart(2,'0')}`;
     const reachIdx = outcome==='IN_FLIGHT' ? (i % shortOrder.length) : shortOrder.length-1;
     const stamps = {};
-    for(let s=0;s<=reachIdx;s++){ stamps[shortOrder[s]] = stampNow(); advance(1 + (s*2%5)); }
+    // Real delay only through Consent Given — that's the customer's own
+    // engagement/decision time (open the nudge, review details, OTP,
+    // confirm), same kind of gap the auth-triggered path has too. Once
+    // consented, booking is immediate: the transaction is already settled,
+    // so there's no settlement file or recon wait left, unlike every other
+    // gap in this journey — Booking Initiated and Booked land in the same
+    // synchronous call, not hours apart.
+    for(let s=0;s<=reachIdx;s++){
+      stamps[shortOrder[s]] = stampNow();
+      if(shortOrder[s]!=='CONSENT_GIVEN' && shortOrder[s]!=='BOOKING_INITIATED') advance(1 + (s*2%5));
+    }
     if(outcome!=='IN_FLIGHT') stamps[outcome] = stampNow();
     const state = outcome==='IN_FLIGHT' ? shortOrder[reachIdx] : outcome;
 
     const nudgeSent = stamps.SETTLEMENT_RECEIVED || '—';
-    out.push({
+    const c = {
       id: 'TEMI-3' + (9000 + i*3),
       bank:'IBL', customer:name, type, channel, campaign, amount, state, stamps,
       entryPath:'settled',
@@ -1561,102 +2033,107 @@ function generateSettledDirectIBLCases(count){
       accountId:'ACC-'+(789000+i*13),
       programId:PROGRAMS.IBL[i%PROGRAMS.IBL.length].id, programName:PROGRAMS.IBL[i%PROGRAMS.IBL.length].name,
       journeyId: journeyIdFor(campaign),
+      bankTxnRef: String(241900000000 + i*5309).slice(0,12),
+      mccCategory: MCC_CATEGORIES[i % MCC_CATEGORIES.length],
+      apiErrorCount: i%13===0 ? 1 : (i%37===0 ? 2 : 0),
+      errorScreenViews: (i%13===0 ? 1 : (i%37===0 ? 2 : 0)) + (i%19===0 ? 1 : 0),
+      ...((i%13===0 || i%37===0) ? {apiErrorType: pick(API_ERROR_TYPES, i)} : {}),
       ...(state==='FAILED' ? {failReason: pick(['Credit limit insufficient at booking','Bank-side eligibility rejected at booking'], i)} : {}),
-    });
+    };
+    const custSeed = seedFromId(c.customerId);
+    c.creditLimit = 50000 + (custSeed*317) % 700000;
+    c.customerState = CUSTOMER_STATES[custSeed % CUSTOMER_STATES.length];
+    c.ageBand = AGE_BANDS[custSeed % AGE_BANDS.length];
+    c.processingFeeOffered = PROCESSING_FEE_OPTIONS[i % PROCESSING_FEE_OPTIONS.length];
+    c.interestRateOffered = INTEREST_RATE_OPTIONS[i % INTEREST_RATE_OPTIONS.length];
+    // Same txns breakdown generateCases() builds for every Multi case —
+    // this generator was missing it entirely, leaving every settled-direct
+    // Multi case without the per-transaction detail the drawer expects.
+    if(type==='Multi'){
+      const nTx = 2 + (i%3);
+      let remaining = amount;
+      c.txns = [];
+      for(let t=0;t<nTx;t++){
+        const amt = t===nTx-1 ? remaining : Math.round(amount/nTx);
+        remaining -= amt;
+        let st = 'BOOKED';
+        if(outcome==='PARTIAL' && t===nTx-1) st='FAILED';
+        if(outcome==='IN_FLIGHT') st='PENDING';
+        if(outcome==='FAILED') st='FAILED';
+        c.txns.push({id:'TXN-S'+(9500+i*4+t), amount:amt, billed: t<nTx-1, status:st, reason: st==='FAILED'?'Unbilled booking API returned 5xx':undefined});
+      }
+    }
+    out.push(c);
   }
   return out;
 }
-CASES.push(...generateSettledDirectIBLCases(22));
+// Scaled up alongside generateCases() — same reasoning, more volume in the
+// same fixed Aug 3-20 date window (day range is a mod-18 cycle, doesn't
+// grow with count).
+CASES.push(...generateSettledDirectIBLCases(700));
 
 /* ---------------- State ---------------- */
 let viewingAs = 'IBL';
 
 function onViewingAsChange(){
   viewingAs = document.getElementById('viewingAs').value;
-  renderOverview();
+  renderRequests();
+  renderExceptions();
+  renderRecon();
+}
+
+// One global Product filter drives every tab on this page — set once here,
+// read everywhere via scopedCases(), so there's no way for two tabs to
+// silently disagree about which product is in view (the old per-tab local
+// dropdowns could).
+let conversionsProduct = 'Single';
+function onConversionsProductChange(){
+  conversionsProduct = document.getElementById('conversionsProductFilter').value;
+  // Recon's own segment list is filtered by conversionsProduct inside
+  // renderRecon() itself (each segment is product-specific), which
+  // auto-corrects reconView to a still-valid segment if the current one
+  // no longer applies — no need to duplicate that jump here.
+  renderRequests();
+  renderExceptions();
+  renderRecon();
+}
+
+// Date range — same pattern as EMI Analytics' analyticsRange, applied
+// globally here too (Requests/Exceptions/Reconciliation all read through
+// scopedCases(), so one control scopes all three, same reasoning as the
+// Product filter above).
+let conversionsRange = 'all';
+function onConversionsRangeChange(){
+  conversionsRange = document.getElementById('conversionsRange').value;
+  document.getElementById('conversionsCustomRangeWrap').style.display = conversionsRange==='custom' ? '' : 'none';
   renderRequests();
   renderExceptions();
   renderRecon();
 }
 
 function scopedCases(){
-  return CASES.filter(c=>c.bank===viewingAs);
-}
-
-/* ---------------- Overview render ---------------- */
-let overviewProduct = 'Single';
-
-function renderOverview(){
-  const cases = scopedCases();
-  const total = cases.length;
-  const booked = cases.filter(c=>c.state==='BOOKED').length;
-  const partial = cases.filter(c=>c.state==='PARTIAL').length;
-  const failed = cases.filter(c=>c.state==='FAILED').length;
-  const expired = cases.filter(c=>c.state==='EXPIRED').length;
-  const cancelled = cases.filter(c=>c.state==='CANCELLED').length;
-  const inFlight = total - booked - partial - failed - expired - cancelled;
-  const gmv = cases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').reduce((s,c)=>s+c.amount,0);
-  // Resolved-only denominator: a case still Pending hasn't had a chance to
-  // convert yet, so counting it against the rate just drags a fresh batch's
-  // number toward zero for no real reason. Rate = of everything that has
-  // actually finished, what share converted.
-  const resolved = booked+partial+failed+expired+cancelled;
-  const convRate = resolved ? Math.round(((booked+partial)/resolved)*100) : 0;
-
-  const kpis = [
-    {label:'Requests in Flight', value: inFlight},
-    {label:'Converted', value: booked+partial},
-    {label:'Conversion Rate (of resolved)', value: convRate+'%'},
-    {label:'GMV Converted', value: '₹'+(gmv/100000).toFixed(1)+'L'},
-    {label:'Revenue Impact (est., 10% take rate)', value: '₹'+((gmv*0.10)/100000).toFixed(1)+'L'},
-  ];
-  document.getElementById('kpiGrid').innerHTML = kpis.map(k=>`
-    <div class="kpi-card">
-      <div class="kpi-label">${k.label}</div>
-      <div class="kpi-value">${k.value}</div>
-    </div>`).join('');
-
-  // By-product comparison strip — every product shown, never blended into
-  // one funnel since each has a genuinely different stage shape.
-  const PRODUCT_KEYS = ['Single','Multi','Outstanding'];
-  document.getElementById('productBreakdownBody').innerHTML = PRODUCT_KEYS.map(p=>{
-    const pc = cases.filter(c=>c.type===p);
-    const pBooked = pc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
-    const pResolved = pc.filter(c=>TERMINAL.includes(c.state)).length;
-    const pRate = pResolved ? Math.round((pBooked/pResolved)*100) : 0;
-    const pGmv = pc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').reduce((s,c)=>s+c.amount,0);
-    const tm = TYPE_META[p];
-    return `<tr onclick="overviewProduct='${p}';renderOverview();">
-      <td><span class="badge ${tm.badge}">${tm.label}</span></td>
-      <td>${pc.length}</td>
-      <td>${pRate}%</td>
-      <td>₹${(pGmv/100000).toFixed(1)}L</td>
-    </tr>`;
-  }).join('');
-
-  // Segmented control + detail funnel for the selected product only
-  document.getElementById('productSegment').innerHTML = PRODUCT_KEYS.map(p=>
-    `<div class="tab ${p===overviewProduct?'active':''}" onclick="overviewProduct='${p}';renderOverview();">${TYPE_META[p].label}</div>`
-  ).join('');
-
-  // Settled-direct cases (entryPath:'settled') follow a structurally
-  // different, shorter path — they don't belong in a funnel built around
-  // stagesFor()'s auth-first stage order (see Auth-Triggered vs.
-  // Settled-Only on the Analytics page for where they do show up).
-  const pCases = cases.filter(c=>c.type===overviewProduct && c.entryPath!=='settled');
-  const order = stagesFor(viewingAs, overviewProduct);
-  const pBookedCount = pCases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
-  document.getElementById('funnelSub').textContent = `${bankLabel(viewingAs)} · ${TYPE_META[overviewProduct].label} — entry stage is ${STAGE_META[order[0]].label}`;
-  const stages = order.map(s=>({label:STAGE_META[s].label, count: pCases.filter(c=>c.stamps[s]).length}));
-  stages.push({label:'Booked / Partial', count: pBookedCount});
-  const max = stages[0].count || 1;
-  document.getElementById('funnelBody').innerHTML = stages.map(f=>`
-    <div class="funnel-row">
-      <div class="funnel-label">${f.label}</div>
-      <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((f.count/max)*100)}%"></div></div>
-      <div class="funnel-count">${f.count}</div>
-      <div class="funnel-pct">${Math.round((f.count/max)*100)}%</div>
-    </div>`).join('');
+  let cases = CASES.filter(c=>c.bank===viewingAs && c.type===conversionsProduct);
+  if(conversionsRange==='custom'){
+    const fromVal = document.getElementById('conversionsRangeFrom').value;
+    const toVal = document.getElementById('conversionsRangeTo').value;
+    const fromDate = fromVal ? new Date(fromVal+'T00:00:00') : null;
+    const toDate = toVal ? new Date(toVal+'T23:59:59') : null;
+    cases = cases.filter(c=>{
+      const d = caseEntryDate(c);
+      if(!d) return false;
+      if(fromDate && d<fromDate) return false;
+      if(toDate && d>toDate) return false;
+      return true;
+    });
+  } else if(conversionsRange!=='all'){
+    const maxDate = maxDatasetDate();
+    const cutoff = new Date(maxDate.getTime() - (+conversionsRange)*24*3600*1000);
+    cases = cases.filter(c=>{
+      const d = caseEntryDate(c);
+      return d && d>=cutoff;
+    });
+  }
+  return cases;
 }
 
 /* ---------------- Requests render ---------------- */
@@ -1665,11 +2142,19 @@ function populateStateFilter(){
   sel.innerHTML = '<option value="">All states</option>' + Object.keys(STAGE_META).map(k=>`<option value="${k}">${STAGE_META[k].label}</option>`).join('');
 }
 
+// Real elapsed hours since the case entered its current state — not a
+// canned lookup by pipeline position (the previous version), which
+// produced nonsense for terminal states: a BOOKED case landing at a late
+// index in stagesFor().concat(TERMINAL) got treated the same as a
+// genuinely stuck in-flight one, flagging already-resolved requests as
+// "STUCK." For a terminal state this is "how long ago it resolved" (still
+// a real number — used by Exceptions as "time since failure," which is
+// legitimately about ops triage lag on a FAILED case); callers decide
+// whether "stuck" framing applies, this just returns the real hours.
 function timeInStage(c){
-  const order = stagesFor(c.bank, c.type).concat(TERMINAL);
-  const currentIdx = order.indexOf(c.state);
-  const hoursMap = {0:2,1:6,2:14,3:20,4:26,5:30,6:36,7:40};
-  return hoursMap[currentIdx] ?? 4;
+  const d = parseStamp(c.stamps[c.state]);
+  if(!d) return 0;
+  return Math.max(0, Math.round((maxDatasetDate() - d) / 3600000));
 }
 
 // The stage right before the terminal outcome — where the case actually broke.
@@ -1712,7 +2197,6 @@ function resolveMismatch(id, decision){
     c.auditLog.push({who:'Ops (manual review)', what:`Confirmed Failed — settled amount ₹${c.settledAmount.toLocaleString('en-IN')} judged not close enough to the auth amount to book`, when: formatStamp(now)});
   }
   renderExceptions();
-  renderOverview();
   renderRequests();
   renderRecon();
 }
@@ -1721,6 +2205,16 @@ const PAGE_SIZE = 10;
 let requestsPage = 1;
 let batchesPage = 1;
 let exceptionsPage = 1;
+let byProgramPage = 1;
+let nudgeCorrelationPage = 1;
+let analyticsMccPage = 1;
+let authBatchPage = 1;
+let settlementBatchPage = 1;
+function goToByProgramPage(p){ byProgramPage = p; renderAnalytics(); }
+function goToNudgeCorrelationPage(p){ nudgeCorrelationPage = p; renderAnalytics(); }
+function goToAnalyticsMccPage(p){ analyticsMccPage = p; renderAnalytics(); }
+function goToAuthBatchPage(p){ authBatchPage = p; renderRecon(); }
+function goToSettlementBatchPage(p){ settlementBatchPage = p; renderRecon(); }
 
 function paginationHtml(page, totalPages, gotoFnName){
   if(totalPages<=1) return '';
@@ -1748,17 +2242,18 @@ function goToRequestsPage(p){ requestsPage = p; renderRequests(); }
 
 function renderRequests(){
   const state = document.getElementById('fState').value;
-  const type = document.getElementById('fType').value;
   const channel = document.getElementById('fChannel').value;
   const search = document.getElementById('fSearch').value.toLowerCase();
   const stuckOnly = document.getElementById('fStuck').checked;
 
   let rows = scopedCases().filter(c=>{
     if(state && c.state!==state) return false;
-    if(type && c.type!==type) return false;
     if(channel && c.channel!==channel) return false;
-    if(search && !(c.id.toLowerCase().includes(search) || c.customer.toLowerCase().includes(search))) return false;
-    if(stuckOnly && timeInStage(c) < 24) return false;
+    if(search && !(c.id.toLowerCase().includes(search) || c.customer.toLowerCase().includes(search) || (c.bankTxnRef||'').includes(search))) return false;
+    // "Stuck" only ever applies to a case still waiting to resolve — a
+    // terminal state (Booked/Failed/Expired/Cancelled/Partial) is done,
+    // not stuck, regardless of how long ago it resolved.
+    if(stuckOnly && (TERMINAL.includes(c.state) || timeInStage(c) < 24)) return false;
     return true;
   });
 
@@ -1771,9 +2266,14 @@ function renderRequests(){
 
   document.getElementById('requestsBody').innerHTML = pageRows.map(c=>{
     const meta = STAGE_META[c.state];
+    const isTerminal = TERMINAL.includes(c.state);
     const hrs = timeInStage(c);
     const lastTs = c.stamps[c.state] || Object.values(c.stamps).slice(-1)[0];
     const tm = TYPE_META[c.type];
+    // A terminal state is resolved, not "stuck" — Last Updated already
+    // shows when it resolved, so this column only carries pipeline-wait
+    // framing (hours + STUCK flag) for a still-open, in-flight request.
+    const timeCell = isTerminal ? '<span style="color:var(--gray-400);">Resolved</span>' : `${hrs}h ${hrs>=24?'<span class="age-flag">STUCK</span>':''}`;
     return `<tr onclick="openDrawer('${c.id}')">
       <td class="mono">${c.id}</td>
       <td>${c.customer}</td>
@@ -1781,7 +2281,7 @@ function renderRequests(){
       <td>${c.channel}<br><span style="color:var(--gray-500);font-size:11.5px;">${c.campaign}</span></td>
       <td>₹${c.amount.toLocaleString('en-IN')}</td>
       <td><span class="badge ${meta.badge}">${meta.label}</span></td>
-      <td>${hrs}h ${hrs>=24?'<span class="age-flag">STUCK</span>':''}</td>
+      <td>${timeCell}</td>
       <td>${lastTs}</td>
     </tr>`;
   }).join('');
@@ -1789,7 +2289,6 @@ function renderRequests(){
 
 function clearFilters(){
   document.getElementById('fState').value='';
-  document.getElementById('fType').value='';
   document.getElementById('fChannel').value='';
   document.getElementById('fSearch').value='';
   document.getElementById('fStuck').checked=false;
@@ -1803,6 +2302,9 @@ let reasonPopulated = false;
 function onExceptionsFilterChange(){ exceptionsPage = 1; renderExceptions(); }
 
 function renderExceptions(){
+  // scopedCases() already applies the global Product filter from the page
+  // header, so every section below (including the reason-breakdown chart)
+  // is automatically scoped — no local product control needed here anymore.
   const failedCases = scopedCases().filter(c=>c.state==='FAILED');
   const expiredCases = scopedCases().filter(c=>c.state==='EXPIRED');
   const cancelledCases = scopedCases().filter(c=>c.state==='CANCELLED');
@@ -1864,12 +2366,10 @@ function renderExceptions(){
   }
 
   const reasonFilter = document.getElementById('efReason').value;
-  const productFilter = document.getElementById('efProduct').value;
   const slaOnly = document.getElementById('efSla').checked;
 
   let rows = failedCases.filter(c=>{
     if(reasonFilter && c.failReason!==reasonFilter) return false;
-    if(productFilter && c.type!==productFilter) return false;
     if(slaOnly && timeInStage(c)<24) return false;
     return true;
   });
@@ -1885,17 +2385,14 @@ function renderExceptions(){
     const tm = TYPE_META[c.type];
     const hrs = timeInStage(c);
     const retries = pseudoRetries(c.id);
-    return `<tr>
-      <td class="mono" style="cursor:pointer;" onclick="openDrawer('${c.id}')">${c.id}</td>
+    return `<tr onclick="openDrawer('${c.id}')">
+      <td class="mono">${c.id}</td>
       <td>${c.customer}</td>
       <td><span class="badge ${tm.badge}">${tm.label}</span></td>
       <td><span class="badge error">${c.failReason||'Unspecified'}</span></td>
       <td>${failedAtStage(c)}</td>
       <td>${retries}</td>
       <td>${hrs}h ${hrs>=24?'<span class="age-flag">SLA</span>':''}</td>
-      <td style="text-align:right;">
-        <button class="btn secondary small" onclick="event.stopPropagation();openDrawer('${c.id}')">Retry</button>
-      </td>
     </tr>`;
   }).join('');
 }
@@ -1925,9 +2422,19 @@ function renderRecon(){
   // is what this "Viewing as" selector simulates) should only ever show that
   // bank's own mechanics, never reference or offer to switch to another
   // bank's. No placeholder/"switch to X" messaging needed as a result.
-  const segments = viewingAs==='IBL'
+  let segments = viewingAs==='IBL'
     ? [ {id:'booking', label:'OS-to-EMI Booking Files'}, {id:'auth', label:'Auth / Settlement Files'} ]
     : [ {id:'targeting', label:'Eligible-Accounts Targeting File'} ];
+  // Each IBL segment is itself product-specific (booking = Outstanding
+  // only, auth = Single/Multi only) — once the global Product filter
+  // narrows to one, the other segment is guaranteed empty for it, so don't
+  // offer it at all rather than let it sit there as a dead, always-empty
+  // tab. Yes Bank only ever has the one targeting segment regardless of
+  // product, so it's untouched by this filter.
+  if(viewingAs==='IBL'){
+    if(conversionsProduct==='Outstanding') segments = segments.filter(s=>s.id==='booking');
+    else if(conversionsProduct==='Single'||conversionsProduct==='Multi') segments = segments.filter(s=>s.id!=='booking');
+  }
   if(!segments.some(s=>s.id===reconView)) reconView = segments[0].id;
 
   document.getElementById('reconSegment').innerHTML = segments.map(s=>
@@ -1937,7 +2444,52 @@ function renderRecon(){
   const body = document.getElementById('reconBody');
 
   if(reconView==='targeting'){
+    // A deliberately different integration story from IBL's: no auth file
+    // at all (Yes Bank isn't part of the new auth-consent flow), and
+    // booking itself is a direct API call — no Booking File/Confirmation
+    // File exchange like IBL's OS-to-EMI, no settlement/recon wait gating
+    // it like IBL's Txn/Multi-Txn. What *does* stay file-based: the
+    // allocation file (same monthly cadence as IBL's) and the settled-
+    // transaction file (the ingestion trigger for Txn-to-EMI/Multi-Txn-to-
+    // EMI nudges here — there's no auth file to nudge off instead).
+    const yesTxnCases = scopedCases().filter(c=>c.type==='Single'||c.type==='Multi');
+    const DAY_FMT_Y = d => `${String(d.getDate()).padStart(2,'0')} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}`;
+    const settleByDayY = {};
+    yesTxnCases.forEach(c=>{
+      const d = parseStamp(c.stamps.SETTLEMENT_RECEIVED);
+      if(!d) return;
+      const key = `${d.getMonth()}-${d.getDate()}`;
+      settleByDayY[key] = (settleByDayY[key]||0) + 1;
+    });
+    const settleBatchesY = Object.entries(settleByDayY).map(([k,count])=>{
+      const [mo,da] = k.split('-').map(Number);
+      return {date:new Date(2026,mo,da), count};
+    }).sort((a,b)=>b.date-a.date);
+    const settleTotalPagesY = Math.max(1, Math.ceil(settleBatchesY.length/PAGE_SIZE));
+    if(settlementBatchPage>settleTotalPagesY) settlementBatchPage = settleTotalPagesY;
+    const settleBatchPageRowsY = settleBatchesY.slice((settlementBatchPage-1)*PAGE_SIZE, settlementBatchPage*PAGE_SIZE);
+
+    // Real stat for the API-based booking claim, not just prose — average
+    // time from Consent Given to Booking Initiated, across every product.
+    const bookingDurations = scopedCases().filter(c=>c.stamps.CONSENT_GIVEN && c.stamps.BOOKING_INITIATED).map(c=>{
+      const cg = parseStamp(c.stamps.CONSENT_GIVEN), bi = parseStamp(c.stamps.BOOKING_INITIATED);
+      return (cg && bi && bi>=cg) ? (bi-cg)/60000 : null;
+    }).filter(v=>v!==null);
+    const avgBookingMins = bookingDurations.length ? (bookingDurations.reduce((s,v)=>s+v,0)/bookingDurations.length) : null;
+
     body.innerHTML = `
+      <div class="card" style="margin-bottom:20px;">
+        <p class="card-title">Allocation File</p>
+        <p class="card-sub">Sent in the first week of every month — the eligibility gate for OS-to-EMI, same cadence/concept as IBL's own allocation file. Illustrative — monthly cadence doesn't fit this mock's ~20-day data window.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Batch ID</th><th>Received At</th><th>Accounts Allocated</th><th>Status</th></tr></thead>
+            <tbody>${ALLOCATION_FILE_HISTORY_YES.map(b=>`
+              <tr><td class="mono">${b.batchId}</td><td>${b.receivedAt}</td><td>${b.accountsAllocated.toLocaleString('en-IN')}</td><td><span class="badge success">${b.status}</span></td></tr>
+            `).join('')}</tbody>
+          </table>
+        </div>
+      </div>
       <div class="card">
         <p class="card-title">Eligible-Accounts Targeting File</p>
         <p class="card-sub">A pre-filter Yes Bank sends so nudges only target likely-eligible accounts — not part of booking, and not authoritative eligibility. The API still decides eligibility at the moment of conversion.</p>
@@ -1950,6 +2502,30 @@ function renderRecon(){
               <tr><td class="mono">TGT-YES-0135</td><td>03 Aug, 04:30</td><td>4,988</td><td>1</td><td><span class="badge success">Ingested</span></td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+      <div class="card" style="margin-top:20px;margin-bottom:20px;">
+        <p class="card-title">Settled Transaction File</p>
+        <p class="card-sub">Ingestion trigger for Txn-to-EMI/Multi-Txn-to-EMI nudges here — Yes Bank has no auth file, so this (not an auth transaction) is what a nudge fires off. Real per-day counts from this bank's Single/Multi cases.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Settlement Date</th><th>New Settlement Records</th></tr></thead>
+            <tbody>${settleBatchPageRowsY.map(b=>`
+              <tr><td>${DAY_FMT_Y(b.date)}</td><td>${b.count}</td></tr>
+            `).join('') || '<tr><td colspan="2" class="card-sub">No settlement records for this product in this range.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">
+          <p class="card-sub" style="margin:0;">${settleBatchesY.length} day${settleBatchesY.length===1?'':'s'} with activity · page ${settlementBatchPage} of ${settleTotalPagesY}</p>
+          <div class="pagination">${paginationHtml(settlementBatchPage, settleTotalPagesY, 'goToSettlementBatchPage')}</div>
+        </div>
+      </div>
+      <div class="card">
+        <p class="card-title">Booking — API-Based</p>
+        <p class="card-sub">A deliberately different integration model from IBL — no Booking File/Confirmation File exchange for OS-to-EMI, no settlement/recon wait gating Txn-to-EMI/Multi-Txn-to-EMI. Once the customer consents, booking is a single synchronous API call, for every product.</p>
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="kpi-label">Avg. Consent → Booking Initiated</div><div class="kpi-value">${avgBookingMins!==null ? avgBookingMins.toFixed(1)+' min' : '—'}</div></div>
+          <div class="kpi-card"><div class="kpi-label">File Exchange For Booking</div><div class="kpi-value" style="font-size:16px;">None</div></div>
         </div>
       </div>`;
     return;
@@ -2014,7 +2590,112 @@ function renderRecon(){
       {label:'Consented', count:f.consented},
     ];
     const fMax = funnelSteps[0].count || 1;
+    const jh = RECON_JOB_HEALTH;
+
+    // Real file cadence per the Master PRD (Section 6) — three genuinely
+    // different frequencies, not one "file per campaign" concept:
+    // allocation monthly, auth every 5 minutes, settlement daily at T+1.
+    // The batch log below buckets hourly purely for display legibility —
+    // rendering one row per actual 5-minute file would mean ~288 rows/day.
+    const authCases = scopedCases().filter(c=>c.type==='Single'||c.type==='Multi');
+    const authByHour = {};
+    authCases.forEach(c=>{
+      const d = parseStamp(c.stamps.AUTH_RECEIVED);
+      if(!d) return;
+      const key = `${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
+      authByHour[key] = (authByHour[key]||0) + 1;
+    });
+    const authBatches = Object.entries(authByHour).map(([k,count])=>{
+      const [mo,da,hr] = k.split('-').map(Number);
+      return {date:new Date(2026,mo,da,hr), count};
+    }).sort((a,b)=>b.date-a.date);
+    const authTotalPages = Math.max(1, Math.ceil(authBatches.length/PAGE_SIZE));
+    if(authBatchPage>authTotalPages) authBatchPage = authTotalPages;
+    const authBatchPageRows = authBatches.slice((authBatchPage-1)*PAGE_SIZE, authBatchPage*PAGE_SIZE);
+    const HOUR_FMT = d => `${String(d.getHours()).padStart(2,'0')}:00–${String((d.getHours()+1)%24).padStart(2,'0')}:00`;
+    const DAY_FMT = d => `${String(d.getDate()).padStart(2,'0')} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}`;
+
+    // Settlement file — one row per calendar day it actually arrived
+    // (T+1, cross-campaign), not per journey. Trigger A (above) runs every
+    // time one of these lands.
+    const settleByDay = {};
+    authCases.forEach(c=>{
+      const d = parseStamp(c.stamps.SETTLEMENT_RECEIVED);
+      if(!d) return;
+      const key = `${d.getMonth()}-${d.getDate()}`;
+      if(!settleByDay[key]) settleByDay[key] = {records:0, matched:0};
+      settleByDay[key].records++;
+      if(c.stamps.RECON_MATCHED) settleByDay[key].matched++;
+    });
+    const settleBatches = Object.entries(settleByDay).map(([k,v])=>{
+      const [mo,da] = k.split('-').map(Number);
+      return {date:new Date(2026,mo,da), ...v};
+    }).sort((a,b)=>b.date-a.date);
+    const settleTotalPages = Math.max(1, Math.ceil(settleBatches.length/PAGE_SIZE));
+    if(settlementBatchPage>settleTotalPages) settlementBatchPage = settleTotalPages;
+    const settleBatchPageRows = settleBatches.slice((settlementBatchPage-1)*PAGE_SIZE, settlementBatchPage*PAGE_SIZE);
+
     body.innerHTML = `
+      <div class="card" style="margin-bottom:20px;">
+        <p class="card-title">Allocation File</p>
+        <p class="card-sub">Sent in the first week of every month — unchanged from the existing Txn-to-EMI process. Only accounts in this file are eligible for the auth-consent flow at all; this is the very first ingestion trigger, ahead of the auth file. Illustrative — monthly cadence doesn't fit this mock's ~20-day data window.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Batch ID</th><th>Received At</th><th>Accounts Allocated</th><th>Status</th></tr></thead>
+            <tbody>${ALLOCATION_FILE_HISTORY.map(b=>`
+              <tr><td class="mono">${b.batchId}</td><td>${b.receivedAt}</td><td>${b.accountsAllocated.toLocaleString('en-IN')}</td><td><span class="badge success">${b.status}</span></td></tr>
+            `).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <p class="card-title">Auth File Ingestion</p>
+        <p class="card-sub">Real cadence is every 5 minutes, incremental (new records only) — grouped by hour below purely for legibility, not the actual file boundary. New auth records per window, from this bank's real Single/Multi cases.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Window</th><th>Auth Files (every 5 min)</th><th>New Auth Records</th></tr></thead>
+            <tbody>${authBatchPageRows.map(b=>`
+              <tr><td>${DAY_FMT(b.date)}, ${HOUR_FMT(b.date)}</td><td>12</td><td>${b.count}</td></tr>
+            `).join('') || '<tr><td colspan="3" class="card-sub">No auth records for this bank/product in this dataset.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">
+          <p class="card-sub" style="margin:0;">${authBatches.length} hour${authBatches.length===1?'':'s'} with activity · page ${authBatchPage} of ${authTotalPages}</p>
+          <div class="pagination">${paginationHtml(authBatchPage, authTotalPages, 'goToAuthBatchPage')}</div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <p class="card-title">Settlement File</p>
+        <p class="card-sub">Arrives daily, T+1 basis — one file per day, reconciled against every open auth-consent request across all campaigns (Trigger A), not per-campaign. A given transaction can settle later, up to ~3 days in some cases; Recon waits up to 7 days before marking a request Expired.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Settlement Date</th><th>New Settlement Records</th><th>Recon Matched</th><th>Still Unmatched</th></tr></thead>
+            <tbody>${settleBatchPageRows.map(b=>`
+              <tr><td>${DAY_FMT(b.date)}</td><td>${b.records}</td><td>${b.matched}</td><td>${b.records-b.matched}</td></tr>
+            `).join('') || '<tr><td colspan="4" class="card-sub">No settlement records for this bank/product in this dataset.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">
+          <p class="card-sub" style="margin:0;">${settleBatches.length} day${settleBatches.length===1?'':'s'} with activity · page ${settlementBatchPage} of ${settleTotalPages}</p>
+          <div class="pagination">${paginationHtml(settlementBatchPage, settleTotalPages, 'goToSettlementBatchPage')}</div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <p class="card-title">Reconciliation Job Health</p>
+        <p class="card-sub">Are the two scheduled triggers actually running, not just what they found when they last did (Section 8).</p>
+        <div class="row-flex">
+          <div class="kpi-card" style="flex:1;">
+            <div class="kpi-label">${jh.triggerA.label}</div>
+            <div class="kpi-value" style="font-size:18px;">${jh.triggerA.lastRun}</div>
+            <p class="card-sub" style="margin:4px 0 0;">${jh.triggerA.recordsProcessed} records processed last run</p>
+          </div>
+          <div class="kpi-card" style="flex:1;">
+            <div class="kpi-label">${jh.triggerB.label}</div>
+            <div class="kpi-value" style="font-size:18px;">${jh.triggerB.lastRun}</div>
+            <p class="card-sub" style="margin:4px 0 0;">${jh.triggerB.recordsProcessed} requests expired last run</p>
+          </div>
+        </div>
+      </div>
       <div class="card" style="margin-bottom:20px;">
         <p class="card-title">Ingestion &amp; Nudge Funnel — Auth File</p>
         <p class="card-sub">What happened to every auth record, not just the ones that became a visible request — Auditability requirement (Master PRD). Last 30 days, illustrative.</p>
@@ -2039,11 +2720,11 @@ function renderRecon(){
         </div>
       </div>
       <div class="card">
-        <p class="card-title">Auth File → Settlement File → Recon</p>
-        <p class="card-sub">Txn-to-EMI / Multi-Txn-to-EMI hybrid only. Auth transactions collected pre-settlement for consent; settlement file arrives later and is reconciled before booking.</p>
+        <p class="card-title">By Campaign: Recon Outcomes</p>
+        <p class="card-sub">Txn-to-EMI / Multi-Txn-to-EMI hybrid only. Which campaign a request came from doesn't change how or when it gets reconciled — auth/settlement files are shared across every campaign, not per-campaign (see the file cards above) — this is just outcomes grouped by campaign for ops triage.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Batch / Journey</th><th>Requests</th><th>Auth File Received</th><th>Settlement File Received</th><th>Recon Matched</th><th>Failed</th><th>Expired</th><th>Cancelled</th><th>Still Open</th></tr></thead>
+            <thead><tr><th>Batch / Journey</th><th>Requests</th><th>Recon Matched</th><th>Failed</th><th>Expired</th><th>Cancelled</th><th>Still Open</th></tr></thead>
             <tbody>${batches.map(b=>{
               const matched = b.cases.filter(c=>c.stamps.RECON_MATCHED).length;
               const failedAtRecon = b.cases.filter(c=>c.state==='FAILED').length;
@@ -2055,8 +2736,6 @@ function renderRecon(){
               // state (Section 9 of the master PRD), so counted together
               // rather than splitting by which file has landed.
               const stillOpenCases = b.cases.filter(c=>c.state==='CONSENT_GIVEN' || c.state==='SETTLEMENT_RECEIVED');
-              const authTs = earliestStamp(b.cases, 'AUTH_RECEIVED') || '—';
-              const settleTs = earliestStamp(b.cases, 'SETTLEMENT_RECEIVED') || '—';
               // Of those still open, how many are closing in on the 7-day
               // expiry window — measured from the original auth, per the
               // master PRD's rule, not from consent or settlement receipt.
@@ -2069,8 +2748,6 @@ function renderRecon(){
               return `<tr onclick="openJourneyModal('${b.cases[0].id}')">
                 <td><b>${b.name}</b><br><span class="mono" style="font-size:11px;">${b.journeyId}</span></td>
                 <td>${b.cases.length}</td>
-                <td>${authTs}</td>
-                <td>${settleTs}</td>
                 <td>${matched}</td>
                 <td>${failedAtRecon ? `<span class="badge error">${failedAtRecon}</span>` : '0'}</td>
                 <td>${expired ? `<span class="badge gray">${expired}</span>` : '0'}</td>
@@ -2121,7 +2798,7 @@ function openDrawer(id){
         <div class="step-time">${isTerminal ? termTs+', 2026' : 'Pending'}</div>
         ${c.failReason ? `<div class="step-note">Reason: ${c.failReason}</div>` : ''}
         ${c.state==='EXPIRED' ? `<div class="step-note">No settlement match within 7 days of authorization.</div>` : ''}
-        ${c.state==='CANCELLED' ? `<div class="step-note">Auth transaction was reversed/returned before settlement.</div>` : ''}
+        ${c.state==='CANCELLED' ? `<div class="step-note">Auth transaction was reversed/returned before settlement. Detected by file-diff: the transaction was present in an earlier auth file and dropped out of a later one. The bank has confirmed no direct reversal signal exists, so this is inference, not a confirmed event — see Ingestion Open Question on this.</div>` : ''}
       </div>
     </div>`;
 
@@ -2167,7 +2844,10 @@ function openDrawer(id){
         <div><div class="meta-label">Product</div><div class="meta-value"><span class="badge ${TYPE_META[c.type].badge}">${TYPE_META[c.type].label}</span></div></div>
         <div><div class="meta-label">Amount</div><div class="meta-value">₹${c.amount.toLocaleString('en-IN')}</div></div>
         <div><div class="meta-label">Status</div><div class="meta-value"><span class="badge ${meta.badge}">${meta.label}</span></div></div>
+        <div><div class="meta-label">Bank Txn Ref</div><div class="meta-value mono">${c.bankTxnRef||'—'}</div></div>
       </div>
+
+      ${(c.apiErrorCount||c.errorScreenViews) ? `<p class="card-sub" style="margin:-6px 0 14px;"><span class="badge warning">Journey health</span>&nbsp; ${c.apiErrorCount||0} API error${c.apiErrorCount===1?'':'s'} · ${c.errorScreenViews||0} error screen${c.errorScreenViews===1?'':'s'} shown during this journey — didn't necessarily cause the current status.</p>` : ''}
 
       <p class="section-title">Journey Timeline</p>
       <div class="stepper">${stepsHtml}</div>
@@ -2183,17 +2863,8 @@ function openDrawer(id){
         <div class="nudge-row"><span>Clicked</span><b>${c.nudge.clicked}</b></div>
       </div>
 
-      <p class="section-title">Actions</p>
-      <div class="actions-row">
-        <button class="btn secondary small">Retry</button>
-        <button class="btn secondary small">Escalate</button>
-        <button class="btn danger small">Cancel Request</button>
-      </div>
-
-      <div class="comment-box">
-        <textarea placeholder="Add a comment for the audit trail..."></textarea>
-      </div>
-      <div style="margin-top:16px;">
+      <p class="section-title">Audit Trail</p>
+      <div>
         <div class="audit-item"><b>System</b> — case created from nudge campaign "${c.nudge.name}"</div>
         ${c.failReason ? `<div class="audit-item"><b>System</b> — flagged: ${c.failReason}</div>` : ''}
         ${(c.auditLog||[]).map(a=>`<div class="audit-item"><b>${a.who}</b> — ${a.what} <span style="color:var(--gray-400);">(${a.when})</span></div>`).join('')}
@@ -2403,10 +3074,14 @@ function onBatchesFilterChange(){ batchesPage = 1; renderBatches(); }
 
 /* ---------------- EMI Analytics (Insights Center) ---------------- */
 let viewingAsAnalytics = 'IBL';
-let analyticsProduct = 'Single';
 
 function onAnalyticsViewingAsChange(){
   viewingAsAnalytics = document.getElementById('viewingAsAnalytics').value;
+  renderAnalytics();
+}
+
+function onAnalyticsRangeChange(){
+  document.getElementById('analyticsCustomRangeWrap').style.display = document.getElementById('analyticsRange').value==='custom' ? '' : 'none';
   renderAnalytics();
 }
 
@@ -2428,7 +3103,17 @@ function caseEntryDate(c){
   return parseStamp(c.stamps[stagesFor(c.bank,c.type)[0]]);
 }
 
+// Memoized — this scans every stamp on every case (a real cost once the
+// dataset is thousands of cases), and the answer never changes: nothing
+// in this file ever writes a stamp later than the existing max (resolveMismatch
+// stamps BOOKED with `maxDatasetDate()` itself, never later). Caching this
+// turned out to matter a lot in practice — timeInStage() calls this
+// per-case, and before memoizing, any render that ran timeInStage() over
+// hundreds of cases was recomputing this whole O(n) scan hundreds of
+// times over (Exceptions: ~2.3s; Reconciliation: ~0.56s, both measured).
+let _maxDatasetDateCache = null;
 function maxDatasetDate(){
+  if(_maxDatasetDateCache) return _maxDatasetDateCache;
   let max = null;
   CASES.forEach(c=>{
     Object.values(c.stamps).forEach(s=>{
@@ -2436,19 +3121,34 @@ function maxDatasetDate(){
       if(d && (!max || d>max)) max = d;
     });
   });
+  _maxDatasetDateCache = max;
   return max;
 }
 
 function renderAnalytics(){
   const bank = viewingAsAnalytics;
   let cases = CASES.filter(c=>c.bank===bank);
-  const PRODUCT_KEYS = ['Single','Multi','Outstanding'];
 
   // Date range — a real filter, computed relative to the latest timestamp in
-  // the dataset (this mock's "now"), not the actual calendar date.
+  // the dataset (this mock's "now"), not the actual calendar date. Custom
+  // range uses actual calendar dates from the picker instead, since "last
+  // N days" doesn't make sense once the user is picking explicit bounds.
   const rangeVal = document.getElementById('analyticsRange').value;
-  const rangeLabel = rangeVal==='all' ? 'all time' : `last ${rangeVal} days`;
-  if(rangeVal!=='all'){
+  let rangeLabel = rangeVal==='all' ? 'all time' : `last ${rangeVal} days`;
+  if(rangeVal==='custom'){
+    const fromVal = document.getElementById('analyticsRangeFrom').value;
+    const toVal = document.getElementById('analyticsRangeTo').value;
+    const fromDate = fromVal ? new Date(fromVal+'T00:00:00') : null;
+    const toDate = toVal ? new Date(toVal+'T23:59:59') : null;
+    rangeLabel = (fromVal && toVal) ? `${fromVal} to ${toVal}` : 'custom range';
+    cases = cases.filter(c=>{
+      const d = caseEntryDate(c);
+      if(!d) return false;
+      if(fromDate && d<fromDate) return false;
+      if(toDate && d>toDate) return false;
+      return true;
+    });
+  } else if(rangeVal!=='all'){
     const maxDate = maxDatasetDate();
     const cutoff = new Date(maxDate.getTime() - (+rangeVal)*24*3600*1000);
     cases = cases.filter(c=>{
@@ -2481,138 +3181,406 @@ function renderAnalytics(){
       <div class="trend-label">${d.date.getDate()} ${MONTH_ABBR[d.date.getMonth()]}</div>
     </div>`).join('') : '<p class="card-sub">No bookings in this range.</p>';
 
-  // Auth-Triggered vs. Settled-Only — IBL only (Yes Bank has no auth-path
-  // concept to compare against). entryPath defaults to 'auth' for every
-  // existing IBL Single/Multi case, since that's the only path they've ever
-  // modeled; only the dedicated settled-direct cohort is tagged 'settled'.
-  document.getElementById('authVsSettledCard').style.display = bank==='IBL' ? '' : 'none';
-  if(bank==='IBL'){
-    const iblCases = cases.filter(c=>c.type==='Single'||c.type==='Multi');
-    const groups = {
-      'Auth-triggered (new path)': iblCases.filter(c=>c.entryPath!=='settled'),
-      'Settled-only (existing baseline)': iblCases.filter(c=>c.entryPath==='settled'),
-    };
-    const rowsAVS = Object.entries(groups).map(([label,gc])=>{
-      const gBooked = gc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL');
-      const gResolved = gc.filter(c=>TERMINAL.includes(c.state)).length;
-      const rate = gResolved ? Math.round((gBooked.length/gResolved)*100) : 0;
-      const durations = gBooked.map(c=>{
-        const stampVals = Object.values(c.stamps).map(parseStamp).filter(Boolean);
-        const entry = stampVals.length ? new Date(Math.min(...stampVals)) : null;
-        const done = parseStamp(c.stamps[c.state]);
-        return (entry && done) ? (done-entry)/3600000 : null;
-      }).filter(v=>v!==null);
-      const avgHrs = durations.length ? (durations.reduce((s,v)=>s+v,0)/durations.length) : null;
-      return {label, volume:gc.length, rate, avgHrs};
-    });
-    document.getElementById('authVsSettledBody').innerHTML = rowsAVS.map(r=>`
-      <tr><td><b>${r.label}</b></td><td>${r.volume}</td><td>${r.rate}%</td><td>${r.avgHrs!==null ? r.avgHrs.toFixed(1)+'h' : '—'}</td></tr>
-    `).join('');
-    const [authRow, settledRow] = rowsAVS;
-    const lift = (authRow.rate - settledRow.rate);
-    document.getElementById('authVsSettledCallout').innerHTML = (authRow.volume && settledRow.volume)
-      ? `${lift>=0?'▲':'▼'} Auth-triggered conversion is ${Math.abs(lift)} point${Math.abs(lift)===1?'':'s'} ${lift>=0?'higher':'lower'} than the settled-only baseline, this period.`
-      : 'Not enough volume in one of the two groups yet to compare, for this range.';
-  }
+  // Global product filter — replaces the three separate per-section
+  // segments this page used to have (funnel's, Auth-vs-Settled's own).
+  // "Views can be made specific" by picking one product once, up top,
+  // rather than three independent local toggles that could disagree with
+  // each other.
+  const productFilter = document.getElementById('analyticsProductFilter').value;
 
-  // By-channel table
-  const CHANNELS = ['SMS','WhatsApp','PWA','Email'];
-  document.getElementById('analyticsChannelBody').innerHTML = CHANNELS.map(ch=>{
-    const cc = cases.filter(c=>c.channel===ch);
+  // Real business KPI terminology (Requested/Success/Pending/Reject ×
+  // Count+Volume, plus Average) — from actual BI screenshots the business
+  // uses today. Single/Multi (transaction-based) get the simpler
+  // Count/Total Volume/Average trio the real tool shows for them;
+  // Outstanding (file-based, no booking-API/STP concept) gets the richer
+  // breakdown, because that's genuinely what's tracked for it today.
+  // Product filter is always scoped to exactly one product now (no "All
+  // Products" state) — these always render, no visibility toggle needed.
+  document.getElementById('businessKpiProductLabel').textContent = ' — ' + TYPE_META[productFilter].label;
+    const fmtCr = n => '₹'+(n/10000000).toFixed(2)+' Cr';
+    const fmtK = n => '₹'+(n/1000).toFixed(1)+'k';
+    const pc = cases.filter(c=>c.type===productFilter);
+    // Single/Multi get the same Requested/Success/Pending/Reject breakdown
+    // as Outstanding now, not the flat Count/Total Volume/Average trio from
+    // the first pass. That trio was copied from the real tool's reference
+    // screenshot without accounting for *why* the real tool shows it that
+    // way — Txn-to-EMI there is a legacy, near-instant flow with no
+    // meaningful backlog. This prototype's whole premise (Master PRD) is
+    // the new auth-consent path, where a Single/Multi case genuinely sits
+    // Pending — through AUTH_RECEIVED, CONSENT_REQUESTED/GIVEN,
+    // SETTLEMENT_RECEIVED, RECON_MATCHED, BOOKING_INITIATED — before ever
+    // reaching a terminal state, exactly like Outstanding's file-based wait.
+    // Showing only a flat total for Single/Multi would hide that backlog.
+    const requested = pc;
+    const success = pc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL');
+    const pending = pc.filter(c=>!TERMINAL.includes(c.state));
+    const reject = pc.filter(c=>c.state==='FAILED'||c.state==='EXPIRED'||c.state==='CANCELLED');
+    const vol = arr => arr.reduce((s,c)=>s+c.amount,0);
+    const reqVol = vol(requested);
+    const avg = requested.length ? reqVol/requested.length : 0;
+    const html = `<div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Requested Count</div><div class="kpi-value">${requested.length.toLocaleString()}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Requested Volume</div><div class="kpi-value">${fmtCr(reqVol)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Success Count</div><div class="kpi-value">${success.length.toLocaleString()}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Success Volume</div><div class="kpi-value">${fmtCr(vol(success))}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Pending Count</div><div class="kpi-value">${pending.length.toLocaleString()}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Pending Volume</div><div class="kpi-value">${fmtCr(vol(pending))}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Reject Count</div><div class="kpi-value">${reject.length.toLocaleString()}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Reject Volume</div><div class="kpi-value">${fmtCr(vol(reject))}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Average</div><div class="kpi-value">${fmtK(avg)}</div></div>
+    </div>`;
+    document.getElementById('businessKpiSections').innerHTML = html;
+
+    // API Error Types — which kind of technical error is actually
+    // happening, not just the raw count. Only cases with apiErrorCount>0
+    // carry a type at all.
+    document.getElementById('apiErrorTypesProductLabel').textContent = ' — ' + TYPE_META[productFilter].label;
+    const errorTypeCounts = {};
+    pc.filter(c=>c.apiErrorType).forEach(c=>{ errorTypeCounts[c.apiErrorType] = (errorTypeCounts[c.apiErrorType]||0)+1; });
+    const errorTypeRows = Object.entries(errorTypeCounts).sort((a,b)=>b[1]-a[1]);
+    document.getElementById('apiErrorTypesBody').innerHTML = errorTypeRows.map(([type,count])=>`
+      <tr><td>${type}</td><td>${count}</td></tr>
+    `).join('') || '<tr><td colspan="2" class="card-sub">No API errors for this product in this range.</td></tr>';
+
+    // Journey Errors Trend — same counts as the tiles above, bucketed by
+    // day. Cases don't carry a distinct "when the error happened" stamp
+    // (apiErrorCount/errorScreenViews are just totals per case), so each
+    // case's counts are attributed to its journey entry date via
+    // caseEntryDate() — the day the customer was actually in the journey
+    // UI, same concept already used for the Bookings Trend / Auth-vs-
+    // Settled trend above.
+    document.getElementById('journeyErrorsTrendProductLabel').textContent = ' — ' + TYPE_META[productFilter].label;
+    const MONTH_ABBR3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const errByDay = {}, screenByDay = {};
+    // Every day this product had *any* journey activity gets a column, not
+    // just days with an error — API errors are sparse by design, and only
+    // plotting the days with a nonzero count renders as a couple of bars
+    // floating in empty space with no visible trend line between them.
+    // Filling in the zero days between the first and last activity makes
+    // it read as an actual trend over the period.
+    const entryDates = [];
+    pc.forEach(c=>{
+      const d = caseEntryDate(c);
+      if(!d) return;
+      entryDates.push(d);
+      const key = d.getMonth()+'-'+d.getDate();
+      errByDay[key] = (errByDay[key]||0) + (c.apiErrorCount||0);
+      screenByDay[key] = (screenByDay[key]||0) + (c.errorScreenViews||0);
+    });
+    const errDayKeys = [];
+    if(entryDates.length){
+      const minD = new Date(Math.min(...entryDates));
+      const maxD = new Date(Math.max(...entryDates));
+      for(let d=new Date(minD.getFullYear(),minD.getMonth(),minD.getDate()); d<=maxD; d.setDate(d.getDate()+1)){
+        const key = d.getMonth()+'-'+d.getDate();
+        errDayKeys.push({date:new Date(d), err:errByDay[key]||0, screen:screenByDay[key]||0});
+      }
+    }
+    const errMax = Math.max(1, ...errDayKeys.map(d=>Math.max(d.err,d.screen)));
+    document.getElementById('journeyErrorsTrend').innerHTML = errDayKeys.length ? errDayKeys.map(d=>`
+      <div class="trend-bar-col">
+        <div class="trend-tooltip">${d.err} API error${d.err===1?'':'s'} · ${d.screen} error screen${d.screen===1?'':'s'} · ${d.date.getDate()} ${MONTH_ABBR3[d.date.getMonth()]}</div>
+        <div class="trend-bar-pair">
+          <div style="width:8px;border-radius:3px 3px 0 0;background:var(--error-border);height:${Math.max(3,Math.round((d.err/errMax)*130))}px;"></div>
+          <div style="width:8px;border-radius:3px 3px 0 0;background:var(--warning-border);height:${Math.max(3,Math.round((d.screen/errMax)*130))}px;"></div>
+        </div>
+        <div class="trend-label">${d.date.getDate()} ${MONTH_ABBR3[d.date.getMonth()]}</div>
+      </div>`).join('') : '<p class="card-sub">No journeys for this product in this range.</p>';
+
+  // By-channel and by-merchant-category both respect the global product
+  // filter now too — "so views can be made specific" applies everywhere on
+  // this page, not just the funnel.
+  const filteredCases = cases.filter(c=>c.type===productFilter);
+
+  // Nudges Sent, and Nudges Sent vs. Conversion — daily counts off
+  // filteredCases, so this works for every product (including Outstanding
+  // — OS-to-EMI cross-sell nudges are real nudges, not just Single/Multi's).
+  document.getElementById('nudgesSentTrendProductLabel').textContent = ' — ' + TYPE_META[productFilter].label;
+  document.getElementById('nudgesSentVsConversionProductLabel').textContent = ' — ' + TYPE_META[productFilter].label;
+  const MONTH_ABBR4 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // Landing Page Visited = clicked the nudge — that's literally what
+  // clicking a nudge link does, land on Screen 1 of the PWA journey. The
+  // first real step after a nudge goes out, before any conversion signal.
+  const sentByDay = {}, visitByDay = {}, convByDay = {};
+  filteredCases.forEach(c=>{
+    if(c.nudge.sent && c.nudge.sent!=='—'){
+      const d = parseStamp(c.nudge.sent);
+      if(d){ const k = d.getMonth()+'-'+d.getDate(); sentByDay[k] = (sentByDay[k]||0)+1; }
+    }
+    if(c.nudge.clicked && c.nudge.clicked!=='—'){
+      const d = parseStamp(c.nudge.clicked);
+      if(d){ const k = d.getMonth()+'-'+d.getDate(); visitByDay[k] = (visitByDay[k]||0)+1; }
+    }
+    if(c.state==='BOOKED'||c.state==='PARTIAL'){
+      const d = parseStamp(c.stamps[c.state]);
+      if(d){ const k = d.getMonth()+'-'+d.getDate(); convByDay[k] = (convByDay[k]||0)+1; }
+    }
+  });
+  const sentDayKeys = Object.keys(sentByDay).map(k=>{
+    const [mo,da] = k.split('-').map(Number);
+    return {date:new Date(2026,mo,da), sent:sentByDay[k]};
+  }).sort((a,b)=>a.date-b.date);
+  const sentMax = Math.max(1, ...sentDayKeys.map(d=>d.sent));
+  document.getElementById('nudgesSentTrend').innerHTML = sentDayKeys.length ? sentDayKeys.map(d=>`
+    <div class="trend-bar-col">
+      <div class="trend-tooltip">${d.sent} sent · ${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
+      <div class="trend-bar" style="height:${Math.max(4,Math.round((d.sent/sentMax)*130))}px;"></div>
+      <div class="trend-label">${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
+    </div>`).join('') : '<p class="card-sub">No nudges sent for this product in this range.</p>';
+
+  const bothDayKeys = [...new Set([...Object.keys(sentByDay), ...Object.keys(visitByDay), ...Object.keys(convByDay)])].map(k=>{
+    const [mo,da] = k.split('-').map(Number);
+    return {date:new Date(2026,mo,da), sent:sentByDay[k]||0, visit:visitByDay[k]||0, conv:convByDay[k]||0};
+  }).sort((a,b)=>a.date-b.date);
+  const bothMax = Math.max(1, ...bothDayKeys.map(d=>Math.max(d.sent,d.visit,d.conv)));
+  document.getElementById('nudgesSentVsConversionTrend').innerHTML = bothDayKeys.length ? bothDayKeys.map(d=>`
+    <div class="trend-bar-col">
+      <div class="trend-tooltip">${d.sent} sent · ${d.visit} visited · ${d.conv} converted · ${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
+      <div class="trend-bar-pair">
+        <div style="width:7px;border-radius:3px 3px 0 0;background:var(--blue-cta);height:${Math.max(3,Math.round((d.sent/bothMax)*130))}px;"></div>
+        <div style="width:7px;border-radius:3px 3px 0 0;background:var(--warning-border);height:${Math.max(3,Math.round((d.visit/bothMax)*130))}px;"></div>
+        <div style="width:7px;border-radius:3px 3px 0 0;background:var(--purple-text);height:${Math.max(3,Math.round((d.conv/bothMax)*130))}px;"></div>
+      </div>
+      <div class="trend-label">${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
+    </div>`).join('') : '<p class="card-sub">No activity for this product in this range.</p>';
+
+  // By-channel — donut of share of nudges sent, conv. rate in the legend
+  // (a rate can't be a pie slice, it doesn't sum to a whole).
+  const CHANNELS = ['SMS','WhatsApp','PWA','Email','RCS'];
+  const channelRows = CHANNELS.map(ch=>{
+    const cc = filteredCases.filter(c=>c.channel===ch);
     const sent = cc.filter(c=>c.nudge.sent!=='—').length;
     const clicked = cc.filter(c=>c.nudge.clicked!=='—').length;
     const conv = cc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
-    const rate = sent ? Math.round((conv/sent)*100) : 0;
-    return `<tr>
-      <td><b>${ch}</b></td>
-      <td>${sent}</td>
-      <td>${clicked}</td>
-      <td>${conv}</td>
-      <td>${rate}%</td>
-    </tr>`;
-  }).join('');
+    return {label:ch, volume:sent, clicked, conv};
+  }).filter(r=>r.volume>0);
+  renderPieChart('analyticsChannelPie', channelRows, r=>`${fmtRateN(r.conv, r.volume)} conv.`);
 
-  // By-product table
-  document.getElementById('analyticsProductBody').innerHTML = PRODUCT_KEYS.map(p=>{
-    const pc = cases.filter(c=>c.type===p);
+  // By-merchant-category table — every category here already passed
+  // ingestion suppression (Section 6), so a restricted category (fuel,
+  // jewelry, cash, etc.) can never appear; sorted by volume since there
+  // are more categories than products or channels.
+  const mccRows = MCC_CATEGORIES.map(mc=>{
+    const mcc = filteredCases.filter(c=>c.mccCategory===mc);
+    const mBooked = mcc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL');
+    const gmv = mBooked.reduce((s,c)=>s+c.amount,0);
+    return {mc, volume:mcc.length, booked:mBooked.length, gmv};
+  }).filter(r=>r.volume>0).sort((a,b)=>b.volume-a.volume);
+  // Fixed 5/page (not the shared PAGE_SIZE=10) — deliberately matches By
+  // Channel's row count so the two cards in this row stay the same height.
+  const MCC_PAGE_SIZE = 5;
+  const mccTotalPages = Math.max(1, Math.ceil(mccRows.length/MCC_PAGE_SIZE));
+  if(analyticsMccPage>mccTotalPages) analyticsMccPage = mccTotalPages;
+  const mccPageRows = mccRows.slice((analyticsMccPage-1)*MCC_PAGE_SIZE, analyticsMccPage*MCC_PAGE_SIZE);
+  document.getElementById('analyticsMccCount').textContent = `${mccRows.length} categor${mccRows.length===1?'y':'ies'} · page ${analyticsMccPage} of ${mccTotalPages}`;
+  document.getElementById('analyticsMccPagination').innerHTML = paginationHtml(analyticsMccPage, mccTotalPages, 'goToAnalyticsMccPage');
+  document.getElementById('analyticsMccBody').innerHTML = mccPageRows.map(r=>`
+    <tr><td><b>${r.mc}</b></td><td>${r.volume}</td><td>${fmtRateN(r.booked,r.volume)}</td><td>${fmtAmount(r.gmv)}</td></tr>
+  `).join('') || '<tr><td colspan="4" class="card-sub">No data for this range.</td></tr>';
+
+  // By-program table — which credit card program a case is tied to is
+  // orthogonal to which EMI product it is (a program has both Single and
+  // Outstanding cases), so this reads off `cases` (bank-scoped only), not
+  // `filteredCases` (product-scoped) — a real cross-product cut, same as
+  // By-Channel and By-MCC above. (Previously this silently read off
+  // filteredCases instead, quietly product-scoping a table whose own
+  // sub-copy claimed it wasn't — caught while investigating a follow-up
+  // question, fixed here.)
+  //
+  // No conversion rate: a true program-level conversion rate needs a real
+  // eligible-account base (the business, not per-transaction denominator —
+  // "100 eligible accounts, 20 converted" is the right way to think about
+  // this, not "100 requests, 20 converted"), and this data model doesn't
+  // track eligible accounts independent of the cases they generated. Volume
+  // and Total Amount Booked are both real, directly computed numbers;
+  // rather than fake a conversion rate off the wrong denominator, this cut
+  // just doesn't show one.
+  const allPrograms = [...PROGRAMS.IBL, ...PROGRAMS.YES];
+  const programRows = allPrograms.map(prog=>{
+    const pc = cases.filter(c=>c.programId===prog.id);
     const pBooked = pc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL');
-    const pResolved = pc.filter(c=>TERMINAL.includes(c.state)).length;
-    const rate = pResolved ? Math.round((pBooked.length/pResolved)*100) : 0;
     const gmv = pBooked.reduce((s,c)=>s+c.amount,0);
-    const tm = TYPE_META[p];
-    return `<tr onclick="analyticsProduct='${p}';renderAnalytics();">
-      <td><span class="badge ${tm.badge}">${tm.label}</span></td>
-      <td>${pc.length}</td>
-      <td>${rate}%</td>
-      <td>₹${(gmv/100000).toFixed(1)}L</td>
-      <td>₹${(gmv*0.10/100000).toFixed(1)}L</td>
-    </tr>`;
-  }).join('');
+    return {name:prog.name, volume:pc.length, gmv};
+  }).filter(r=>r.volume>0).sort((a,b)=>b.volume-a.volume);
+  const programTotalPages = Math.max(1, Math.ceil(programRows.length/PAGE_SIZE));
+  if(byProgramPage>programTotalPages) byProgramPage = programTotalPages;
+  const programPageRows = programRows.slice((byProgramPage-1)*PAGE_SIZE, byProgramPage*PAGE_SIZE);
+  document.getElementById('byProgramCount').textContent = `${programRows.length} program${programRows.length===1?'':'s'} · page ${byProgramPage} of ${programTotalPages}`;
+  document.getElementById('byProgramPagination').innerHTML = paginationHtml(byProgramPage, programTotalPages, 'goToByProgramPage');
+  document.getElementById('byProgramBody').innerHTML = programPageRows.map(r=>`
+    <tr><td><b>${r.name}</b></td><td>${r.volume}</td><td>${fmtAmount(r.gmv)}</td></tr>
+  `).join('') || '<tr><td colspan="3" class="card-sub">No data for this range.</td></tr>';
 
-  // Segmented funnel for one product at a time
-  document.getElementById('analyticsProductSegment').innerHTML = PRODUCT_KEYS.map(p=>
-    `<div class="tab ${p===analyticsProduct?'active':''}" onclick="analyticsProduct='${p}';renderAnalytics();">${TYPE_META[p].label}</div>`
-  ).join('');
+  // Customer/offer group-by cuts — credit limit, age, state, processing
+  // fee offered, interest rate offered. Plain group-by, same table shape as
+  // every other cut on this page; cross-product like By Program, using
+  // `cases` not `filteredCases`. No engineered correlation with outcome —
+  // whatever conversion rate each bucket shows is whatever this file's
+  // existing outcome generation already produces.
+  const groupByRows = (keyFn, labels) => labels.map(label=>{
+    const gc = cases.filter(c=>keyFn(c)===label);
+    const gBooked = gc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL');
+    const gmv = gBooked.reduce((s,c)=>s+c.amount,0);
+    return {label, volume:gc.length, booked:gBooked.length, gmv};
+  }).filter(r=>r.volume>0).sort((a,b)=>b.volume-a.volume);
+  const renderGroupByTable = (bodyId, rows) => {
+    document.getElementById(bodyId).innerHTML = rows.map(r=>`
+      <tr><td><b>${r.label}</b></td><td>${r.volume}</td><td>${fmtRateN(r.booked,r.volume)}</td><td>${fmtAmount(r.gmv)}</td></tr>
+    `).join('') || '<tr><td colspan="4" class="card-sub">No data for this range.</td></tr>';
+  };
+  renderPieChart('creditLimitPie', groupByRows(c=>creditLimitBandFor(c.creditLimit).label, CREDIT_LIMIT_BANDS.map(b=>b.label)), r=>fmtRateN(r.booked,r.volume)+' conv.');
+  renderPieChart('ageBandPie', groupByRows(c=>c.ageBand, AGE_BANDS), r=>fmtRateN(r.booked,r.volume)+' conv.');
+  renderPieChart('processingFeePie', groupByRows(c=>c.processingFeeOffered+'%', PROCESSING_FEE_OPTIONS.map(f=>f+'%')), r=>fmtRateN(r.booked,r.volume)+' conv.');
+  renderPieChart('interestRatePie', groupByRows(c=>c.interestRateOffered+'%', INTEREST_RATE_OPTIONS.map(r=>r+'%')), r=>fmtRateN(r.booked,r.volume)+' conv.');
+  renderPieChart('statePie', groupByRows(c=>c.customerState, CUSTOMER_STATES), r=>fmtRateN(r.booked,r.volume)+' conv.');
 
-  // Same exclusion as Overview's funnel — settled-direct cases follow a
-  // different path shape and don't belong in the auth-first funnel.
-  const pCases = cases.filter(c=>c.type===analyticsProduct && c.entryPath!=='settled');
-  const order = stagesFor(bank, analyticsProduct);
-  const pConverted = pCases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
-  document.getElementById('analyticsFunnelSub').textContent = `${bankLabel(bank)} · ${TYPE_META[analyticsProduct].label}`;
-  const stages = order.map(s=>({label:STAGE_META[s].label, count: pCases.filter(c=>c.stamps[s]).length}));
-  stages.push({label:'Booked / Partial', count: pConverted});
-  const maxCount = stages[0].count || 1;
-  document.getElementById('analyticsFunnelBody').innerHTML = stages.map(f=>`
-    <div class="funnel-row">
-      <div class="funnel-label">${f.label}</div>
-      <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((f.count/maxCount)*100)}%"></div></div>
-      <div class="funnel-count">${f.count}</div>
-      <div class="funnel-pct">${Math.round((f.count/maxCount)*100)}%</div>
-    </div>`).join('');
+  // Funnel, Time-in-Stage, and Amount Bucket always render now — the
+  // Product filter is always scoped to exactly one product (no "All
+  // Products" state to guess a default from).
+  {
+    const buildFunnelStages = (pCases, order) => {
+      const pConverted = pCases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
+      const stages = order.map(s=>({label:STAGE_META[s].label, count: pCases.filter(c=>c.stamps[s]).length}));
+      stages.push({label:'Booked / Partial', count: pConverted});
+      return stages;
+    };
+    const funnelStagesHtml = (stages) => {
+      const maxCount = stages[0].count || 1;
+      return stages.map(f=>`
+        <div class="funnel-row">
+          <div class="funnel-label">${f.label}</div>
+          <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((f.count/maxCount)*100)}%"></div></div>
+          <div class="funnel-count">${f.count}</div>
+          <div class="funnel-pct">${Math.round((f.count/maxCount)*100)}%</div>
+        </div>`).join('');
+    };
+    // Drop-off callout — the single biggest step-to-step loss, computed from
+    // the same stage counts just rendered, not a separate figure.
+    const biggestDropoff = (stages) => {
+      let biggestDrop = null;
+      for(let i=0;i<stages.length-1;i++){
+        if(stages[i].count<=0) continue;
+        const dropPct = Math.round(((stages[i].count-stages[i+1].count)/stages[i].count)*100);
+        if(dropPct>0 && (!biggestDrop || dropPct>biggestDrop.dropPct)){
+          biggestDrop = {from:stages[i].label, to:stages[i+1].label, dropPct};
+        }
+      }
+      return biggestDrop;
+    };
+    const calloutHtml = (drop, prefix) => drop
+      ? `<div class="dropoff-callout">⚠ ${prefix}iggest drop-off: ${drop.from} → ${drop.to} (−${drop.dropPct}%)</div>`
+      : '';
 
-  // Drop-off callout — the single biggest step-to-step loss, computed from
-  // the same stage counts just rendered above, not a separate figure.
-  let biggestDrop = null;
-  for(let i=0;i<stages.length-1;i++){
-    if(stages[i].count<=0) continue;
-    const dropPct = Math.round(((stages[i].count-stages[i+1].count)/stages[i].count)*100);
-    if(dropPct>0 && (!biggestDrop || dropPct>biggestDrop.dropPct)){
-      biggestDrop = {from:stages[i].label, to:stages[i+1].label, dropPct};
+    // Both entry paths convert through the same Txn-to-EMI/Multi-Txn-to-EMI
+    // journey (Master PRD: "this adds a new, parallel path — it does not
+    // replace the existing one") — IBL Single/Multi genuinely has two
+    // structurally different funnels running at once, so show both rather
+    // than silently excluding settled-direct the way this card used to.
+    // Not applicable to Yes Bank (no settled-direct cohort modeled) or
+    // Outstanding (no auth-path concept at all) — those still get the
+    // single funnel they've always had.
+    const showBothBranches = bank==='IBL' && (productFilter==='Single'||productFilter==='Multi');
+    // order/pCases feed Time-in-Stage below regardless of branch mode — in
+    // dual-branch mode they're set to the auth-triggered branch (the new
+    // path this project is actually about), since Time-in-Stage is
+    // diagnosing our own pipeline's stage delays, not a settled-direct
+    // concern (that path is already STP, no stages to time).
+    let order, pCases;
+    if(showBothBranches){
+      const authCases = cases.filter(c=>c.type===productFilter && c.entryPath!=='settled');
+      const settledCases = cases.filter(c=>c.type===productFilter && c.entryPath==='settled');
+      order = stagesFor(bank, productFilter);
+      pCases = authCases;
+      const authStages = buildFunnelStages(authCases, order);
+      const settledStages = buildFunnelStages(settledCases, SETTLED_DIRECT_STAGE_ORDER);
+      document.getElementById('analyticsFunnelSub').textContent = `${bankLabel(bank)} · ${TYPE_META[productFilter].label} — both entry paths, same journey`;
+      document.getElementById('analyticsFunnelBody').innerHTML = `
+        <p class="card-sub" style="margin:0 0 8px;font-weight:600;color:var(--gray-700,#344054);">Auth-Triggered (new path) — ${authCases.length} requests</p>
+        ${funnelStagesHtml(authStages)}
+        <p class="card-sub" style="margin:18px 0 8px;font-weight:600;color:var(--gray-700,#344054);">Settled-Direct (existing baseline) — ${settledCases.length} requests</p>
+        ${funnelStagesHtml(settledStages)}
+      `;
+      document.getElementById('dropoffCallout').innerHTML =
+        calloutHtml(biggestDropoff(authStages), 'Auth-triggered — b') +
+        calloutHtml(biggestDropoff(settledStages), 'Settled-direct — b');
+    } else {
+      // Same exclusion as Overview's funnel — settled-direct cases follow a
+      // different path shape and don't belong in the auth-first funnel.
+      pCases = cases.filter(c=>c.type===productFilter && c.entryPath!=='settled');
+      order = stagesFor(bank, productFilter);
+      document.getElementById('analyticsFunnelSub').textContent = `${bankLabel(bank)} · ${TYPE_META[productFilter].label}`;
+      const stages = buildFunnelStages(pCases, order);
+      document.getElementById('analyticsFunnelBody').innerHTML = funnelStagesHtml(stages);
+      document.getElementById('dropoffCallout').innerHTML = calloutHtml(biggestDropoff(stages), 'B');
     }
-  }
-  document.getElementById('dropoffCallout').innerHTML = biggestDrop
-    ? `<div class="dropoff-callout">⚠ Biggest drop-off: ${biggestDrop.from} → ${biggestDrop.to} (−${biggestDrop.dropPct}%)</div>`
-    : '';
 
-  // Time-in-stage — real deltas computed from the same timestamps shown
-  // everywhere else, not a separate set of numbers.
-  const stageTimingRows = [];
-  for(let i=0;i<order.length-1;i++){
-    const from = order[i], to = order[i+1];
-    const deltas = [];
-    pCases.forEach(c=>{
-      const d1 = parseStamp(c.stamps[from]), d2 = parseStamp(c.stamps[to]);
-      if(d1 && d2 && d2>=d1) deltas.push((d2-d1)/3600000);
-    });
-    if(deltas.length){
-      const avg = deltas.reduce((s,v)=>s+v,0)/deltas.length;
-      stageTimingRows.push({label:`${STAGE_META[from].label} → ${STAGE_META[to].label}`, avg});
+    // Time-in-stage — real deltas computed from the same timestamps shown
+    // everywhere else, not a separate set of numbers.
+    const stageTimingRows = [];
+    for(let i=0;i<order.length-1;i++){
+      const from = order[i], to = order[i+1];
+      const deltas = [];
+      pCases.forEach(c=>{
+        const d1 = parseStamp(c.stamps[from]), d2 = parseStamp(c.stamps[to]);
+        if(d1 && d2 && d2>=d1) deltas.push((d2-d1)/3600000);
+      });
+      if(deltas.length){
+        const avg = deltas.reduce((s,v)=>s+v,0)/deltas.length;
+        stageTimingRows.push({label:`${STAGE_META[from].label} → ${STAGE_META[to].label}`, avg});
+      }
     }
-  }
-  document.getElementById('stageTimingBody').innerHTML = stageTimingRows.length
-    ? stageTimingRows.map(r=>`
+    document.getElementById('stageTimingBody').innerHTML = stageTimingRows.length
+      ? stageTimingRows.map(r=>`
         <div class="funnel-row">
           <div class="funnel-label" style="width:280px;">${r.label}</div>
           <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.min(100,Math.round((r.avg/48)*100))}%;background:var(--warning-border);"></div></div>
           <div class="funnel-count">${r.avg.toFixed(1)}h</div>
         </div>`).join('')
-    : '<p class="card-sub">Not enough cases with both timestamps yet for this product.</p>';
+      : '<p class="card-sub">Not enough cases with both timestamps yet for this product.</p>';
+
+    // Conversion by Amount Bucket — uses every case of this product
+    // (unlike the funnel/time-in-stage above, not excluding settled-direct
+    // cases: a settled-direct case's amount and outcome are just as real,
+    // there's no stage-shape mismatch here to worry about). "Txn Amount"
+    // for Single/Multi (transaction-based); "OS Amount" for Outstanding
+    // (an outstanding balance, not a transaction) — same real-terminology
+    // split as the Business KPIs card above.
+    const pcAll = cases.filter(c=>c.type===productFilter);
+    const amountLabel = productFilter==='Outstanding' ? 'OS Amount' : 'Txn Amount';
+    document.getElementById('amountBucketTitle').textContent = `Conversion by ${amountLabel} Bucket`;
+    document.getElementById('amountBucketColHeader').textContent = `${amountLabel} Bucket`;
+    document.getElementById('amountBucketSub').textContent = `Where ${TYPE_META[productFilter].label} volume concentrates, and whether conversion holds up at higher ticket sizes`;
+    const bucketRows = AMOUNT_BUCKETS.map(b=>{
+      const bc = pcAll.filter(c=>amountBucketFor(c.amount)===b);
+      const bBooked = bc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL');
+      const gmv = bBooked.reduce((s,c)=>s+c.amount,0);
+      return {label:b.label, volume:bc.length, booked:bBooked.length, gmv};
+    }).filter(r=>r.volume>0);
+    document.getElementById('amountBucketBody').innerHTML = bucketRows.map(r=>`
+      <tr><td><b>${r.label}</b></td><td>${r.volume}</td><td>${fmtRateN(r.booked,r.volume)}</td><td>${fmtAmount(r.gmv)}</td></tr>
+    `).join('') || '<tr><td colspan="4" class="card-sub">No cases for this product in this range.</td></tr>';
+
+    // Rejection Reasons — real per-product vocabulary (Outstanding's
+    // reasons are genuinely different from Single/Multi's, established
+    // when this data was first sourced from actual business screenshots).
+    // Table view of the same reasons Exceptions charts on EMI Conversions,
+    // scoped to whichever product the global filter has selected.
+    document.getElementById('rejectReasonsProductLabel').textContent = ' — ' + TYPE_META[productFilter].label;
+    document.getElementById('rejectReasonsSub').textContent = `Where ${TYPE_META[productFilter].label}'s Failed requests are actually failing`;
+    const rejectedCases = pcAll.filter(c=>c.state==='FAILED' && c.failReason);
+    const reasonCounts = {};
+    rejectedCases.forEach(c=>{ reasonCounts[c.failReason] = (reasonCounts[c.failReason]||0)+1; });
+    const reasonRows = Object.entries(reasonCounts).sort((a,b)=>b[1]-a[1]);
+    document.getElementById('rejectReasonsBody').innerHTML = reasonRows.map(([reason,count])=>`
+      <tr><td>${reason}</td><td>${count}</td><td>${rejectedCases.length ? Math.round((count/rejectedCases.length)*100) : 0}%</td></tr>
+    `).join('') || '<tr><td colspan="3" class="card-sub">No Failed requests for this product in this range.</td></tr>';
+  }
 
   // Nudge → Conversion — same journeyId grouping as Batch Creation, extended
   // with the nudge funnel (sent/delivered/clicked) alongside the outcome.
+  // Also respects the global product filter, same as By-Channel/By-MCC.
   const groups = {};
-  cases.forEach(c=>{
+  filteredCases.forEach(c=>{
     if(!groups[c.journeyId]) groups[c.journeyId] = {journeyId:c.journeyId, name:c.campaign, channel:c.channel, cases:[]};
     groups[c.journeyId].cases.push(c);
   });
@@ -2622,11 +3590,21 @@ function renderAnalytics(){
     const clicked = g.cases.filter(c=>c.nudge.clicked!=='—').length;
     const consented = g.cases.filter(c=>c.stamps.CONSENT_GIVEN).length;
     const converted = g.cases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
-    const gmv = g.cases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').reduce((s,c)=>s+c.amount,0);
-    return {...g, sent, delivered, clicked, consented, converted, rate: sent?Math.round((converted/sent)*100):0, revenue: gmv*0.10};
+    // Converted Amount = real ₹ amount of the converted subset — a real
+    // transacted figure, no assumed take rate standing in for it. "Volume"
+    // is deliberately not repeated here as a ₹ figure: everywhere else in
+    // this file (By-Product, By-Channel, By-MCC, By-Program) "Volume" means
+    // count, and Sent already serves as this table's count.
+    const convertedAmount = g.cases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').reduce((s,c)=>s+c.amount,0);
+    return {...g, sent, delivered, clicked, consented, converted, rate: sent?Math.round((converted/sent)*100):0, convertedAmount};
   }).sort((a,b)=>b.sent-a.sent);
 
-  document.getElementById('nudgeCorrelationBody').innerHTML = rows.map(r=>`
+  const nudgeTotalPages = Math.max(1, Math.ceil(rows.length/PAGE_SIZE));
+  if(nudgeCorrelationPage>nudgeTotalPages) nudgeCorrelationPage = nudgeTotalPages;
+  const nudgePageRows = rows.slice((nudgeCorrelationPage-1)*PAGE_SIZE, nudgeCorrelationPage*PAGE_SIZE);
+  document.getElementById('nudgeCorrelationCount').textContent = `${rows.length} campaign${rows.length===1?'':'s'} · page ${nudgeCorrelationPage} of ${nudgeTotalPages}`;
+  document.getElementById('nudgeCorrelationPagination').innerHTML = paginationHtml(nudgeCorrelationPage, nudgeTotalPages, 'goToNudgeCorrelationPage');
+  document.getElementById('nudgeCorrelationBody').innerHTML = nudgePageRows.map(r=>`
     <tr onclick="openJourneyModal('${r.cases[0].id}')">
       <td><b>${r.name}</b><br><span class="mono" style="font-size:11px;">${r.journeyId}</span></td>
       <td>${r.channel}</td>
@@ -2636,7 +3614,7 @@ function renderAnalytics(){
       <td>${r.consented}</td>
       <td>${r.converted}</td>
       <td>${r.rate}%</td>
-      <td>₹${(r.revenue/100000).toFixed(1)}L</td>
+      <td>${fmtAmount(r.convertedAmount)}</td>
     </tr>`).join('');
 }
 
@@ -5308,7 +6286,6 @@ function submitDnc(){
 
 /* ---------------- Init ---------------- */
 populateStateFilter();
-renderOverview();
 renderRequests();
 </script>
 </body>
