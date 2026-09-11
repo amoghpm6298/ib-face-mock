@@ -752,10 +752,10 @@
 
       <div class="card" style="margin-bottom:20px;" id="mismatchReviewCard">
         <p class="card-title">Amount Mismatch — Needs Review</p>
-        <p class="card-sub">Settled amount didn't exactly match the auth amount, so this was auto-marked Failed (Phase 1 policy — recompute-and-book isn't automated yet). Review each one and decide whether it's close enough to book manually.</p>
+        <p class="card-sub">Settled amount didn't exactly match the auth amount, so this was auto-marked Failed (Phase 1 policy — recompute-and-book isn't automated yet). Open a case to see its full journey and history before deciding whether to book it manually.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Request ID</th><th>Customer</th><th>Auth Amount</th><th>Settled Amount</th><th>Delta</th><th></th></tr></thead>
+            <thead><tr><th>Request ID</th><th>Customer</th><th>Auth Amount</th><th>Settled Amount</th><th>Delta</th></tr></thead>
             <tbody id="mismatchReviewBody"></tbody>
           </table>
         </div>
@@ -2405,21 +2405,22 @@ function renderExceptions(){
   // rejection like a blocked card. Ops can override it here using the same
   // booking action the automated path would have taken.
   document.getElementById('mismatchReviewCard').style.display = mismatchQueue.length ? '' : 'none';
+  // No inline action buttons here — deciding whether to book real money
+  // on a delta shouldn't happen from a 5-column table row with no case
+  // context. Rows open the drawer instead, where the same Book Anyway /
+  // Confirm Failed actions live alongside the full Journey Timeline,
+  // Journey Health, and Audit Trail.
   document.getElementById('mismatchReviewBody').innerHTML = mismatchQueue.map(c=>{
     const delta = c.settledAmount - c.amount;
     const deltaPct = Math.round((delta/c.amount)*100);
-    return `<tr>
+    return `<tr onclick="openDrawer('${c.id}')">
       <td class="mono">${c.id}</td>
       <td>${c.customer}</td>
       <td>₹${c.amount.toLocaleString('en-IN')}</td>
       <td>₹${c.settledAmount.toLocaleString('en-IN')}</td>
       <td><span class="badge ${Math.abs(deltaPct)<=5?'warning':'error'}">${delta>0?'+':''}${deltaPct}%</span></td>
-      <td style="white-space:nowrap;">
-        <button class="btn secondary small" onclick="event.stopPropagation();resolveMismatch('${c.id}','booked')">Book Anyway</button>
-        <button class="btn secondary small" onclick="event.stopPropagation();resolveMismatch('${c.id}','failed')">Confirm Failed</button>
-      </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="6" class="card-sub">No mismatch cases waiting on review for this bank.</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="card-sub">No mismatch cases waiting on review for this bank.</td></tr>';
 
   // By-reason summary
   const byReason = {};
