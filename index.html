@@ -952,12 +952,7 @@
     <div class="card" style="margin-bottom:20px;" id="rejectReasonsCard">
       <p class="card-title">Rejection Reasons<span id="rejectReasonsProductLabel"></span></p>
       <p class="card-sub" id="rejectReasonsSub">Where this product's Failed requests are actually failing</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Reason</th><th>Count</th><th>% of Rejects</th></tr></thead>
-          <tbody id="rejectReasonsBody"></tbody>
-        </table>
-      </div>
+      <div id="rejectReasonsBars"></div>
     </div>
 
     <!-- ===== Nudge performance — what's actually driving people into the
@@ -1083,6 +1078,14 @@
       </div>
     </div>
 
+    <!-- Chart-type rule applied to every group-by cut on this page, not a
+    per-card judgment call: ≤6 nominal/ordinal categories → donut; >6, or
+    any ordinal cut regardless of count (order preserved, not sorted by
+    volume) → bar list; a table only when there are 3+ real numeric
+    columns a bar+trailing-text can't carry cleanly. By Merchant Category
+    and Amount Bucket both genuinely need Volume + Conv. Rate + GMV
+    Converted as three distinct numbers — that's the table exception,
+    stated once here rather than left to look arbitrary card by card. -->
     <div class="row-flex" style="margin-bottom:20px;">
       <div class="card">
         <p class="card-title">By Merchant Category</p>
@@ -1121,12 +1124,7 @@
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">By Program</p>
       <p class="card-sub">Volume and amount booked by card program — orthogonal to product, so this isn't gated by the Product filter above. No conversion rate shown here — this data doesn't track a program's true eligible-account base, only the requests it happened to generate.</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Program</th><th>Volume</th><th>Total Amount Booked</th></tr></thead>
-          <tbody id="byProgramBody"></tbody>
-        </table>
-      </div>
+      <div id="byProgramBars"></div>
       <!-- A real issuer portfolio runs dozens of live programs — this stays
       paginated rather than dumping every row inline, same reasoning as
       Requests/Exceptions on the Conversions page. -->
@@ -1143,12 +1141,7 @@
     <div class="card" id="apiErrorTypesCard">
       <p class="card-title">API Error Types<span id="apiErrorTypesProductLabel"></span></p>
       <p class="card-sub">Breakdown of journey-level API errors by type — a customer-facing frontend/API hiccup, distinct from a business rejection reason</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Error Type</th><th>Count</th></tr></thead>
-          <tbody id="apiErrorTypesBody"></tbody>
-        </table>
-      </div>
+      <div id="apiErrorTypesBars"></div>
     </div>
 
     <!-- Trend view of the journey-health totals shown in Business KPIs
@@ -3673,10 +3666,16 @@ function renderAnalytics(){
     document.getElementById('apiErrorTypesProductLabel').textContent = ' — ' + TYPE_META[productFilter].label;
     const errorTypeCounts = {};
     pc.filter(c=>c.apiErrorType).forEach(c=>{ errorTypeCounts[c.apiErrorType] = (errorTypeCounts[c.apiErrorType]||0)+1; });
+    // Bar list, not a table — nominal, ≤6 categories, single metric — same
+    // shape as every other reason/type breakdown on this page now.
     const errorTypeRows = Object.entries(errorTypeCounts).sort((a,b)=>b[1]-a[1]);
-    document.getElementById('apiErrorTypesBody').innerHTML = errorTypeRows.map(([type,count])=>`
-      <tr><td>${type}</td><td>${count}</td></tr>
-    `).join('') || '<tr><td colspan="2" class="card-sub">No API errors for this product in this range.</td></tr>';
+    const errorTypeMax = errorTypeRows.length ? errorTypeRows[0][1] : 1;
+    document.getElementById('apiErrorTypesBars').innerHTML = errorTypeRows.length ? errorTypeRows.map(([type,count])=>`
+      <div class="funnel-row">
+        <div class="funnel-label" style="width:220px;">${type}</div>
+        <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((count/errorTypeMax)*100)}%;background:var(--error-border);"></div></div>
+        <div class="funnel-count">${count}</div>
+      </div>`).join('') : '<p class="card-sub">No API errors for this product in this range.</p>';
 
     // Journey Errors Trend — same counts as the tiles above, bucketed by
     // day. Cases don't carry a distinct "when the error happened" stamp
@@ -3864,9 +3863,19 @@ function renderAnalytics(){
   const programPageRows = programRows.slice((byProgramPage-1)*PAGE_SIZE, byProgramPage*PAGE_SIZE);
   document.getElementById('byProgramCount').textContent = `${programRows.length} program${programRows.length===1?'':'s'} · page ${byProgramPage} of ${programTotalPages}`;
   document.getElementById('byProgramPagination').innerHTML = paginationHtml(byProgramPage, programTotalPages, 'goToByProgramPage');
-  document.getElementById('byProgramBody').innerHTML = programPageRows.map(r=>`
-    <tr><td><b>${r.name}</b></td><td>${r.volume}</td><td>${fmtAmount(r.gmv)}</td></tr>
-  `).join('') || '<tr><td colspan="3" class="card-sub">No data for this range.</td></tr>';
+  // Bar list, not a table — nominal, >6 categories, and only 2 real
+  // numbers (Volume, GMV), the same shape every other >6-category cut on
+  // this page uses (State, Interest Rate). Scaled against the overall max
+  // (first row, already sorted desc), not just the current page's, so bar
+  // length stays comparable across pages.
+  const programMax = programRows.length ? programRows[0].volume : 1;
+  document.getElementById('byProgramBars').innerHTML = programPageRows.length ? programPageRows.map(r=>`
+    <div class="funnel-row">
+      <div class="funnel-label" style="width:200px;">${r.name}</div>
+      <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((r.volume/programMax)*100)}%;"></div></div>
+      <div class="funnel-count">${r.volume.toLocaleString('en-IN')}</div>
+      <div class="funnel-meta">${fmtAmount(r.gmv)} booked</div>
+    </div>`).join('') : '<p class="card-sub">No data for this range.</p>';
 
   // Customer/offer group-by cuts — credit limit, age, state, processing
   // fee offered, interest rate offered. Plain group-by, same table shape as
@@ -4016,10 +4025,18 @@ function renderAnalytics(){
     const rejectedCases = pcAll.filter(c=>c.state==='FAILED' && c.failReason);
     const reasonCounts = {};
     rejectedCases.forEach(c=>{ reasonCounts[c.failReason] = (reasonCounts[c.failReason]||0)+1; });
+    // Bar list, not a table — nominal, matches Exceptions' own "By Failure
+    // Reason" bar (same underlying reason vocabulary, same shape), rather
+    // than the same data reading as a table here and a chart there.
     const reasonRows = Object.entries(reasonCounts).sort((a,b)=>b[1]-a[1]);
-    document.getElementById('rejectReasonsBody').innerHTML = reasonRows.map(([reason,count])=>`
-      <tr><td>${reason}</td><td>${count}</td><td>${rejectedCases.length ? Math.round((count/rejectedCases.length)*100) : 0}%</td></tr>
-    `).join('') || '<tr><td colspan="3" class="card-sub">No Failed requests for this product in this range.</td></tr>';
+    const reasonMax = reasonRows.length ? reasonRows[0][1] : 1;
+    document.getElementById('rejectReasonsBars').innerHTML = reasonRows.length ? reasonRows.map(([reason,count])=>`
+      <div class="funnel-row">
+        <div class="funnel-label" style="width:340px;">${reason}</div>
+        <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((count/reasonMax)*100)}%;background:var(--error-border);"></div></div>
+        <div class="funnel-count">${count}</div>
+        <div class="funnel-meta">${rejectedCases.length ? Math.round((count/rejectedCases.length)*100) : 0}% of rejects</div>
+      </div>`).join('') : '<p class="card-sub">No Failed requests for this product in this range.</p>';
   }
 
   // Nudge → Conversion — same journeyId grouping as Batch Creation, extended
