@@ -1034,7 +1034,7 @@
       <div class="segment-grid">
         <div class="segment-cell">
           <p class="segment-label">By Age Band</p>
-          <div id="ageBandPie"></div>
+          <div id="ageBandBars"></div>
         </div>
         <div class="segment-cell">
           <p class="segment-label">By State</p>
@@ -1051,7 +1051,7 @@
       <div class="segment-grid">
         <div class="segment-cell">
           <p class="segment-label">By Processing Fee Offered</p>
-          <div id="processingFeePie"></div>
+          <div id="processingFeeBars"></div>
         </div>
         <div class="segment-cell">
           <p class="segment-label">By Interest Rate Offered</p>
@@ -1563,14 +1563,17 @@ function renderPieChart(containerId, rows, extraFn){
     </div>` : '<p class="card-sub">No data for this range.</p>';
 }
 
-// Ranked horizontal bar list — for cuts with too many categories for a
-// donut to stay readable (double-digit categories turn into slivers and
-// a legend taller than the chart). Sorted by volume so the biggest cuts
-// surface first, same "biggest thing on top" convention as Rejection
-// Reasons already uses on this page.
-function renderRankedBarList(containerId, rows, labelWidth){
-  const sorted = [...rows].sort((a,b)=>b.volume-a.volume);
-  const max = sorted.length ? sorted[0].volume : 1;
+// Horizontal bar list — for cuts with too many categories for a donut
+// to stay readable (double-digit categories turn into slivers and a
+// legend taller than the chart). `sortByVolume` should only be true for
+// nominal cuts with no inherent order (e.g. State) — for ordinal cuts
+// (Age Band, Processing Fee, Interest Rate), sorting by volume scrambles
+// the sequence and hides the actual question ("does conversion trend
+// with rate/age"), so those are passed in already in natural order and
+// left alone here.
+function renderRankedBarList(containerId, rows, labelWidth, sortByVolume){
+  const sorted = sortByVolume ? [...rows].sort((a,b)=>b.volume-a.volume) : rows;
+  const max = sorted.length ? Math.max(...sorted.map(r=>r.volume)) : 1;
   document.getElementById(containerId).innerHTML = sorted.length ? sorted.map(r=>`
     <div class="funnel-row">
       <div class="funnel-label" style="width:${labelWidth||120}px;">${r.label}</div>
@@ -3435,22 +3438,27 @@ function renderAnalytics(){
   // `cases` not `filteredCases`. No engineered correlation with outcome —
   // whatever conversion rate each bucket shows is whatever this file's
   // existing outcome generation already produces.
+  // Natural label-array order, not sorted by volume — every one of these
+  // dimensions (Credit Limit, Age, Fee, Rate) is ordinal, and sorting by
+  // volume scrambles the sequence, hiding the real question ("does
+  // conversion trend with age/rate"). State is the one nominal exception
+  // and sorts explicitly at its own call site below.
   const groupByRows = (keyFn, labels) => labels.map(label=>{
     const gc = cases.filter(c=>keyFn(c)===label);
     const gBooked = gc.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL');
     const gmv = gBooked.reduce((s,c)=>s+c.amount,0);
     return {label, volume:gc.length, booked:gBooked.length, gmv};
-  }).filter(r=>r.volume>0).sort((a,b)=>b.volume-a.volume);
+  }).filter(r=>r.volume>0);
   const renderGroupByTable = (bodyId, rows) => {
     document.getElementById(bodyId).innerHTML = rows.map(r=>`
       <tr><td><b>${r.label}</b></td><td>${r.volume}</td><td>${fmtRateN(r.booked,r.volume)}</td><td>${fmtAmount(r.gmv)}</td></tr>
     `).join('') || '<tr><td colspan="4" class="card-sub">No data for this range.</td></tr>';
   };
   renderPieChart('creditLimitPie', groupByRows(c=>creditLimitBandFor(c.creditLimit).label, CREDIT_LIMIT_BANDS.map(b=>b.label)), r=>fmtRateN(r.booked,r.volume)+' conv.');
-  renderPieChart('ageBandPie', groupByRows(c=>c.ageBand, AGE_BANDS), r=>fmtRateN(r.booked,r.volume)+' conv.');
-  renderPieChart('processingFeePie', groupByRows(c=>c.processingFeeOffered+'%', PROCESSING_FEE_OPTIONS.map(f=>f+'%')), r=>fmtRateN(r.booked,r.volume)+' conv.');
-  renderRankedBarList('interestRateBars', groupByRows(c=>c.interestRateOffered+'%', INTEREST_RATE_OPTIONS.map(r=>r+'%')), 50);
-  renderRankedBarList('stateBars', groupByRows(c=>c.customerState, CUSTOMER_STATES), 120);
+  renderRankedBarList('ageBandBars', groupByRows(c=>c.ageBand, AGE_BANDS), 80, false);
+  renderRankedBarList('processingFeeBars', groupByRows(c=>c.processingFeeOffered+'%', PROCESSING_FEE_OPTIONS.map(f=>f+'%')), 50, false);
+  renderRankedBarList('interestRateBars', groupByRows(c=>c.interestRateOffered+'%', INTEREST_RATE_OPTIONS.map(r=>r+'%')), 50, false);
+  renderRankedBarList('stateBars', groupByRows(c=>c.customerState, CUSTOMER_STATES), 120, true);
 
   // Funnel, Time-in-Stage, and Amount Bucket always render now — the
   // Product filter is always scoped to exactly one product (no "All
