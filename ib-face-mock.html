@@ -1870,7 +1870,8 @@ CASES.forEach((c,i)=>{
   // Math.random, same convention as the rest of this file's mock data.
   c.apiErrorCount = i%13===0 ? 1 : (i%37===0 ? 2 : 0);
   c.errorScreenViews = c.apiErrorCount + (i%19===0 ? 1 : 0);
-  if(c.apiErrorCount>0) c.apiErrorType = pick(API_ERROR_TYPES, i);
+  if(c.apiErrorCount>0){ c.apiErrorType = pick(API_ERROR_TYPES, i); c.apiErrorAt = deriveEventTimestamp(c.stamps, i+11); }
+  if(c.errorScreenViews>c.apiErrorCount) c.errorScreenAt = deriveEventTimestamp(c.stamps, i+29);
   const custSeed = seedFromId(c.customerId);
   c.creditLimit = 50000 + (custSeed*317) % 700000;
   c.customerState = CUSTOMER_STATES[custSeed % CUSTOMER_STATES.length];
@@ -1968,7 +1969,8 @@ function generateCases(count){
     // loop above for why this is separate from failReason.
     c.apiErrorCount = i%13===0 ? 1 : (i%37===0 ? 2 : 0);
     c.errorScreenViews = c.apiErrorCount + (i%19===0 ? 1 : 0);
-    if(c.apiErrorCount>0) c.apiErrorType = pick(API_ERROR_TYPES, i);
+    if(c.apiErrorCount>0){ c.apiErrorType = pick(API_ERROR_TYPES, i); c.apiErrorAt = deriveEventTimestamp(stamps, i+11); }
+    if(c.errorScreenViews>c.apiErrorCount) c.errorScreenAt = deriveEventTimestamp(stamps, i+29);
     const custSeed = seedFromId(c.customerId);
     c.creditLimit = 50000 + (custSeed*317) % 700000;
     c.customerState = CUSTOMER_STATES[custSeed % CUSTOMER_STATES.length];
@@ -2091,7 +2093,8 @@ function generateSettledDirectIBLCases(count){
       mccCategory: MCC_CATEGORIES[i % MCC_CATEGORIES.length],
       apiErrorCount: i%13===0 ? 1 : (i%37===0 ? 2 : 0),
       errorScreenViews: (i%13===0 ? 1 : (i%37===0 ? 2 : 0)) + (i%19===0 ? 1 : 0),
-      ...((i%13===0 || i%37===0) ? {apiErrorType: pick(API_ERROR_TYPES, i)} : {}),
+      ...((i%13===0 || i%37===0) ? {apiErrorType: pick(API_ERROR_TYPES, i), apiErrorAt: deriveEventTimestamp(stamps, i+11)} : {}),
+      ...((i%19===0) ? {errorScreenAt: deriveEventTimestamp(stamps, i+29)} : {}),
       ...(state==='FAILED' ? {failReason: pick(['Credit limit insufficient at booking','Bank-side eligibility rejected at booking'], i)} : {}),
     };
     const custSeed = seedFromId(c.customerId);
@@ -2828,11 +2831,17 @@ function openDrawer(id){
   const isTerminal = TERMINAL.includes(c.state);
   const currentIdx = isTerminal ? order.length : order.indexOf(c.state);
 
-  let stepsHtml = order.map((s,i)=>{
+  // Stage steps and journey-health events (API error / error screen) are
+  // built as one list, sorted chronologically, rather than a fixed stage
+  // stepper with a summary line bolted on above it — an error genuinely
+  // happened *at some point in* the journey, so it belongs positioned
+  // among the stages, not just totalled separately.
+  const PENDING_SORT = new Date(8640000000000000); // stable-sorts all pending/no-timestamp entries to the end, in their original relative order
+  const stageEntries = order.map((s,i)=>{
     const ts = c.stamps[s];
     const isCurrent = i===currentIdx && !isTerminal;
     const dotClass = ts ? 'done' : (isCurrent ? 'current' : 'upcoming');
-    return `<div class="step">
+    return { time: ts ? parseStamp(ts) : PENDING_SORT, html: `<div class="step">
       <div class="step-dot-col">
         <div class="step-dot ${dotClass}">${ts?'✓':''}</div>
         <div class="step-line"></div>
@@ -2841,15 +2850,15 @@ function openDrawer(id){
         <div class="step-label ${ts?'':'upcoming'}">${STAGE_META[s].label}</div>
         <div class="step-time">${ts ? ts+', 2026' : 'Pending'}</div>
       </div>
-    </div>`;
-  }).join('');
+    </div>` };
+  });
 
   const termTs = c.stamps[c.state];
   const termDotStyle = c.state==='FAILED' ? 'background:var(--error-text);'
     : c.state==='PARTIAL' ? 'background:var(--warning-border);'
     : (c.state==='EXPIRED' || c.state==='CANCELLED') ? 'background:var(--gray-400);'
     : '';
-  stepsHtml += `<div class="step">
+  const termEntry = { time: isTerminal ? parseStamp(termTs) : PENDING_SORT, html: `<div class="step">
       <div class="step-dot-col"><div class="step-dot ${isTerminal ? 'done' : 'upcoming'}" style="${termDotStyle}">${isTerminal?'✓':''}</div></div>
       <div class="step-body">
         <div class="step-label ${isTerminal?'':'upcoming'}">${isTerminal ? meta.label : 'Final Outcome'}</div>
@@ -2858,7 +2867,25 @@ function openDrawer(id){
         ${c.state==='EXPIRED' ? `<div class="step-note">No settlement match within 7 days of authorization.</div>` : ''}
         ${c.state==='CANCELLED' ? `<div class="step-note">Auth transaction was reversed/returned before settlement. Detected by file-diff: the transaction was present in an earlier auth file and dropped out of a later one. The bank has confirmed no direct reversal signal exists, so this is inference, not a confirmed event — see Ingestion Open Question on this.</div>` : ''}
       </div>
+    </div>` };
+
+  const eventStepHtml = (label, tsRaw) => `<div class="step">
+      <div class="step-dot-col">
+        <div class="step-dot" style="background:var(--warning-border);">!</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-body">
+        <div class="step-label" style="color:var(--warning-text);">${label}</div>
+        <div class="step-time">${tsRaw}, 2026 · didn't necessarily cause the current status</div>
+      </div>
     </div>`;
+  const eventEntries = [];
+  if(c.apiErrorAt) eventEntries.push({ time: parseStamp(c.apiErrorAt), html: eventStepHtml(`API Error — ${c.apiErrorType}`, c.apiErrorAt) });
+  if(c.errorScreenAt) eventEntries.push({ time: parseStamp(c.errorScreenAt), html: eventStepHtml('Error Screen Shown', c.errorScreenAt) });
+
+  const stepsHtml = [...stageEntries, termEntry, ...eventEntries]
+    .sort((a,b)=>a.time-b.time)
+    .map(e=>e.html).join('');
 
   let txnHtml = '';
   if(c.txns){
@@ -3151,6 +3178,24 @@ function parseStamp(s){
   if(!m) return null;
   const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
   return new Date(2026, months[m[2]], parseInt(m[1]), parseInt(m[3]), parseInt(m[4]));
+}
+
+// A journey-health event (API error / error screen) doesn't have its own
+// logged instant in this data model — only a per-case count. Rather than
+// inventing an independent clock for it, this places it at a deterministic
+// point within the case's own real stamp range (first stamp to last), so
+// it can never render as happening before the journey started or after the
+// last known activity. `seed` just needs to vary between the two event
+// types on the same case so they don't land on an identical instant.
+function deriveEventTimestamp(stamps, seed){
+  const times = Object.values(stamps).filter(Boolean).map(parseStamp).filter(Boolean).sort((a,b)=>a-b);
+  if(!times.length) return null;
+  const first = times[0], last = times[times.length-1];
+  const span = Math.max(1, last-first);
+  const frac = ((seed*53)%97)/97;
+  const t = new Date(first.getTime() + span*frac);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${String(t.getDate()).padStart(2,'0')} ${months[t.getMonth()]}, ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
 }
 
 function caseEntryDate(c){
