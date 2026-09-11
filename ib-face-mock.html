@@ -1917,6 +1917,19 @@ const CHANNELS = ['SMS','WhatsApp','PWA','Email','RCS'];
 
 function pick(arr,n){ return arr[n % arr.length]; }
 
+// Real per-case variance, not just a function of stage position. The old
+// advance(2+(i*3%9)) depended only on the stage-loop index `i`, so every
+// case walking the same sequence got an *identical* gap at each
+// transition — Time in Stage's "average" was reporting a hard constant,
+// not a real distribution: 711 of 716 IBL Single cases showed *exactly*
+// 5.0h for Consent Requested → Consent Given, only the 5 hand-authored
+// cases varied at all. `seed` mixes in something case-specific (seedHour,
+// or the case index for the settled-direct generator) so the same stage
+// position produces a genuine spread across cases.
+function stageAdvanceHours(base, seed){
+  return base + (intHash(seed) % 7);
+}
+
 function genStampsFor(bank, type, terminal, seedHour){
   const order = stagesFor(bank, type);
   const stamps = {};
@@ -1982,7 +1995,7 @@ function genStampsFor(bank, type, terminal, seedHour){
     // ago — trivially past any Stuck threshold no matter what, which is
     // why every single in-flight case was reading as Stuck.
     let totalElapsedHours = 0;
-    for(let i=0;i<reachIdx;i++){ if(!isInstant(i)) totalElapsedHours += 2 + (i*3 % 9); }
+    for(let i=0;i<reachIdx;i++){ if(!isInstant(i)) totalElapsedHours += stageAdvanceHours(2+(i*3%9), seedHour*13+i*97+5); }
     const lastStage = order[reachIdx];
     // Hashed, not a plain seedHour*k%m — reachIdx itself is a function of
     // seedHour, so a linear function of seedHour here shares a common
@@ -2027,7 +2040,7 @@ function genStampsFor(bank, type, terminal, seedHour){
     // hashCode, because a step that's a multiple of 10 leaves the
     // string's trailing digit character unchanged).
     let totalElapsedHours = 0;
-    for(let i=0;i<order.length;i++){ if(!isInstant(i)) totalElapsedHours += 2 + (i*3 % 9); }
+    for(let i=0;i<order.length;i++){ if(!isInstant(i)) totalElapsedHours += stageAdvanceHours(2+(i*3%9), seedHour*13+i*97+5); }
     // Weighted, not a flat 0–480h draw — a uniform draw against a 24h SLA
     // threshold mathematically puts ~95% of cases over it regardless of any
     // bug (24/480), which still reads as "everything's breached" at a
@@ -2044,7 +2057,7 @@ function genStampsFor(bank, type, terminal, seedHour){
 
   for(let i=0;i<=reachIdx;i++){
     stamps[order[i]] = stampNow();
-    if(!isInstant(i)) advance(2 + (i*3 % 9));
+    if(!isInstant(i)) advance(stageAdvanceHours(2+(i*3%9), seedHour*13+i*97+5));
   }
   if(terminal!=='IN_FLIGHT'){
     stamps[terminal] = stampNow();
@@ -2260,7 +2273,7 @@ function generateSettledDirectIBLCases(count){
     let day, hour;
     if(outcome==='IN_FLIGHT'){
       let totalElapsedHours = 0;
-      for(let s=0;s<reachIdx;s++){ if(shortOrder[s]==='CONSENT_REQUESTED') totalElapsedHours += 1 + (s*2%5); }
+      for(let s=0;s<reachIdx;s++){ if(shortOrder[s]==='CONSENT_REQUESTED') totalElapsedHours += stageAdvanceHours(1+(s*2%5), i*13+s*97+5); }
       const h = hashCode('settled|'+shortOrder[reachIdx]+'|'+i);
       const recencyHours = h % 30;
       const nowAbsHours = 24*24 + 12;
@@ -2274,7 +2287,7 @@ function generateSettledDirectIBLCases(count){
       // read 100% breached regardless of anything else.
       let totalElapsedHours = 0;
       for(let s=0;s<shortOrder.length;s++){
-        if(shortOrder[s]!=='SETTLEMENT_RECEIVED' && shortOrder[s]!=='CONSENT_GIVEN' && shortOrder[s]!=='BOOKING_INITIATED') totalElapsedHours += 1 + (s*2%5);
+        if(shortOrder[s]!=='SETTLEMENT_RECEIVED' && shortOrder[s]!=='CONSENT_GIVEN' && shortOrder[s]!=='BOOKING_INITIATED') totalElapsedHours += stageAdvanceHours(1+(s*2%5), i*13+s*97+5);
       }
       const rollS = intHash(i*7+3+7000003);
       const recencyHours = (rollS%100<35) ? (rollS%24) : 24 + (intHash(i*11+17+7000003)%456);
@@ -2287,7 +2300,7 @@ function generateSettledDirectIBLCases(count){
     const stampNow = ()=> `${String(day).padStart(2,'0')} Aug, ${String(hour).padStart(2,'0')}:${String((i*11)%60).padStart(2,'0')}`;
     for(let s=0;s<=reachIdx;s++){
       stamps[shortOrder[s]] = stampNow();
-      if(shortOrder[s]!=='SETTLEMENT_RECEIVED' && shortOrder[s]!=='CONSENT_GIVEN' && shortOrder[s]!=='BOOKING_INITIATED') advance(1 + (s*2%5));
+      if(shortOrder[s]!=='SETTLEMENT_RECEIVED' && shortOrder[s]!=='CONSENT_GIVEN' && shortOrder[s]!=='BOOKING_INITIATED') advance(stageAdvanceHours(1+(s*2%5), i*13+s*97+5));
     }
     if(outcome!=='IN_FLIGHT') stamps[outcome] = stampNow();
     // Only non-terminal state an EMI request can hold — see genStampsFor().
