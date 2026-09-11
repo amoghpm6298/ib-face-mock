@@ -1997,8 +1997,32 @@ function genStampsFor(bank, type, terminal, seedHour){
     day = Math.floor(startAbsHours/24);
     hour = startAbsHours % 24;
   } else {
-    day = 2 + (seedHour % 20); // 02–21 Aug — wide enough that "Last 7 days" actually excludes something
-    hour = seedHour % 24;
+    // Anchor backward from "now", same principle as the in-flight branch
+    // above — the previous fixed 02–21 Aug start window guaranteed every
+    // terminal case was at least 72h old by construction (24 Aug "now"
+    // minus day 21 at the latest), so "Since Failure"/SLA-breach always
+    // read 100% no matter what, regardless of anything else about the
+    // case. Real ops data has a mix: some cases resolved recently (still
+    // within SLA if ops hasn't triaged yet), some are genuine old
+    // backlog that's actually breached. intHash, not hashCode(string) —
+    // a bare seedHour fed through hashCode's string-based rolling hash
+    // doesn't fully decorrelate arithmetic progressions (caught this
+    // directly: customer names for a 180-step i-progression still
+    // collapsed to only 6 distinct values even after switching to
+    // hashCode, because a step that's a multiple of 10 leaves the
+    // string's trailing digit character unchanged).
+    let totalElapsedHours = 0;
+    for(let i=0;i<order.length;i++){ if(!isInstant(i)) totalElapsedHours += 2 + (i*3 % 9); }
+    // Weighted, not a flat 0–480h draw — a uniform draw against a 24h SLA
+    // threshold mathematically puts ~95% of cases over it regardless of any
+    // bug (24/480), which still reads as "everything's breached" at a
+    // glance. ~35% genuinely recent (within SLA), ~65% real backlog.
+    const roll = intHash(seedHour*7+3);
+    const recencyHours = (roll%100<35) ? (roll%24) : 24 + (intHash(seedHour*11+17)%456);
+    const nowAbsHours = 24*24 + 12;
+    const startAbsHours = Math.max(24, nowAbsHours - recencyHours - totalElapsedHours);
+    day = Math.floor(startAbsHours/24);
+    hour = startAbsHours % 24;
   }
   const advance = (h)=>{ hour += h; while(hour>=24){hour-=24; day++;} };
   const stampNow = ()=> `${String(day).padStart(2,'0')} Aug, ${String(hour).padStart(2,'0')}:${String((seedHour*7)%60).padStart(2,'0')}`;
@@ -2041,7 +2065,15 @@ function generateCases(count){
     const type = i%9===0 ? 'Multi' : (i%4===0 ? 'Outstanding' : 'Single');
     const outcome = type==='Multi' ? (multiSeed%11===0 ? 'PARTIAL' : pick(outcomeCycle, multiSeed)) : pick(outcomeCycle, i);
     if(type==='Multi') multiSeed++;
-    const name = pick(FIRST,i)+' '+pick(LAST,i+3)[0]+'.';
+    // Hashed, not a plain pick(arr,i) — FIRST.length=30 and LAST.length=20
+    // share enough factors that a filtered subset (e.g. every case with a
+    // specific bank+type+outcome+failReason combination) can land on a
+    // compound period that's a multiple of both, collapsing the whole
+    // subset to one name. Exactly what happened: every "Settlement amount
+    // mismatch" IBL Single case showed as the same customer, "Harsh M." —
+    // same class of bug as the reachIdx/recencyHours collisions fixed
+    // earlier this session, just one more upstream filter deep.
+    const name = FIRST[intHash(i*2+1)%FIRST.length]+' '+LAST[intHash(i*2+7)%LAST.length][0]+'.';
     const campaign = bank==='IBL' ? pick(IBL_CAMPAIGNS,i) : pick(YES_CAMPAIGNS,i);
     const channel = pick(CHANNELS,i+2);
     const amount = type==='Outstanding' ? 60000 + (i*3311)%220000 : 12000 + (i*1777)%90000;
@@ -2086,15 +2118,35 @@ function generateCases(count){
       // is file-based with no settlement-matching or booking-API concept at
       // all, so "Settlement amount mismatch"/"Booking API returned 5xx"
       // never made sense for it in the first place.
+      // "Settlement amount mismatch" only applies to IBL's auth-triggered
+      // path — it's specifically Trigger A comparing the original auth
+      // amount to the arriving settlement amount (Master PRD Section 8).
+      // Yes Bank has no separate auth transaction to mismatch against (its
+      // own flow starts at Settlement Received directly), so this reason
+      // never made sense for it, same reasoning as Outstanding's own
+      // exclusion just above. "Customer did not respond within window" is
+      // gone — under the Pending state-model rebuild, a case can't exist
+      // at all without having already responded (that's what consent is),
+      // so this described something that's now structurally impossible.
       c.failReason = type==='Outstanding'
         ? pick(['Purchase principal O/S is not available','Purchase principal O/S is not available','Account Overlimit','Account Overlimit','Failed in Same Day Dedupe check','Account status is other than normal','PLAN NOT VALID FOR EPP TRANSACTION','Not eligible in this month','DUPLICATE RECORD REJECT','Failed in Across File Dedupe check','Transaction previously converted to EMI'], i)
-        : pick(['Credit limit insufficient at booking','Customer did not respond within window','Settlement amount mismatch','Bank-side eligibility rejected at booking','Booking API returned 5xx'], i);
+        : pick(bank==='IBL'
+            ? ['Credit limit insufficient at booking','Card blocked before booking','Settlement amount mismatch','Bank-side eligibility rejected at booking','Booking API returned 5xx']
+            : ['Credit limit insufficient at booking','Card blocked before booking','Bank-side eligibility rejected at booking','Booking API returned 5xx'], i);
       if(c.failReason==='Settlement amount mismatch'){
         // Deliberate mix of small deltas (plausibly worth a manual "book
         // anyway") and large ones (clearly a real mismatch) — deterministic
         // on i, not random, so the demo is reproducible.
         const deltaPct = [0.02,-0.03,0.15,-0.35,0.04,-0.08,0.22][i%7];
         c.settledAmount = Math.max(100, Math.round(amount * (1+deltaPct)));
+        // Caught at Trigger A's matching check itself, before the booking
+        // API is ever called — Reconciliation Matched and Booking Initiated
+        // shouldn't be stamped for this failure. Previously every terminal
+        // case walked the full stage sequence regardless of *why* it
+        // failed, so a mismatch case showed "Failed At Stage: Booking
+        // Initiated" — implying booking was attempted, which it never was.
+        delete stamps.RECON_MATCHED;
+        delete stamps.BOOKING_INITIATED;
       }
     }
     if(type==='Multi'){
@@ -2155,7 +2207,8 @@ function generateSettledDirectIBLCases(count){
   for(let i=0;i<count;i++){
     const type = i%6===0 ? 'Multi' : 'Single';
     const outcome = pick(outcomeCycle, i);
-    const name = pick(FIRST,i+11)+' '+pick(LAST,i+17)[0]+'.';
+    // Hashed — same collision risk as generateCases()'s own name picker.
+    const name = FIRST[intHash(i*2+1+7000003)%FIRST.length]+' '+LAST[intHash(i*2+7+7000003)%LAST.length][0]+'.';
     const campaign = 'Settled Txn — Direct (IBL)';
     const channel = pick(CHANNELS,i+3);
     const amount = 12000 + (i*1931)%85000;
@@ -2200,7 +2253,20 @@ function generateSettledDirectIBLCases(count){
       day = Math.floor(startAbsHours/24);
       hour = startAbsHours % 24;
     } else {
-      day = 3 + (i%18); hour = (i*5)%24;
+      // Same anchor-backward-from-now fix as genStampsFor()'s terminal
+      // branch — the old fixed 03–20 Aug window guaranteed every
+      // terminal case was at least 96h old, so "Since Failure" always
+      // read 100% breached regardless of anything else.
+      let totalElapsedHours = 0;
+      for(let s=0;s<shortOrder.length;s++){
+        if(shortOrder[s]!=='SETTLEMENT_RECEIVED' && shortOrder[s]!=='CONSENT_GIVEN' && shortOrder[s]!=='BOOKING_INITIATED') totalElapsedHours += 1 + (s*2%5);
+      }
+      const rollS = intHash(i*7+3+7000003);
+      const recencyHours = (rollS%100<35) ? (rollS%24) : 24 + (intHash(i*11+17+7000003)%456);
+      const nowAbsHours = 24*24 + 12;
+      const startAbsHours = Math.max(24, nowAbsHours - recencyHours - totalElapsedHours);
+      day = Math.floor(startAbsHours/24);
+      hour = startAbsHours % 24;
     }
     const advance = (h)=>{ hour += h; while(hour>=24){hour-=24; day++;} };
     const stampNow = ()=> `${String(day).padStart(2,'0')} Aug, ${String(hour).padStart(2,'0')}:${String((i*11)%60).padStart(2,'0')}`;
@@ -2385,6 +2451,26 @@ function failedAtStage(c){
 function hashCode(str){
   let h=0; for(let i=0;i<str.length;i++){ h=(h*31+str.charCodeAt(i))>>>0; }
   return h;
+}
+// A proper integer avalanche mix (MurmurHash3-style finalizer) — hashCode()
+// above is a simple polynomial rolling hash over a string's *decimal digit
+// characters*, which doesn't fully decorrelate arithmetically-stepped
+// integers: if `n` always steps by a multiple of 10, the string's trailing
+// character never changes, and the leading digits still change in a
+// comparatively regular way, so hashCode(String(n)) can retain visible
+// structure instead of scattering. Caught this directly: customer names
+// for "Settlement amount mismatch" cases (an i-progression stepping by
+// exactly 180) were still landing on only 6 distinct names across 17
+// cases even after switching to hashCode — this bit-mixes the integer
+// itself instead of hashing its decimal string form, which breaks that
+// correlation regardless of the step size.
+function intHash(n){
+  n = (n ^ 61) ^ (n >>> 16);
+  n = n + (n << 3);
+  n = n ^ (n >>> 4);
+  n = Math.imul(n, 0x27d4eb2d);
+  n = n ^ (n >>> 15);
+  return n >>> 0;
 }
 function pseudoRetries(id){ return hashCode(id) % 4; }
 
