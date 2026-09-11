@@ -244,11 +244,17 @@
   .section-heading.first{margin-top:0;padding-top:0;border-top:none;}
   /* Multiple small donuts folded into one outer card instead of one card
   per donut — same content, fewer card boundaries to visually parse. */
-  .segment-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px 36px;}
+  /* align-items:start — CSS Grid stretches every cell in a row to the
+  tallest sibling by default; a 5-row cell next to a 12-row cell would
+  get forced to 12-row height, rendering as dead space below its own
+  content. Letting each cell size to its own content is correct here:
+  the two sides of a pairing are often genuinely different lengths
+  (5 age bands vs 12 states), and that's fine to show as-is. */
+  .segment-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px 36px;align-items:start;}
   /* 3-up variant — for an odd cell count that would otherwise wrap 2+1
   and leave the last row's second slot blank, same wasted-space problem
   fixed elsewhere on this page. */
-  .segment-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px 32px;}
+  .segment-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px 32px;align-items:start;}
   .segment-grid-3 .segment-cell:nth-child(-n+3){padding-top:0;border-top:none;}
   @media (max-width: 760px){
     .segment-grid, .segment-grid-3{grid-template-columns:1fr;}
@@ -1039,6 +1045,10 @@
         <div class="segment-cell">
           <p class="segment-label">By State</p>
           <div id="stateBars"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;flex-wrap:wrap;gap:8px;">
+            <p class="card-sub" id="stateBarsCount" style="margin:0;"></p>
+            <div class="pagination" id="stateBarsPagination"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1056,6 +1066,10 @@
         <div class="segment-cell">
           <p class="segment-label">By Interest Rate Offered</p>
           <div id="interestRateBars"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;flex-wrap:wrap;gap:8px;">
+            <p class="card-sub" id="interestRateBarsCount" style="margin:0;"></p>
+            <div class="pagination" id="interestRateBarsPagination"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1571,10 +1585,24 @@ function renderPieChart(containerId, rows, extraFn){
 // the sequence and hides the actual question ("does conversion trend
 // with rate/age"), so those are passed in already in natural order and
 // left alone here.
-function renderRankedBarList(containerId, rows, labelWidth, sortByVolume){
+// `pager`, if passed, is {page, pageSize, gotoFn, countIdEl, paginationIdEl,
+// noun} — caps rows shown to pageSize so this list stays the same visual
+// length as whatever it's paired with side-by-side (same reasoning as MCC's
+// existing 5/page cap), instead of letting a 12-category cut tower over a
+// 5-category one. Bar length still scales off the full dataset's max, not
+// just the current page's, so bars stay comparable across pages.
+function renderRankedBarList(containerId, rows, labelWidth, sortByVolume, pager){
   const sorted = sortByVolume ? [...rows].sort((a,b)=>b.volume-a.volume) : rows;
   const max = sorted.length ? Math.max(...sorted.map(r=>r.volume)) : 1;
-  document.getElementById(containerId).innerHTML = sorted.length ? sorted.map(r=>`
+  let pageRows = sorted;
+  if(pager){
+    const totalPages = Math.max(1, Math.ceil(sorted.length/pager.pageSize));
+    if(pager.page>totalPages) pager.page = totalPages;
+    pageRows = sorted.slice((pager.page-1)*pager.pageSize, pager.page*pager.pageSize);
+    document.getElementById(pager.countIdEl).textContent = `${sorted.length} ${pager.noun} · page ${pager.page} of ${totalPages}`;
+    document.getElementById(pager.paginationIdEl).innerHTML = paginationHtml(pager.page, totalPages, pager.gotoFn);
+  }
+  document.getElementById(containerId).innerHTML = pageRows.length ? pageRows.map(r=>`
     <div class="funnel-row">
       <div class="funnel-label" style="width:${labelWidth||120}px;">${r.label}</div>
       <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((r.volume/max)*100)}%;"></div></div>
@@ -2229,11 +2257,15 @@ let exceptionsPage = 1;
 let byProgramPage = 1;
 let nudgeCorrelationPage = 1;
 let analyticsMccPage = 1;
+let stateBarsPage = 1;
+let interestRateBarsPage = 1;
 let authBatchPage = 1;
 let settlementBatchPage = 1;
 function goToByProgramPage(p){ byProgramPage = p; renderAnalytics(); }
 function goToNudgeCorrelationPage(p){ nudgeCorrelationPage = p; renderAnalytics(); }
 function goToAnalyticsMccPage(p){ analyticsMccPage = p; renderAnalytics(); }
+function goToStateBarsPage(p){ stateBarsPage = p; renderAnalytics(); }
+function goToInterestRateBarsPage(p){ interestRateBarsPage = p; renderAnalytics(); }
 function goToAuthBatchPage(p){ authBatchPage = p; renderRecon(); }
 function goToSettlementBatchPage(p){ settlementBatchPage = p; renderRecon(); }
 
@@ -3457,8 +3489,10 @@ function renderAnalytics(){
   renderPieChart('creditLimitPie', groupByRows(c=>creditLimitBandFor(c.creditLimit).label, CREDIT_LIMIT_BANDS.map(b=>b.label)), r=>fmtRateN(r.booked,r.volume)+' conv.');
   renderRankedBarList('ageBandBars', groupByRows(c=>c.ageBand, AGE_BANDS), 80, false);
   renderRankedBarList('processingFeeBars', groupByRows(c=>c.processingFeeOffered+'%', PROCESSING_FEE_OPTIONS.map(f=>f+'%')), 50, false);
-  renderRankedBarList('interestRateBars', groupByRows(c=>c.interestRateOffered+'%', INTEREST_RATE_OPTIONS.map(r=>r+'%')), 50, false);
-  renderRankedBarList('stateBars', groupByRows(c=>c.customerState, CUSTOMER_STATES), 120, true);
+  renderRankedBarList('interestRateBars', groupByRows(c=>c.interestRateOffered+'%', INTEREST_RATE_OPTIONS.map(r=>r+'%')), 50, false,
+    {page:interestRateBarsPage, pageSize:5, gotoFn:'goToInterestRateBarsPage', countIdEl:'interestRateBarsCount', paginationIdEl:'interestRateBarsPagination', noun:'rates'});
+  renderRankedBarList('stateBars', groupByRows(c=>c.customerState, CUSTOMER_STATES), 120, true,
+    {page:stateBarsPage, pageSize:5, gotoFn:'goToStateBarsPage', countIdEl:'stateBarsCount', paginationIdEl:'stateBarsPagination', noun:'states'});
 
   // Funnel, Time-in-Stage, and Amount Bucket always render now — the
   // Product filter is always scoped to exactly one product (no "All
