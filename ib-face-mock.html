@@ -3400,6 +3400,29 @@ function deriveEventTimestamp(stamps, seed){
 // carries its own fixed reach trio so summing across ANY grouping (by
 // day, by campaign) stays internally consistent — no separate ratio
 // applied at render time that could drift between different aggregations.
+// A hand-rolled CSS bar chart with no numeric scale means every value can
+// only be read via hover tooltip — fine for comparing bars to each other,
+// not for reading absolute magnitude at a glance. Adds a left-side tick
+// column (max, 2/3, 1/3, 0) as the first flex child of a .trend-chart —
+// barMaxHeight/labelRowHeight must match whatever the bar-rendering code
+// for that chart actually uses, so ticks land at the same pixel scale the
+// bars are drawn against.
+function trendYAxisHtml(max, barMaxHeight, labelRowHeight, unit){
+  barMaxHeight = barMaxHeight || 130;
+  labelRowHeight = labelRowHeight || 16;
+  unit = unit || '';
+  const fmt = unit
+    ? v => v.toFixed(1)+unit
+    : v => v>=1000 ? (v/1000).toFixed(v%1000===0?0:1)+'k' : v.toLocaleString('en-IN');
+  const ticks = unit ? [max, max*2/3, max/3, 0] : [max, Math.round(max*2/3), Math.round(max/3), 0];
+  return `<div style="flex-shrink:0;width:44px;display:flex;flex-direction:column;">
+    <div style="height:${barMaxHeight}px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;padding-right:8px;">
+      ${ticks.map(v=>`<span style="font-size:10px;color:var(--gray-400);line-height:1;">${fmt(v)}</span>`).join('')}
+    </div>
+    <div style="height:${labelRowHeight}px;"></div>
+  </div>`;
+}
+
 function computeNudgeReach(seedStr){
   const h = hashCode(seedStr);
   // ~15-39 total landing-page visitors per case's send-cohort (avg ~27) for
@@ -3490,7 +3513,7 @@ function renderAnalytics(){
   }).sort((a,b)=>a.date-b.date);
   const trendMax = Math.max(1, ...dayEntries.map(d=>d.count));
   const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  document.getElementById('trendChart').innerHTML = dayEntries.length ? dayEntries.map(d=>`
+  document.getElementById('trendChart').innerHTML = dayEntries.length ? trendYAxisHtml(trendMax) + dayEntries.map(d=>`
     <div class="trend-bar-col">
       <div class="trend-tooltip">${d.count} booked · ${d.date.getDate()} ${MONTH_ABBR[d.date.getMonth()]}</div>
       <div class="trend-bar" style="height:${Math.max(4,Math.round((d.count/trendMax)*130))}px;"></div>
@@ -3593,7 +3616,7 @@ function renderAnalytics(){
       }
     }
     const errMax = Math.max(1, ...errDayKeys.map(d=>Math.max(d.err,d.screen)));
-    document.getElementById('journeyErrorsTrend').innerHTML = errDayKeys.length ? errDayKeys.map(d=>`
+    document.getElementById('journeyErrorsTrend').innerHTML = errDayKeys.length ? trendYAxisHtml(errMax) + errDayKeys.map(d=>`
       <div class="trend-bar-col">
         <div class="trend-tooltip">${d.err} API error${d.err===1?'':'s'} · ${d.screen} error screen${d.screen===1?'':'s'} · ${d.date.getDate()} ${MONTH_ABBR3[d.date.getMonth()]}</div>
         <div class="trend-bar-pair">
@@ -3643,7 +3666,7 @@ function renderAnalytics(){
     return {date:new Date(2026,mo,da), sent:sentByDay[k]};
   }).sort((a,b)=>a.date-b.date);
   const sentMax = Math.max(1, ...sentDayKeys.map(d=>d.sent));
-  document.getElementById('nudgesSentTrend').innerHTML = sentDayKeys.length ? sentDayKeys.map(d=>`
+  document.getElementById('nudgesSentTrend').innerHTML = sentDayKeys.length ? trendYAxisHtml(sentMax) + sentDayKeys.map(d=>`
     <div class="trend-bar-col">
       <div class="trend-tooltip">${d.sent} sent · ${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
       <div class="trend-bar" style="height:${Math.max(4,Math.round((d.sent/sentMax)*130))}px;"></div>
@@ -3658,7 +3681,7 @@ function renderAnalytics(){
   // scale reads correctly. Converted stays out of this scale entirely
   // (see the rate trend below) rather than rounding to an invisible sliver.
   const bothMax = Math.max(1, ...bothDayKeys.map(d=>Math.max(d.sent,d.visit)));
-  document.getElementById('nudgesSentVsConversionTrend').innerHTML = bothDayKeys.length ? bothDayKeys.map(d=>`
+  document.getElementById('nudgesSentVsConversionTrend').innerHTML = bothDayKeys.length ? trendYAxisHtml(bothMax) + bothDayKeys.map(d=>`
     <div class="trend-bar-col">
       <div class="trend-tooltip">${d.sent.toLocaleString('en-IN')} sent · ${d.visit.toLocaleString('en-IN')} visited · ${d.conv} converted (${d.visit?((d.conv/d.visit)*100).toFixed(1):'0'}%) · ${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
       <div class="trend-bar-pair">
@@ -3672,7 +3695,7 @@ function renderAnalytics(){
   // Visited's axis. Real EMI conversion is under 5% end-to-end, so this
   // reads the actual daily percentage rather than an invisible bar.
   const rateMax = Math.max(1, ...bothDayKeys.map(d=>d.visit?(d.conv/d.visit)*100:0));
-  document.getElementById('nudgeConversionRateTrend').innerHTML = bothDayKeys.length ? bothDayKeys.map(d=>{
+  document.getElementById('nudgeConversionRateTrend').innerHTML = bothDayKeys.length ? trendYAxisHtml(rateMax, 45, 16, '%') + bothDayKeys.map(d=>{
     const rate = d.visit ? (d.conv/d.visit)*100 : 0;
     return `<div class="trend-bar-col">
       <div class="trend-tooltip">${rate.toFixed(1)}% converted (${d.conv} of ${d.visit.toLocaleString('en-IN')} visited) · ${d.date.getDate()} ${MONTH_ABBR4[d.date.getMonth()]}</div>
