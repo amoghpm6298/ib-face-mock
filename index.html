@@ -2352,10 +2352,20 @@ function renderRequests(){
     // shows when it resolved, so this column only carries pipeline-wait
     // framing (hours + STUCK flag) for a still-open, in-flight request.
     const timeCell = isTerminal ? '<span style="color:var(--gray-400);">Resolved</span>' : `${hrs}h ${hrs>=24?'<span class="age-flag">STUCK</span>':''}`;
+    // IBL Single/Multi genuinely runs two structurally different pipelines
+    // at once (Master PRD: settled-direct is "a new, parallel path — it
+    // does not replace the existing one" — same dual-path fact the
+    // Conversion Funnel already shows as two separate funnels). Listed
+    // flat with no indicator, "Settlement Received" on one row and
+    // "Booking Initiated" on the next look arbitrary — same stage label
+    // means stage 4-of-6 on one path and stage 1-of-4 on the other. Only
+    // label it where that ambiguity actually exists.
+    const dualPath = c.bank==='IBL' && (c.type==='Single'||c.type==='Multi');
+    const entryPathLabel = dualPath ? `<br><span style="color:var(--gray-500);font-size:11.5px;">${c.entryPath==='settled'?'Settled-Direct':'Auth-Triggered'}</span>` : '';
     return `<tr onclick="openDrawer('${c.id}')">
       <td class="mono">${c.id}</td>
       <td>${c.customer}</td>
-      <td><span class="badge ${tm.badge}">${tm.label}</span></td>
+      <td><span class="badge ${tm.badge}">${tm.label}</span>${entryPathLabel}</td>
       <td>${c.channel}<br><span style="color:var(--gray-500);font-size:11.5px;">${c.campaign}</span></td>
       <td>₹${c.amount.toLocaleString('en-IN')}</td>
       <td><span class="badge ${meta.badge}">${meta.label}</span></td>
