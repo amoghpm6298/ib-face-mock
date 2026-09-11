@@ -3431,7 +3431,18 @@ function computeNudgeReach(seedStr){
   const visited = 15 + (h % 25);
   const delivered = Math.round(visited / 0.30); // ~30% click-through on delivered nudges
   const sent = Math.round(delivered / 0.96); // ~96% delivery rate
-  return {sent, delivered, visited};
+  // OTP Requested sits between Visited and this case's own real, ground-
+  // truth OTP verification (every stored case = 1 successful verification,
+  // by definition — it's a placed request). The real attrition is mostly
+  // *before* someone even requests an OTP (browsed, didn't commit), not
+  // during OTP itself (once requested, most people do complete it) — so
+  // this is a small multiplier on top of 1, not scaled off `visited` the
+  // way delivered/sent are: ~1 in 12 cases represents one extra OTP
+  // request that failed/was abandoned alongside this successful one, a
+  // rarer second one on top of that, landing OTP success around ~90%.
+  const h2 = hashCode(seedStr+'|otp');
+  const otpRequested = 1 + (h2%12===0?1:0) + (h2%47===0?1:0);
+  return {sent, delivered, visited, otpRequested};
 }
 
 function caseEntryDate(c){
@@ -3805,12 +3816,6 @@ function renderAnalytics(){
   // Product filter is always scoped to exactly one product (no "All
   // Products" state to guess a default from).
   {
-    const buildFunnelStages = (pCases, order) => {
-      const pConverted = pCases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length;
-      const stages = order.map(s=>({label:STAGE_META[s].label, count: pCases.filter(c=>c.stamps[s]).length}));
-      stages.push({label:'Booked / Partial', count: pConverted});
-      return stages;
-    };
     const funnelStagesHtml = (stages) => {
       const maxCount = stages[0].count || 1;
       return stages.map(f=>`
@@ -3838,48 +3843,36 @@ function renderAnalytics(){
       ? `<div class="dropoff-callout">⚠ ${prefix}iggest drop-off: ${drop.from} → ${drop.to} (−${drop.dropPct}%)</div>`
       : '';
 
-    // Both entry paths convert through the same Txn-to-EMI/Multi-Txn-to-EMI
-    // journey (Master PRD: "this adds a new, parallel path — it does not
-    // replace the existing one") — IBL Single/Multi genuinely has two
-    // structurally different funnels running at once, so show both rather
-    // than silently excluding settled-direct the way this card used to.
-    // Not applicable to Yes Bank (no settled-direct cohort modeled) or
-    // Outstanding (no auth-path concept at all) — those still get the
-    // single funnel they've always had.
-    const showBothBranches = bank==='IBL' && (productFilter==='Single'||productFilter==='Multi');
-    // order/pCases feed Time-in-Stage below regardless of branch mode — in
-    // dual-branch mode they're set to the auth-triggered branch (the new
-    // path this project is actually about), since Time-in-Stage is
-    // diagnosing our own pipeline's stage delays, not a settled-direct
-    // concern (that path is already STP, no stages to time).
-    let order, pCases;
-    if(showBothBranches){
-      const authCases = cases.filter(c=>c.type===productFilter && c.entryPath!=='settled');
-      const settledCases = cases.filter(c=>c.type===productFilter && c.entryPath==='settled');
-      order = stagesFor(bank, productFilter);
-      pCases = authCases;
-      const authStages = buildFunnelStages(authCases, order);
-      const settledStages = buildFunnelStages(settledCases, SETTLED_DIRECT_STAGE_ORDER);
-      document.getElementById('analyticsFunnelSub').textContent = `${bankLabel(bank)} · ${TYPE_META[productFilter].label} — both entry paths, same journey`;
-      document.getElementById('analyticsFunnelBody').innerHTML = `
-        <p class="card-sub" style="margin:0 0 8px;font-weight:600;color:var(--gray-700,#344054);">Auth-Triggered (new path) — ${authCases.length} requests</p>
-        ${funnelStagesHtml(authStages)}
-        <p class="card-sub" style="margin:18px 0 8px;font-weight:600;color:var(--gray-700,#344054);">Settled-Direct (existing baseline) — ${settledCases.length} requests</p>
-        ${funnelStagesHtml(settledStages)}
-      `;
-      document.getElementById('dropoffCallout').innerHTML =
-        calloutHtml(biggestDropoff(authStages), 'Auth-triggered — b') +
-        calloutHtml(biggestDropoff(settledStages), 'Settled-direct — b');
-    } else {
-      // Same exclusion as Overview's funnel — settled-direct cases follow a
-      // different path shape and don't belong in the auth-first funnel.
-      pCases = cases.filter(c=>c.type===productFilter && c.entryPath!=='settled');
-      order = stagesFor(bank, productFilter);
-      document.getElementById('analyticsFunnelSub').textContent = `${bankLabel(bank)} · ${TYPE_META[productFilter].label}`;
-      const stages = buildFunnelStages(pCases, order);
-      document.getElementById('analyticsFunnelBody').innerHTML = funnelStagesHtml(stages);
-      document.getElementById('dropoffCallout').innerHTML = calloutHtml(biggestDropoff(stages), 'B');
-    }
+    // One simple, single, customer-facing funnel — not a diagnostic of
+    // internal pipeline stages (Auth Received, Reconciliation Matched,
+    // Booking Initiated, etc. aren't real states a case is ever found
+    // resting at — see the Pending state-model rebuild) and not split by
+    // entry path (auth-triggered vs. settled-direct is a reconciliation
+    // implementation detail the customer never sees, not something a
+    // business funnel should surface). Mirrors the real journey: how many
+    // customers could we even reach (allocation file), how many visited,
+    // how many requested/verified an OTP, how many booked.
+    const totalAllocated = (bank==='IBL' ? ALLOCATION_FILE_HISTORY : ALLOCATION_FILE_HISTORY_YES)
+      .reduce((s,f)=>s+f.accountsAllocated,0);
+    const fCases = cases.filter(c=>c.type===productFilter);
+    const simpleFunnelStages = [
+      {label:'Total Customers (Allocation File)', count: totalAllocated},
+      {label:'Visited Landing Page', count: fCases.reduce((s,c)=>s+c.nudgeReach.visited,0)},
+      {label:'OTP Requested', count: fCases.reduce((s,c)=>s+c.nudgeReach.otpRequested,0)},
+      {label:'OTP Verification Successful', count: fCases.length},
+      {label:'Booked', count: fCases.filter(c=>c.state==='BOOKED'||c.state==='PARTIAL').length},
+    ];
+    document.getElementById('analyticsFunnelSub').textContent = `${bankLabel(bank)} · ${TYPE_META[productFilter].label}`;
+    document.getElementById('analyticsFunnelBody').innerHTML = funnelStagesHtml(simpleFunnelStages);
+    document.getElementById('dropoffCallout').innerHTML = calloutHtml(biggestDropoff(simpleFunnelStages), 'B');
+
+    // order/pCases feed Time-in-Stage below — a separate, internal-pipeline
+    // diagnostic (how long does OUR OWN reconciliation processing take
+    // between stages), not the customer funnel above. Settled-direct
+    // excluded — different, incompatible stage shape, and already STP
+    // with nothing left to time.
+    const order = stagesFor(bank, productFilter);
+    const pCases = cases.filter(c=>c.type===productFilter && c.entryPath!=='settled');
 
     // Time-in-stage — real deltas computed from the same timestamps shown
     // everywhere else, not a separate set of numbers.
