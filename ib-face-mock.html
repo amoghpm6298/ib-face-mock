@@ -295,7 +295,6 @@
   .badge.gray{background:var(--gray-100);color:var(--gray-600);}
 
   .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12.5px;color:var(--gray-600);}
-  .attn-strip{display:flex;gap:14px;margin-bottom:22px;flex-wrap:wrap;}
   .attn-card{
     flex:1;min-width:260px;
     border:1px solid var(--warning-border);background:#fffaf0;
@@ -2134,6 +2133,7 @@ let viewingAs = 'IBL';
 
 function onViewingAsChange(){
   viewingAs = document.getElementById('viewingAs').value;
+  populateStateFilter();
   renderRequests();
   renderExceptions();
   renderRecon();
@@ -2150,6 +2150,7 @@ function onConversionsProductChange(){
   // renderRecon() itself (each segment is product-specific), which
   // auto-corrects reconView to a still-valid segment if the current one
   // no longer applies — no need to duplicate that jump here.
+  populateStateFilter();
   renderRequests();
   renderExceptions();
   renderRecon();
@@ -2194,9 +2195,22 @@ function scopedCases(){
 }
 
 /* ---------------- Requests render ---------------- */
+// Scoped to the currently viewed bank + product, not every stage name
+// across every product — Requests is already filtered to one bank+product
+// via scopedCases(), so a global list (e.g. Outstanding-only "Eligibility
+// Checked"/"Booking File Sent" while viewing Txn-to-EMI) offered options
+// that could never match a single visible row: pick one, get a silent
+// empty result with no explanation. Derived straight from the actual
+// cases in scope, not the theoretical stagesFor() model — self-correcting
+// against however outcomes actually get generated, can't drift stale.
 function populateStateFilter(){
   const sel = document.getElementById('fState');
-  sel.innerHTML = '<option value="">All states</option>' + Object.keys(STAGE_META).map(k=>`<option value="${k}">${STAGE_META[k].label}</option>`).join('');
+  const relevantStates = [...new Set(CASES.filter(c=>c.bank===viewingAs && c.type===conversionsProduct).map(c=>c.state))];
+  const order = [...stagesFor(viewingAs, conversionsProduct), ...TERMINAL];
+  relevantStates.sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">All states</option>' + relevantStates.map(k=>`<option value="${k}">${STAGE_META[k].label}</option>`).join('');
+  sel.value = relevantStates.includes(prev) ? prev : '';
 }
 
 // Real elapsed hours since the case entered its current state — not a
@@ -2256,6 +2270,9 @@ function resolveMismatch(id, decision){
   renderExceptions();
   renderRequests();
   renderRecon();
+  // Reflect the decision immediately if triggered from the drawer itself
+  // (Requests tab), not just from the Exceptions mismatch table.
+  if(currentDrawerCaseId===id) openDrawer(id);
 }
 
 const PAGE_SIZE = 10;
@@ -2823,9 +2840,11 @@ function renderRecon(){
 }
 
 /* ---------------- Drawer (Case Detail) ---------------- */
+let currentDrawerCaseId = null;
 function openDrawer(id){
   const c = CASES.find(x=>x.id===id);
   if(!c) return;
+  currentDrawerCaseId = id;
   const order = stagesFor(c.bank, c.type);
   const meta = STAGE_META[c.state];
   const isTerminal = TERMINAL.includes(c.state);
@@ -2865,7 +2884,7 @@ function openDrawer(id){
         <div class="step-time">${isTerminal ? termTs+', 2026' : 'Pending'}</div>
         ${c.failReason ? `<div class="step-note">Reason: ${c.failReason}</div>` : ''}
         ${c.state==='EXPIRED' ? `<div class="step-note">No settlement match within 7 days of authorization.</div>` : ''}
-        ${c.state==='CANCELLED' ? `<div class="step-note">Auth transaction was reversed/returned before settlement. Detected by file-diff: the transaction was present in an earlier auth file and dropped out of a later one. The bank has confirmed no direct reversal signal exists, so this is inference, not a confirmed event — see Ingestion Open Question on this.</div>` : ''}
+        ${c.state==='CANCELLED' ? `<div class="step-note">Bank-side reversal, detected via file-diff — no action available.</div>` : ''}
       </div>
     </div>` };
 
@@ -2932,6 +2951,17 @@ function openDrawer(id){
         <div><div class="meta-label">Bank Txn Ref</div><div class="meta-value mono">${c.bankTxnRef||'—'}</div></div>
       </div>
 
+      ${(c.state==='FAILED' && c.failReason==='Settlement amount mismatch' && !c.mismatchResolved) ? `
+        <div class="attn-card" style="display:block;margin-bottom:14px;">
+          <div style="font-weight:700;margin-bottom:6px;">Amount Mismatch — Needs Review</div>
+          <div style="font-weight:500;font-size:12.5px;line-height:1.5;margin-bottom:10px;">
+            Settled amount ₹${c.settledAmount.toLocaleString('en-IN')} doesn't match the auth amount ₹${c.amount.toLocaleString('en-IN')}. This was flagged Failed by HF pending review, not cancelled by the bank — it can still be booked manually if the difference is acceptable.
+          </div>
+          <button class="btn secondary small" onclick="event.stopPropagation();resolveMismatch('${c.id}','booked')">Book Anyway</button>
+          <button class="btn secondary small" onclick="event.stopPropagation();resolveMismatch('${c.id}','failed')">Confirm Failed</button>
+        </div>
+      ` : ''}
+
       ${(c.apiErrorCount||c.errorScreenViews) ? `<p class="card-sub" style="margin:-6px 0 14px;"><span class="badge warning">Journey health</span>&nbsp; ${c.apiErrorCount||0} API error${c.apiErrorCount===1?'':'s'} · ${c.errorScreenViews||0} error screen${c.errorScreenViews===1?'':'s'} shown during this journey — didn't necessarily cause the current status.</p>` : ''}
 
       <p class="section-title">Journey Timeline</p>
@@ -2964,6 +2994,7 @@ function openDrawer(id){
 function closeDrawer(){
   document.getElementById('overlay').classList.remove('open');
   document.getElementById('drawer').classList.remove('open');
+  currentDrawerCaseId = null;
 }
 
 /* ---------------- Simulated redirects (Account / Customer / Program / Journey) ---------------- */
