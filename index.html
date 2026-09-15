@@ -7751,39 +7751,69 @@ function renderDripBuilder(){
   if(dripWiz.step==='build') return renderDripBuildStep();
   return renderDripSetupStep();
 }
+// The rail is navigation-only for Setup — same division of labor as
+// the real Nudges wizard (wiz-rail = step list, wiz-mid = the actual
+// wide form). Cramming 7 fields into the 320px rail while the wide
+// pane sat empty as a placeholder was the mistake; form content
+// belongs in the wide pane, grouped by purpose, not stacked flat.
 function renderDripSetupStep(){
   const railHtml = `
     <div class="wiz-rail-back" onclick="switchPage('drip-list')">${ic('external')} Back to Drip Campaigns</div>
     <div class="wiz-rail-title">${dripWiz.isEdit?'Edit Drip Campaign':'New Drip Campaign'}</div>
-    <div class="wiz-rail-sub">Step 1 of 2 — Campaign Setup</div>
-    <div class="f-group"><label class="f-label">Campaign name</label><input class="f-input" type="text" value="${dripWiz.name}" oninput="dripWiz.name=this.value"></div>
-    <div class="f-group"><label class="f-label">Issuer</label>
-      <select class="f-input" onchange="dripWiz.issuer=this.value;dripWiz.programs=[];renderDripBuilder()">
-        <option value="">Select Issuer</option>
-        ${Object.keys(PROGRAM_OPTIONS).map(i=>`<option ${dripWiz.issuer===i?'selected':''}>${i}</option>`).join('')}
-      </select>
+    <div class="wiz-rail-sub">Manual build</div>
+    <div class="wiz-step">
+      <div class="wiz-step-dotcol"><div class="wiz-step-dot current">1</div><div class="wiz-step-line"></div></div>
+      <div class="wiz-step-body"><div class="wiz-step-label current">Campaign Setup</div></div>
     </div>
-    <div class="f-group"><label class="f-label">Program(s)</label>
-      ${dripWiz.issuer ? chipGroup('programs', PROGRAM_OPTIONS[dripWiz.issuer]||[], 'drip') : '<p class="f-hint" style="margin:0;">Select an issuer first</p>'}
-      ${dripWiz.issuer && computeMakerCheckerFlag(dripWiz.issuer, dripWiz.programs) ? `<p class="f-hint" style="color:var(--warning-text);margin-top:6px;">Maker-checker applies — this issuer/program requires a separate approver.</p>` : ''}
-    </div>
-    <div class="f-group"><label class="f-label">Goal</label>
-      ${dripWiz.goal ? `<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><span class="badge success">${dcGoalLabel(dripWiz.goal)}</span><span style="font-size:11px;color:var(--gray-500);">${dripWiz.goal.eventCategory}</span></div>` : `<p class="f-hint" style="margin:0 0 8px;">Not set yet — a milestone-style campaign can legitimately have none.</p>`}
-      <button class="btn secondary small" style="width:100%;" onclick="dcOpenGoalDrawer()">${dripWiz.goal?'Change Goal':'Define Goal'}</button>
-    </div>
-    <div class="f-group"><label class="f-label">Control Group %</label><input class="f-input" type="number" min="0" max="50" value="${dripWiz.controlPct}" oninput="dripWiz.controlPct=this.value"><p class="f-hint">Held-back baseline for uplift, set once on Entry — on by default.</p></div>
-    <div class="f-row2">
-      <div class="f-group"><label class="f-label">Start</label><input class="f-input" type="datetime-local" value="${dripWiz.startDate}" onchange="dripWiz.startDate=this.value"></div>
-      <div class="f-group"><label class="f-label">End</label><input class="f-input" type="datetime-local" value="${dripWiz.endDate}" onchange="dripWiz.endDate=this.value"></div>
-    </div>
-    <p class="f-hint" style="margin-top:-10px;">Leave Start blank to activate immediately once approved. A future Start holds it as Scheduled until then.</p>
-    <p class="f-hint" style="background:var(--gray-50);padding:8px 10px;border-radius:6px;margin-top:12px;">🛡 DNC and opt-outs are checked automatically before every send in this campaign — not something you configure per step, same as Nudges.</p>
-    <div style="display:flex;gap:8px;margin-top:18px;">
-      <button class="btn secondary" style="flex:1;" ${!dripWiz.name?'disabled style="opacity:.5;"':''} onclick="saveDripCampaign('draft')">Save as Draft</button>
-      <button class="btn primary" style="flex:1;" ${!dripWiz.name?'disabled style="opacity:.5;"':''} onclick="dripWiz.step='build';renderDripBuilder()">Continue to Build →</button>
+    <div class="wiz-step">
+      <div class="wiz-step-dotcol"><div class="wiz-step-dot upcoming">2</div></div>
+      <div class="wiz-step-body"><div class="wiz-step-label upcoming">Build</div></div>
     </div>`;
   document.getElementById('dcbRail').innerHTML = railHtml;
-  document.getElementById('dcbCanvas').innerHTML = `<div class="placeholder" style="margin-top:80px;">Once setup is saved, you'll build the campaign flow here — entry, steps, and exits.</div>`;
+
+  const sectionLabel = (t) => `<div class="wiz-group-label" style="padding-left:0;margin:26px 0 8px;">${t}</div>`;
+  document.getElementById('dcbCanvas').innerHTML = `
+    <div class="wiz-mid-inner" style="max-width:640px;margin:0 auto;padding:36px 24px 60px;">
+      <h1 class="wiz-heading">${dripWiz.isEdit?'Edit Drip Campaign':'New Drip Campaign'}</h1>
+      <p class="wiz-sub">Set identity, scope, and objective — you'll build the actual flow next.</p>
+
+      ${sectionLabel('Identity')}
+      <div class="f-group"><label class="f-label">Campaign name</label><input class="f-input" type="text" value="${dripWiz.name}" oninput="dripWiz.name=this.value"></div>
+
+      ${sectionLabel('Scope')}
+      <div class="f-row2" style="align-items:start;">
+        <div class="f-group"><label class="f-label">Issuer</label>
+          <select class="f-input" onchange="dripWiz.issuer=this.value;dripWiz.programs=[];renderDripBuilder()">
+            <option value="">Select Issuer</option>
+            ${Object.keys(PROGRAM_OPTIONS).map(i=>`<option ${dripWiz.issuer===i?'selected':''}>${i}</option>`).join('')}
+          </select>
+        </div>
+        <div class="f-group"><label class="f-label">Program(s)</label>
+          ${dripWiz.issuer ? chipGroup('programs', PROGRAM_OPTIONS[dripWiz.issuer]||[], 'drip') : '<p class="f-hint" style="margin:8px 0 0;">Select an issuer first</p>'}
+        </div>
+      </div>
+      ${dripWiz.issuer && computeMakerCheckerFlag(dripWiz.issuer, dripWiz.programs) ? `<p class="f-hint" style="color:var(--warning-text);margin-top:-8px;">Maker-checker applies — this issuer/program requires a separate approver.</p>` : ''}
+
+      ${sectionLabel('Objective')}
+      <div class="f-group">
+        ${dripWiz.goal ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="badge success">${dcGoalLabel(dripWiz.goal)}</span><span style="font-size:12px;color:var(--gray-500);">${dripWiz.goal.eventCategory}</span></div>` : `<p class="f-hint" style="margin:0 0 10px;">Not set yet — a milestone-style campaign can legitimately have none.</p>`}
+        <button class="btn secondary small" onclick="dcOpenGoalDrawer()">${dripWiz.goal?'Change Goal':'Define Goal'}</button>
+      </div>
+
+      ${sectionLabel('Launch Settings')}
+      <div class="f-group" style="max-width:200px;"><label class="f-label">Control Group %</label><input class="f-input" type="number" min="0" max="50" value="${dripWiz.controlPct}" oninput="dripWiz.controlPct=this.value"></div>
+      <div class="f-row2">
+        <div class="f-group"><label class="f-label">Start</label><input class="f-input" type="datetime-local" value="${dripWiz.startDate}" onchange="dripWiz.startDate=this.value"></div>
+        <div class="f-group"><label class="f-label">End</label><input class="f-input" type="datetime-local" value="${dripWiz.endDate}" onchange="dripWiz.endDate=this.value"></div>
+      </div>
+      <p class="f-hint" style="margin-top:-10px;">Control Group is held back as a baseline for uplift. Leave Start blank to activate immediately once approved — a future Start holds it as Scheduled until then.</p>
+      <p class="f-hint" style="background:var(--gray-50);padding:10px 12px;border-radius:6px;margin-top:14px;">🛡 DNC and opt-outs are checked automatically before every send in this campaign — not something you configure per step, same as Nudges.</p>
+
+      <div style="display:flex;gap:10px;margin-top:32px;">
+        <button class="btn secondary" ${!dripWiz.name?'disabled style="opacity:.5;"':''} onclick="saveDripCampaign('draft')">Save as Draft</button>
+        <button class="btn primary" ${!dripWiz.name?'disabled style="opacity:.5;"':''} onclick="dripWiz.step='build';renderDripBuilder()">Continue to Build →</button>
+      </div>
+    </div>`;
 }
 function renderDripBuildStep(){
   let railHtml = `
