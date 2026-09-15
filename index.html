@@ -1747,10 +1747,19 @@ const INGESTION_FUNNEL = {
 // Job health for Reconciliation's two triggers (Master PRD Section 8) —
 // ops visibility into whether the scheduled jobs are actually running, not
 // just what they found. Illustrative, same reasoning as INGESTION_FUNNEL.
-const RECON_JOB_HEALTH = {
-  triggerA: { label:'Trigger A — on settlement file arrival', lastRun:'22 Aug, 03:40', recordsProcessed: 214, status:'ok' },
-  triggerB: { label:'Trigger B — daily 7-day expiry sweep', lastRun:'22 Aug, 00:15', recordsProcessed: 46, status:'ok' },
-};
+// An array, not two fixed named fields (triggerA/triggerB) — a platform-
+// level "job health" concept has to support an arbitrary number of
+// scheduled jobs, not exactly two hardcoded slots baked into both the
+// data shape and the template. Adding a third reconciliation job later
+// (or fewer, for a bank that only runs one) means pushing to this array,
+// not touching the render code. Labels describe what each job does, not
+// its internal codename — "Trigger A"/"Trigger B" are Master PRD Section
+// 8's own shorthand for these in engineering docs, but mean nothing to
+// anyone reading this dashboard without that context.
+const RECON_JOBS = [
+  { id:'settlement-match', label:'Settlement Matching', sub:'Runs on settlement file arrival', lastRun:'22 Aug, 03:40', metricLabel:'records processed last run', metricValue: 214, status:'ok' },
+  { id:'expiry-sweep', label:'7-Day Expiry Sweep', sub:'Runs daily', lastRun:'22 Aug, 00:15', metricLabel:'requests expired last run', metricValue: 46, status:'ok' },
+];
 
 // Yes Bank's own allocation file — same monthly cadence/concept as IBL's,
 // a separate instance since these are different banks' own file transfers.
@@ -1763,7 +1772,7 @@ const ALLOCATION_FILE_HISTORY_YES = [
 // week of every month, unchanged from the existing Txn-to-EMI process.
 // Only accounts in this file are eligible for the auth-consent flow at
 // all; it's the very first ingestion trigger, ahead of the auth file.
-// Illustrative, same reasoning as INGESTION_FUNNEL/RECON_JOB_HEALTH — not
+// Illustrative, same reasoning as INGESTION_FUNNEL/RECON_JOBS — not
 // derived from CASES, monthly cadence doesn't fit this mock's ~20-day span.
 const ALLOCATION_FILE_HISTORY = [
   {batchId:'ALLOC-IBL-2026-08', receivedAt:'03 Aug, 06:00', accountsAllocated:48210, status:'Ingested'},
@@ -2795,11 +2804,11 @@ function renderReconHealthStrip(){
   });
 
   if(reconView==='auth'){
-    const jobsOk = RECON_JOB_HEALTH.triggerA.status==='ok' && RECON_JOB_HEALTH.triggerB.status==='ok';
+    const jobsOk = RECON_JOBS.every(j=>j.status==='ok');
     chips.push({
       ok: jobsOk,
       label: 'Reconciliation Jobs',
-      detail: jobsOk ? `Trigger A/B both last ran on schedule` : `One or more triggers didn't run on schedule`
+      detail: jobsOk ? `Settlement Matching and Expiry Sweep both last ran on schedule` : `One or more jobs didn't run on schedule`
     });
     const pendingCases = scopedCases().filter(c=>c.state==='PENDING');
     const nearingExpiry = pendingCases.filter(c=>{
@@ -3009,7 +3018,6 @@ function renderRecon(){
       {label:'Consented', count:f.consented},
     ];
     const fMax = funnelSteps[0].count || 1;
-    const jh = RECON_JOB_HEALTH;
 
     // Real file cadence per the Master PRD (Section 6) — three genuinely
     // different frequencies, not one "file per campaign" concept:
@@ -3085,7 +3093,7 @@ function renderRecon(){
       </div>
       <div class="card" style="margin-bottom:20px;">
         <p class="card-title">Settlement File</p>
-        <p class="card-sub">Arrives daily, T+1 basis — one file per day, reconciled against every open auth-consent request across all campaigns (Trigger A), not per-campaign. A given transaction can settle later, up to ~3 days in some cases; Recon waits up to 7 days before marking a request Expired.</p>
+        <p class="card-sub">Arrives daily, T+1 basis — one file per day, reconciled against every open auth-consent request across all campaigns via Settlement Matching, not per-campaign. A given transaction can settle later, up to ~3 days in some cases; Recon waits up to 7 days before marking a request Expired.</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Settlement Date</th><th>New Settlement Records</th><th>Recon Matched</th><th>Still Unmatched</th></tr></thead>
@@ -3101,18 +3109,17 @@ function renderRecon(){
       </div>
       <div class="card" style="margin-bottom:20px;">
         <p class="card-title">Reconciliation Job Health</p>
-        <p class="card-sub">Are the two scheduled triggers actually running, not just what they found when they last did (Section 8).</p>
+        <p class="card-sub">Are the scheduled jobs actually running, not just what they found when they last did.</p>
+        <!-- Generic loop over RECON_JOBS, not a fixed two-slot template —
+        this card works the same whether there's 1 job or 5, no template
+        change needed to add or remove one. -->
         <div class="row-flex">
+          ${RECON_JOBS.map(j=>`
           <div class="kpi-card" style="flex:1;">
-            <div class="kpi-label">${jh.triggerA.label}</div>
-            <div class="kpi-value" style="font-size:18px;">${jh.triggerA.lastRun}</div>
-            <p class="card-sub" style="margin:4px 0 0;">${jh.triggerA.recordsProcessed} records processed last run</p>
-          </div>
-          <div class="kpi-card" style="flex:1;">
-            <div class="kpi-label">${jh.triggerB.label}</div>
-            <div class="kpi-value" style="font-size:18px;">${jh.triggerB.lastRun}</div>
-            <p class="card-sub" style="margin:4px 0 0;">${jh.triggerB.recordsProcessed} requests expired last run</p>
-          </div>
+            <div class="kpi-label">${j.status==='ok'?'✓':'⚠'} ${j.label}</div>
+            <div class="kpi-value" style="font-size:18px;">${j.lastRun}</div>
+            <p class="card-sub" style="margin:4px 0 0;">${j.sub} · ${j.metricValue} ${j.metricLabel}</p>
+          </div>`).join('')}
         </div>
       </div>
       <div class="card" style="margin-bottom:20px;">
