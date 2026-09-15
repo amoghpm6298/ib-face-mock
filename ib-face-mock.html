@@ -268,7 +268,7 @@
   .dc-type-opt.cat-flow{color:var(--gray-600);} .dc-type-opt.cat-split{color:var(--warning-text);}
   .dc-type-opt.cat-goal{color:var(--success-text);} .dc-type-opt.cat-exit{color:var(--gray-500);}
   .dc-add-entry-placeholder{
-    width:220px;margin:80px auto 0;padding:22px;text-align:center;border-radius:10px;
+    width:220px;margin:24px 0 0 24px;padding:22px;text-align:center;border-radius:10px;
     border:1.5px dashed var(--gray-300);color:var(--gray-500);font-size:13px;font-weight:600;cursor:pointer;
   }
   .dc-add-entry-placeholder:hover{border-color:var(--blue-cta);color:var(--blue-cta);}
@@ -7775,7 +7775,7 @@ function renderDripSetupStep(){
   document.getElementById('dcbCanvas').innerHTML = `
     <div class="wiz-mid-inner" style="max-width:640px;margin:0 auto;padding:36px 24px 60px;">
       <h1 class="wiz-heading">${dripWiz.isEdit?'Edit Drip Campaign':'New Drip Campaign'}</h1>
-      <p class="wiz-sub">Set identity, scope, and objective — you'll build the actual flow next.</p>
+      <p class="wiz-sub">Set identity, scope, and launch settings — you'll define the goal and build the flow next.</p>
 
       ${sectionLabel('Identity')}
       <div class="f-group"><label class="f-label">Campaign name</label><input class="f-input" type="text" value="${dripWiz.name}" oninput="dripWiz.name=this.value"></div>
@@ -7794,12 +7794,6 @@ function renderDripSetupStep(){
       </div>
       ${dripWiz.issuer && computeMakerCheckerFlag(dripWiz.issuer, dripWiz.programs) ? `<p class="f-hint" style="color:var(--warning-text);margin-top:-8px;">Maker-checker applies — this issuer/program requires a separate approver.</p>` : ''}
 
-      ${sectionLabel('Objective')}
-      <div class="f-group">
-        ${dripWiz.goal ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span class="badge success">${dcGoalLabel(dripWiz.goal)}</span><span style="font-size:12px;color:var(--gray-500);">${dripWiz.goal.eventCategory}</span></div>` : `<p class="f-hint" style="margin:0 0 10px;">Not set yet — a milestone-style campaign can legitimately have none.</p>`}
-        <button class="btn secondary small" onclick="dcOpenGoalDrawer()">${dripWiz.goal?'Change Goal':'Define Goal'}</button>
-      </div>
-
       ${sectionLabel('Launch Settings')}
       <div class="f-group" style="max-width:200px;"><label class="f-label">Control Group %</label><input class="f-input" type="number" min="0" max="50" value="${dripWiz.controlPct}" oninput="dripWiz.controlPct=this.value"></div>
       <div class="f-row2">
@@ -7815,6 +7809,12 @@ function renderDripSetupStep(){
       </div>
     </div>`;
 }
+// Goal lives here, not in Setup — it has zero functional role until
+// you're actually building (every auto-inserted Split checks it, every
+// Send appends a goal-check node against it). Setup fields are all
+// pure identity or pure launch-timing; Goal was the one build-time
+// concern wearing a setup-time costume. Also gives this rail a real
+// second thing to show instead of just badges + a link + a void.
 function renderDripBuildStep(){
   let railHtml = `
     <div class="wiz-rail-back" onclick="switchPage('drip-list')">${ic('external')} Back to Drip Campaigns</div>
@@ -7822,17 +7822,22 @@ function renderDripBuildStep(){
     <div class="wiz-rail-sub">Step 2 of 2 — Build</div>
     <div class="f-group" style="display:flex;flex-wrap:wrap;gap:6px;">
       ${dripWiz.issuer?`<span class="badge gray">${dripWiz.issuer}</span>`:''}
-      ${dripWiz.goal?`<span class="badge success">${dcGoalLabel(dripWiz.goal)}</span>`:''}
     </div>
     <div class="add-link" style="margin-bottom:14px;" onclick="dripWiz.step='setup';renderDripBuilder()">${ic('external')} Edit Setup</div>
-    <hr style="border:none;border-top:1px solid var(--gray-200);margin:0 0 14px;">`;
+    <hr style="border:none;border-top:1px solid var(--gray-200);margin:0 0 14px;">
+    <div class="f-group"><label class="f-label">Goal</label>
+      ${dripWiz.goal ? `<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><span class="badge success">${dcGoalLabel(dripWiz.goal)}</span><span style="font-size:11px;color:var(--gray-500);">${dripWiz.goal.eventCategory}</span></div>` : `<p class="f-hint" style="margin:0 0 8px;">Not set yet — a milestone-style campaign can legitimately have none.</p>`}
+      <button class="btn secondary small" style="width:100%;" onclick="dcOpenGoalDrawer()">${dripWiz.goal?'Change Goal':'Define Goal'}</button>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--gray-200);margin:14px 0;">`;
 
   if(dripWiz.root===null){
     railHtml += `<p class="f-hint">Click <b>+ Add Entry</b> on the canvas to choose how customers enter this campaign.</p>`;
   } else {
     const open = dcTreeHasOpenBranches(dripWiz.root);
     railHtml += `<p class="f-hint">Click any <b>+</b> on the canvas to add the next step. Every branch needs to end in a Goal-Based Exit or Exit before this campaign is ready to submit for approval — saving as a draft has no such requirement.</p>
-      ${open?`<p class="f-hint" style="color:var(--warning-text);font-weight:600;">⚠ Open branches remaining — fine to save as a draft, blocks submission.</p>`:''}`;
+      ${open?`<p class="f-hint" style="color:var(--warning-text);font-weight:600;">⚠ Open branches remaining — fine to save as a draft, blocks submission.</p>`:''}
+      ${dcStepsOutlineHtml(dripWiz.root)}`;
   }
   // Save as Draft is always available once there's a name — you should
   // never be blocked from saving in-progress work. Submitting for
@@ -7846,7 +7851,25 @@ function renderDripBuildStep(){
   document.getElementById('dcbRail').innerHTML = railHtml;
   document.getElementById('dcbCanvas').innerHTML = dripWiz.root===null
     ? `<div class="dc-add-entry-placeholder" onclick="dcSelectAddAt([])">+ Add Entry</div>`
-    : `<div class="dc-tree-root">${dcRenderNodeEditable(dripWiz.root, [])}</div>`;
+    : `<div class="dc-tree-root" style="justify-content:flex-start;padding-left:24px;">${dcRenderNodeEditable(dripWiz.root, [])}</div>`;
+}
+// A running outline of every Send in the tree, in order — genuinely
+// useful (a quick read of what this campaign sends without visually
+// parsing the canvas), and fills the rail proportionally to real
+// content as the tree grows, instead of leaving a fixed dead void
+// below the buttons for a short campaign and doing nothing for a
+// long one either.
+function dcStepsOutlineHtml(node, steps){
+  const isRoot = !steps;
+  if(isRoot) steps = [];
+  if(node.type==='SEND' || node.type==='CHANNEL_FAILOVER') steps.push(node.label);
+  (node.children||[]).forEach(c => { if(c.type!=='EMPTY') dcStepsOutlineHtml(c, steps); });
+  if(!isRoot) return '';
+  if(!steps.length) return '';
+  return `<div class="wiz-group-label" style="padding-left:0;margin:16px 0 6px;">Steps so far</div>
+    <ol style="margin:0;padding-left:18px;font-size:12.5px;color:var(--neutral-800);line-height:1.9;">
+      ${steps.map(s=>`<li>${s}</li>`).join('')}
+    </ol>`;
 }
 function dcTypePickerHtml(types){
   return `<div class="dc-type-picker">${types.map(t=>`
