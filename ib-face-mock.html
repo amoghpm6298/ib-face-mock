@@ -4024,15 +4024,25 @@ function renderAnalytics(){
   // Product filter is always scoped to exactly one product (no "All
   // Products" state to guess a default from).
   {
+    // The empty track is real loss, not "not yet" — a neutral gray track
+    // reads as passive/pending, but every unfilled pixel here is someone
+    // who dropped out and isn't coming back. Track tinted red so the
+    // chart's own color tells the attrition story before anyone reads a
+    // number; final stage (Booked) filled green, not blue — it's the
+    // outcome, not just another step en route, same as every Booked badge
+    // elsewhere on this page.
     const funnelStagesHtml = (stages) => {
       const maxCount = stages[0].count || 1;
-      return stages.map(f=>`
+      return stages.map((f,i)=>{
+        const isLast = i===stages.length-1;
+        return `
         <div class="funnel-row">
           <div class="funnel-label">${f.label}</div>
-          <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((f.count/maxCount)*100)}%"></div></div>
+          <div class="funnel-bar-track" style="background:var(--error-bg);"><div class="funnel-bar-fill" style="width:${Math.round((f.count/maxCount)*100)}%;${isLast?'background:var(--success-border);':''}"></div></div>
           <div class="funnel-count">${f.count}</div>
           <div class="funnel-pct">${Math.round((f.count/maxCount)*100)}%</div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     };
     // Drop-off callout — the single biggest step-to-step loss, computed from
     // the same stage counts just rendered, not a separate figure.
