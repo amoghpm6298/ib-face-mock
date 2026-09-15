@@ -267,6 +267,11 @@
   .dc-type-opt.cat-entry{color:var(--info-text);} .dc-type-opt.cat-send{color:var(--blue-cta);}
   .dc-type-opt.cat-flow{color:var(--gray-600);} .dc-type-opt.cat-split{color:var(--warning-text);}
   .dc-type-opt.cat-goal{color:var(--success-text);} .dc-type-opt.cat-exit{color:var(--gray-500);}
+  .dc-add-entry-placeholder{
+    width:220px;margin:80px auto 0;padding:22px;text-align:center;border-radius:10px;
+    border:1.5px dashed var(--gray-300);color:var(--gray-500);font-size:13px;font-weight:600;cursor:pointer;
+  }
+  .dc-add-entry-placeholder:hover{border-color:var(--blue-cta);color:var(--blue-cta);}
 
   .dropoff-callout{
     display:flex;align-items:center;gap:8px;margin-top:16px;padding:10px 14px;
@@ -7253,43 +7258,90 @@ function dcParentOf(path){
   for(let k=0;k<path.length-1;k++) node = node.children[path[k]];
   return node;
 }
-function dcSelectAddAt(path){ dripWiz.addingAt = path; dripWiz.addingType = null; dripWiz.pendingConfig = {}; renderDripBuilder(); }
-function dcCancelAdd(){ dripWiz.addingAt = null; dripWiz.addingType = null; renderDripBuilder(); }
+// "+' clicks open a right-side drawer instead of populating the left rail —
+// clicking something on the far side of a wide canvas and having the
+// response appear far away on the left breaks the connection between
+// action and result. Reuses the same generic #sideDrawer component real
+// ironbank-face uses for Communication Configure etc. (see its CSS
+// comment), not a new pattern invented just for this page.
+function dcSelectAddAt(path){
+  dripWiz.addingAt = path; dripWiz.addingType = null; dripWiz.pendingConfig = {};
+  renderDripBuilder();
+  dcRenderAddDrawer();
+}
+function dcCancelAdd(){ dripWiz.addingAt = null; dripWiz.addingType = null; closeSideDrawer(); renderDripBuilder(); }
+function dcOrdinal(n){ n=Number(n); const s=['th','st','nd','rd'], v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+function dcRecurrenceLabel(p){
+  if(p.recurrenceType==='Weekly') return `Every ${p.weekInterval} week${Number(p.weekInterval)===1?'':'s'} on ${p.dayOfWeek}`;
+  if(p.recurrenceType==='Daily') return `Every ${p.dayInterval} day${Number(p.dayInterval)===1?'':'s'}`;
+  return `${p.dayOfMonth==='last'?'Last day':dcOrdinal(p.dayOfMonth)} of every month`;
+}
 function dcPickType(type){
   dripWiz.addingType = type;
-  const goalQ = (dripWiz.goal||'Goal') + '?';
   dripWiz.pendingConfig = {
     ENTRY_SEGMENT:{cohortDesc:'All eligible customers'},
     ENTRY_EVENT:{eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:''},
-    ENTRY_SCHEDULED:{recurrence:'1st of every month'},
-    SEND:{name:'Send Message', channel:'WhatsApp', template:'', timing:'Absolute', absTime:'11:00 AM'},
+    ENTRY_SCHEDULED:{recurrenceType:'Monthly', dayOfMonth:'1', weekInterval:'1', dayOfWeek:'Monday', dayInterval:'1'},
+    SEND:{name:'Send Message', channel:'WHATSAPP', account:'', templateId:'', timing:'Absolute', absTime:'11:00'},
     PAUSE:{duration:2, unit:'days'},
-    WAIT_UNTIL:{question:goalQ, timeout:'up to 7 days'},
-    SPLIT:{question:goalQ, basis:'Goal reached'},
+    WAIT_UNTIL:{eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:'', duration:7, unit:'days'},
+    SPLIT:{basis:'Goal reached', customSource:'Previous step outcome', outcome:'Clicked', customText:''},
     RANDOM_SPLIT:{name:'Channel test', pct1:50},
     GOAL_EXIT:{reason:dripWiz.goal||'Goal achieved'},
     EXIT:{reason:'Sequence exhausted'},
   }[type];
-  renderDripBuilder();
+  dcRenderAddDrawer();
 }
-function dcConfigField(key,val){ dripWiz.pendingConfig[key]=val; renderDripBuilder(); }
+function dcConfigField(key,val){ dripWiz.pendingConfig[key]=val; dcRenderAddDrawer(); }
+function dcAddFormValid(t){
+  const p = dripWiz.pendingConfig;
+  if(t==='ENTRY_EVENT'||t==='WAIT_UNTIL') return !!p.eventType;
+  if(t==='SEND') return !!(p.account && p.templateId);
+  return true;
+}
+function dcRenderAddDrawer(){
+  const isEntry = dripWiz.root===null;
+  const types = isEntry ? DC_ENTRY_TYPES : DC_STEP_TYPES;
+  const t = dripWiz.addingType;
+  openSideDrawer(`
+    <div class="sd-head">
+      <div class="sd-title">${isEntry?'Add Entry':'Add Next Step'}</div>
+      <button class="drawer-close" onclick="dcCancelAdd()">×</button>
+    </div>
+    <div class="sd-body">
+      ${dcTypePickerHtml(types)}
+      ${t?dcDrawerFormFor(t):''}
+    </div>
+    <div class="sd-foot">
+      <button class="btn secondary" onclick="dcCancelAdd()">Cancel</button>
+      <button class="btn primary" ${!(t&&dcAddFormValid(t))?'disabled style="opacity:.5;"':''} onclick="dcConfirmAddNode()">${isEntry?'Add Entry':'Add Step'}</button>
+    </div>`, 620);
+}
 function dcConfirmAddNode(){
   const t = dripWiz.addingType, p = dripWiz.pendingConfig;
   let node;
   if(t==='ENTRY_SEGMENT') node = n('ENTRY_SEGMENT', p.cohortDesc, 'Segment entry');
   else if(t==='ENTRY_EVENT') node = n('ENTRY_EVENT', p.eventType||'Event Trigger', p.eventCategory);
-  else if(t==='ENTRY_SCHEDULED') node = n('ENTRY_SCHEDULED', 'Scheduled entry', p.recurrence);
+  else if(t==='ENTRY_SCHEDULED') node = n('ENTRY_SCHEDULED', 'Scheduled entry', dcRecurrenceLabel(p));
   else if(t==='SEND'){
-    const meta = `${p.channel} · ${p.timing==='Absolute'?p.absTime:'Relative'}${p.template?' · Template: '+p.template:''}`;
+    const tmpl = COMMS_TEMPLATES.find(x=>x.id===p.templateId);
+    const meta = `${CHANNEL_CONFIG_LABELS[p.channel]} · ${p.account} · ${p.timing==='Absolute'?p.absTime:'Relative'}${tmpl?' · Template: '+tmpl.name:''}`;
     node = n('SEND', p.name, meta, [dcEmptyGoalCheck((dripWiz.goal||'Goal')+'?')]);
   }
   else if(t==='PAUSE') node = n('PAUSE', `Wait ${p.duration} ${p.unit}`, '');
-  else if(t==='WAIT_UNTIL') node = n('WAIT_UNTIL', p.question, `Wait ${p.timeout} for a response`, [
-    n('GOAL_EXIT', p.question.replace(/\?$/,''), '', [], 'Yes'), { type:'EMPTY', branchLabel:'No', children:[] },
-  ]);
-  else if(t==='SPLIT') node = n('SPLIT', p.question, p.basis==='Goal reached'?'Goal check':'Custom condition split', [
-    n('GOAL_EXIT', p.question.replace(/\?$/,''), '', [], 'Yes'), { type:'EMPTY', branchLabel:'No', children:[] },
-  ]);
+  else if(t==='WAIT_UNTIL'){
+    const label = p.eventType||'Wait Until';
+    node = n('WAIT_UNTIL', label, `Timeout after ${p.duration} ${p.unit} · ${p.eventCategory}`, [
+      n('GOAL_EXIT', label, '', [], 'Yes'), { type:'EMPTY', branchLabel:'No', children:[] },
+    ]);
+  }
+  else if(t==='SPLIT'){
+    const goalQ = (dripWiz.goal||'Goal')+'?';
+    const question = p.basis==='Goal reached' ? goalQ : (p.customSource==='Previous step outcome' ? `Previous step: ${p.outcome}?` : (p.customText||'Custom condition'));
+    node = n('SPLIT', question, p.basis==='Goal reached'?'Goal check':'Custom condition split', [
+      n('GOAL_EXIT', question.replace(/\?$/,''), '', [], 'Yes'), { type:'EMPTY', branchLabel:'No', children:[] },
+    ]);
+  }
   else if(t==='RANDOM_SPLIT'){
     const p2 = 100-Number(p.pct1);
     node = n('RANDOM_SPLIT', p.name, `${p.pct1} / ${p2} allocation`, [
@@ -7316,6 +7368,7 @@ function dcConfirmAddNode(){
     }
   }
   dripWiz.addingAt = null; dripWiz.addingType = null;
+  closeSideDrawer();
   renderDripBuilder();
 }
 function dcRemoveNode(path){
@@ -7354,9 +7407,8 @@ function dcRenderNodeEditable(node, path){
   </div>`;
 }
 
-function dcRailFormFor(type){
+function dcDrawerFormFor(type){
   const p = dripWiz.pendingConfig;
-  const opt = (v,l)=>`<option value="${v}" ${p._cur===v?'selected':''}>${l}</option>`;
   if(type==='ENTRY_SEGMENT') return `<div class="f-group"><label class="f-label">Cohort description</label><input class="f-input" type="text" value="${p.cohortDesc}" oninput="dcConfigField('cohortDesc',this.value)"></div>`;
   if(type==='ENTRY_EVENT') return `
     <div class="f-group"><label class="f-label">Event Category</label>
@@ -7368,28 +7420,81 @@ function dcRailFormFor(type){
         <option value="">Select event</option>
         ${(EVENT_CATEGORIES[p.eventCategory]?.events||[]).map(e=>`<option value="${e}" ${p.eventType===e?'selected':''}>${e}</option>`).join('')}
       </select></div>`;
-  if(type==='ENTRY_SCHEDULED') return `<div class="f-group"><label class="f-label">Recurrence</label><input class="f-input" type="text" value="${p.recurrence}" oninput="dcConfigField('recurrence',this.value)"></div>`;
-  if(type==='SEND') return `
+  if(type==='ENTRY_SCHEDULED') return `
+    <div class="f-group"><label class="f-label">Repeats</label>
+      <select class="f-input" onchange="dcConfigField('recurrenceType',this.value)">
+        <option ${p.recurrenceType==='Monthly'?'selected':''}>Monthly</option>
+        <option ${p.recurrenceType==='Weekly'?'selected':''}>Weekly</option>
+        <option ${p.recurrenceType==='Daily'?'selected':''}>Daily</option>
+      </select></div>
+    ${p.recurrenceType==='Monthly'?`
+      <div class="f-group"><label class="f-label">On</label>
+        <select class="f-input" onchange="dcConfigField('dayOfMonth',this.value)">
+          ${Array.from({length:28},(_,i)=>i+1).map(d=>`<option value="${d}" ${p.dayOfMonth===String(d)?'selected':''}>${dcOrdinal(d)}</option>`).join('')}
+          <option value="last" ${p.dayOfMonth==='last'?'selected':''}>Last day</option>
+        </select></div>`:''}
+    ${p.recurrenceType==='Weekly'?`
+      <div class="f-row2">
+        <div class="f-group"><label class="f-label">Every</label><input class="f-input" type="number" min="1" value="${p.weekInterval}" oninput="dcConfigField('weekInterval',this.value)"></div>
+        <div class="f-group"><label class="f-label">On</label><select class="f-input" onchange="dcConfigField('dayOfWeek',this.value)">${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d=>`<option ${p.dayOfWeek===d?'selected':''}>${d}</option>`).join('')}</select></div>
+      </div>`:''}
+    ${p.recurrenceType==='Daily'?`<div class="f-group"><label class="f-label">Every N days</label><input class="f-input" type="number" min="1" value="${p.dayInterval}" oninput="dcConfigField('dayInterval',this.value)"></div>`:''}
+    <p class="f-hint">${dcRecurrenceLabel(p)}</p>`;
+  if(type==='SEND'){
+    const accounts = [...new Set(COMMS_TEMPLATES.filter(x=>x.channelType===p.channel).map(x=>x.accountName))];
+    const templates = COMMS_TEMPLATES.filter(x=>x.channelType===p.channel && (!p.account || x.accountName===p.account));
+    return `
     <div class="f-group"><label class="f-label">Step name</label><input class="f-input" type="text" value="${p.name}" oninput="dcConfigField('name',this.value)"></div>
     <div class="f-row2">
-      <div class="f-group"><label class="f-label">Channel</label><select class="f-input" onchange="dcConfigField('channel',this.value)">${['WhatsApp','SMS','Email'].map(c=>`<option ${p.channel===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="f-group"><label class="f-label">Channel</label><select class="f-input" onchange="dcConfigField('channel',this.value);dcConfigField('account','');dcConfigField('templateId','')">${Object.keys(CHANNEL_CONFIG_LABELS).map(c=>`<option value="${c}" ${p.channel===c?'selected':''}>${CHANNEL_CONFIG_LABELS[c]}</option>`).join('')}</select></div>
       <div class="f-group"><label class="f-label">Timing</label><select class="f-input" onchange="dcConfigField('timing',this.value)"><option ${p.timing==='Absolute'?'selected':''}>Absolute</option><option ${p.timing==='Relative'?'selected':''}>Relative</option></select></div>
     </div>
-    ${p.timing==='Absolute'?`<div class="f-group"><label class="f-label">Send time</label><input class="f-input" type="text" value="${p.absTime}" oninput="dcConfigField('absTime',this.value)"></div>`:''}
-    <div class="f-group"><label class="f-label">Template</label><input class="f-input" type="text" placeholder="Template name" value="${p.template}" oninput="dcConfigField('template',this.value)"></div>
+    ${p.timing==='Absolute'?`<div class="f-group"><label class="f-label">Send time</label><input class="f-input" type="time" value="${p.absTime}" oninput="dcConfigField('absTime',this.value)"></div>`:''}
+    <div class="f-group"><label class="f-label">Account</label>
+      <select class="f-input" onchange="dcConfigField('account',this.value);dcConfigField('templateId','')">
+        <option value="">Select account</option>${accounts.map(a=>`<option ${p.account===a?'selected':''}>${a}</option>`).join('')}
+      </select></div>
+    <div class="f-group"><label class="f-label">Template</label>
+      <select class="f-input" onchange="dcConfigField('templateId',this.value)">
+        <option value="">Select template</option>${templates.map(x=>`<option value="${x.id}" ${p.templateId===x.id?'selected':''}>${x.name}</option>`).join('')}
+      </select>
+      ${!templates.length?`<div class="f-hint">No ${CHANNEL_CONFIG_LABELS[p.channel]} templates exist yet${p.account?' for this account':''} — create one in Comms. Templates first.</div>`:''}
+    </div>
     <p class="f-hint">A goal-check step is auto-inserted right after this Send — same "define once, check everywhere" pattern used across this campaign.</p>`;
+  }
   if(type==='PAUSE') return `<div class="f-row2">
       <div class="f-group"><label class="f-label">Duration</label><input class="f-input" type="number" min="1" value="${p.duration}" oninput="dcConfigField('duration',this.value)"></div>
       <div class="f-group"><label class="f-label">Unit</label><select class="f-input" onchange="dcConfigField('unit',this.value)"><option ${p.unit==='days'?'selected':''}>days</option><option ${p.unit==='hours'?'selected':''}>hours</option></select></div>
     </div>`;
   if(type==='WAIT_UNTIL') return `
-    <div class="f-group"><label class="f-label">Waiting for</label><input class="f-input" type="text" value="${p.question}" oninput="dcConfigField('question',this.value)"></div>
-    <div class="f-group"><label class="f-label">Timeout</label><input class="f-input" type="text" value="${p.timeout}" oninput="dcConfigField('timeout',this.value)"></div>`;
-  if(type==='SPLIT') return `
-    <div class="f-group"><label class="f-label">Condition</label><input class="f-input" type="text" value="${p.question}" oninput="dcConfigField('question',this.value)"></div>
+    <div class="f-group"><label class="f-label">Event Category</label>
+      <select class="f-input" onchange="dcConfigField('eventCategory',this.value);dcConfigField('eventType','')">
+        ${Object.keys(EVENT_CATEGORIES).map(k=>`<option value="${k}" ${p.eventCategory===k?'selected':''}>${k}${EVENT_CATEGORIES[k].isNew?' (New)':''}</option>`).join('')}
+      </select></div>
+    <div class="f-group"><label class="f-label">Event Type</label>
+      <select class="f-input" onchange="dcConfigField('eventType',this.value)">
+        <option value="">Select event</option>
+        ${(EVENT_CATEGORIES[p.eventCategory]?.events||[]).map(e=>`<option value="${e}" ${p.eventType===e?'selected':''}>${e}</option>`).join('')}
+      </select></div>
+    <div class="f-row2">
+      <div class="f-group"><label class="f-label">Timeout after</label><input class="f-input" type="number" min="1" value="${p.duration}" oninput="dcConfigField('duration',this.value)"></div>
+      <div class="f-group"><label class="f-label">Unit</label><select class="f-input" onchange="dcConfigField('unit',this.value)"><option ${p.unit==='days'?'selected':''}>days</option><option ${p.unit==='hours'?'selected':''}>hours</option></select></div>
+    </div>`;
+  if(type==='SPLIT'){
+    const goalQ = (dripWiz.goal||'Goal')+'?';
+    return `
     <div class="f-group"><label class="f-label">Basis</label><select class="f-input" onchange="dcConfigField('basis',this.value)">
-      <option ${p.basis==='Goal reached'?'selected':''}>Goal reached</option><option ${p.basis==='Custom condition'?'selected':''}>Custom condition</option></select>
-      <p class="f-hint">Bounded to two sources: the previous step's engagement outcome, or an attribute of the entry event — not arbitrary attributes anywhere in the flow.</p></div>`;
+      <option ${p.basis==='Goal reached'?'selected':''}>Goal reached</option><option ${p.basis==='Custom condition'?'selected':''}>Custom condition</option></select></div>
+    ${p.basis==='Goal reached'?`<div class="f-group"><label class="f-label">Condition</label><input class="f-input" type="text" value="${goalQ}" disabled style="background:var(--gray-100);color:var(--gray-500);"></div>`:`
+    <div class="f-group"><label class="f-label">Source</label><select class="f-input" onchange="dcConfigField('customSource',this.value)">
+      <option ${p.customSource==='Previous step outcome'?'selected':''}>Previous step outcome</option>
+      <option ${p.customSource==='Entry event attribute'?'selected':''}>Entry event attribute</option></select></div>
+    ${p.customSource==='Previous step outcome'?`
+      <div class="f-group"><label class="f-label">Outcome</label><select class="f-input" onchange="dcConfigField('outcome',this.value)">
+        ${['Delivered','Opened','Clicked','Not Opened','Bounced'].map(o=>`<option ${p.outcome===o?'selected':''}>${o}</option>`).join('')}</select></div>`:`
+      <div class="f-group"><label class="f-label">Condition</label><input class="f-input" type="text" placeholder="e.g. Amount &gt; 2000" value="${p.customText}" oninput="dcConfigField('customText',this.value)"></div>`}`}
+    <p class="f-hint">Bounded to two sources: the previous step's engagement outcome, or an attribute of the entry event — not arbitrary attributes anywhere in the flow.</p>`;
+  }
   if(type==='RANDOM_SPLIT') return `
     <div class="f-group"><label class="f-label">Step name</label><input class="f-input" type="text" value="${p.name}" oninput="dcConfigField('name',this.value)"></div>
     <div class="f-group"><label class="f-label">Allocation — branch 1 %</label><input class="f-input" type="number" min="1" max="99" value="${p.pct1}" oninput="dcConfigField('pct1',this.value)"><p class="f-hint">Branch 2 gets the remaining ${100-Number(p.pct1||0)}%.</p></div>`;
@@ -7398,7 +7503,6 @@ function dcRailFormFor(type){
 }
 
 function renderDripBuilder(){
-  const availableTypes = dripWiz.root===null ? DC_ENTRY_TYPES : (dripWiz.addingAt!==null ? DC_STEP_TYPES : []);
   let railHtml = `
     <div class="wiz-rail-back" onclick="switchPage('drip-list')">${ic('external')} Back to Drip Campaigns</div>
     <div class="wiz-rail-title">${dripWiz.isEdit?'Edit Drip Campaign':'New Drip Campaign'}</div>
@@ -7409,16 +7513,7 @@ function renderDripBuilder(){
     <hr style="border:none;border-top:1px solid var(--gray-200);margin:18px 0;">`;
 
   if(dripWiz.root===null){
-    railHtml += `<div class="wiz-group-label" style="padding-left:0;">Choose entry type</div>` + dcTypePickerHtml(DC_ENTRY_TYPES);
-    if(dripWiz.addingType) railHtml += dcRailFormFor(dripWiz.addingType) + `<button class="btn primary" style="width:100%;margin-top:6px;" onclick="dcConfirmAddNode()">Add Entry</button>`;
-  } else if(dripWiz.addingAt!==null){
-    railHtml += `<div class="wiz-group-label" style="padding-left:0;">Add next step</div>` + dcTypePickerHtml(DC_STEP_TYPES);
-    if(dripWiz.addingType) railHtml += dcRailFormFor(dripWiz.addingType) + `
-      <div style="display:flex;gap:8px;margin-top:6px;">
-        <button class="btn secondary" style="flex:1;" onclick="dcCancelAdd()">Cancel</button>
-        <button class="btn primary" style="flex:1;" onclick="dcConfirmAddNode()">Add Step</button>
-      </div>`;
-    else railHtml += `<button class="btn secondary" style="width:100%;" onclick="dcCancelAdd()">Cancel</button>`;
+    railHtml += `<p class="f-hint">Click <b>+ Add Entry</b> on the canvas to choose how customers enter this campaign.</p>`;
   } else {
     const open = dcTreeHasOpenBranches(dripWiz.root);
     const blocked = !dripWiz.name || open;
@@ -7428,7 +7523,7 @@ function renderDripBuilder(){
   }
   document.getElementById('dcbRail').innerHTML = railHtml;
   document.getElementById('dcbCanvas').innerHTML = dripWiz.root===null
-    ? `<div class="placeholder" style="margin-top:80px;">Pick an entry type on the left to start building.</div>`
+    ? `<div class="dc-add-entry-placeholder" onclick="dcSelectAddAt([])">+ Add Entry</div>`
     : `<div class="dc-tree-root">${dcRenderNodeEditable(dripWiz.root, [])}</div>`;
 }
 function dcTypePickerHtml(types){
