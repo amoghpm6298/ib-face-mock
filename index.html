@@ -7254,7 +7254,7 @@ function dcEmptyGoalCheck(question){
 }
 function openDripCreate(){
   dripWiz = { id:null, isEdit:false, isDraftContinuation:false, versionOf:null, name:'', goal:null, controlPct:10,
-    issuer:'', programs:[], startDate:'', endDate:'', entryEventCategory:null, _settingsOpen:false, root:null, addingAt:null, addingType:null, pendingConfig:{} };
+    issuer:'', programs:[], startDate:'', endDate:'', entryEventCategory:null, step:'setup', root:null, addingAt:null, addingType:null, pendingConfig:{} };
   switchPage('drip-create');
 }
 // Continuing a not-yet-live Draft — edited in place, no versioning. A
@@ -7265,7 +7265,7 @@ function openDripEditDraft(id){
   const c = DRIP_CAMPAIGNS.find(x=>x.id===id);
   dripWiz = { id:c.id, isEdit:false, isDraftContinuation:true, versionOf:null, name:c.name, goal:c.goal?{...c.goal}:null,
     controlPct:c.controlPct, issuer:c.issuer||'', programs:c.programs?[...c.programs]:[], startDate:c.startDate||'', endDate:c.endDate||'',
-    entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null, _settingsOpen:false,
+    entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null, step:'build',
     root: c.root?JSON.parse(JSON.stringify(c.root)):null, addingAt:null, addingType:null, pendingConfig:{} };
   switchPage('drip-create');
 }
@@ -7323,7 +7323,7 @@ function openDripEdit(id){
   // activation timing is its own fresh decision, not a copy-forward.
   dripWiz = { id:null, isEdit:true, isDraftContinuation:false, versionOf:c.id, name:c.name, goal:c.goal?{...c.goal}:null,
     controlPct:c.controlPct, issuer:c.issuer||'', programs:c.programs?[...c.programs]:[], startDate:'', endDate:'',
-    entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null, _settingsOpen:false,
+    entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null, step:'build',
     root: JSON.parse(JSON.stringify(c.root)), addingAt:null, addingType:null, pendingConfig:{} };
   switchPage('drip-create');
 }
@@ -7741,11 +7741,21 @@ function dcDrawerFormFor(type){
   return '';
 }
 
+// Two-step, not one screen with everything visible — none of Issuer/
+// Program/Goal/Control Group/Dates is needed while actually placing
+// nodes on the canvas (confirmed Issuer isn't even wired into Send's
+// template filtering — only Channel is), so collapsing them into an
+// accordion was a half-measure. Setup is its own step now; Build shows
+// only a compact read-only summary plus the canvas.
 function renderDripBuilder(){
-  let railHtml = `
+  if(dripWiz.step==='build') return renderDripBuildStep();
+  return renderDripSetupStep();
+}
+function renderDripSetupStep(){
+  const railHtml = `
     <div class="wiz-rail-back" onclick="switchPage('drip-list')">${ic('external')} Back to Drip Campaigns</div>
     <div class="wiz-rail-title">${dripWiz.isEdit?'Edit Drip Campaign':'New Drip Campaign'}</div>
-    <div class="wiz-rail-sub">${dripWiz.isEdit?'Saves as a new version — customers already enrolled keep running on the live version':'Manual build'}</div>
+    <div class="wiz-rail-sub">Step 1 of 2 — Campaign Setup</div>
     <div class="f-group"><label class="f-label">Campaign name</label><input class="f-input" type="text" value="${dripWiz.name}" oninput="dripWiz.name=this.value"></div>
     <div class="f-group"><label class="f-label">Issuer</label>
       <select class="f-input" onchange="dripWiz.issuer=this.value;dripWiz.programs=[];renderDripBuilder()">
@@ -7761,12 +7771,6 @@ function renderDripBuilder(){
       ${dripWiz.goal ? `<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><span class="badge success">${dcGoalLabel(dripWiz.goal)}</span><span style="font-size:11px;color:var(--gray-500);">${dripWiz.goal.eventCategory}</span></div>` : `<p class="f-hint" style="margin:0 0 8px;">Not set yet — a milestone-style campaign can legitimately have none.</p>`}
       <button class="btn secondary small" style="width:100%;" onclick="dcOpenGoalDrawer()">${dripWiz.goal?'Change Goal':'Define Goal'}</button>
     </div>
-    <hr style="border:none;border-top:1px solid var(--gray-200);margin:14px 0;">
-    <div style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:${dripWiz._settingsOpen?'10px':'0'};" onclick="dripWiz._settingsOpen=!dripWiz._settingsOpen;renderDripBuilder()">
-      <span class="acc-row-toggle ${dripWiz._settingsOpen?'open':''}">${chev()}</span>
-      <span style="font-size:12.5px;font-weight:600;color:var(--neutral-800);">Launch Settings</span>
-    </div>
-    ${!dripWiz._settingsOpen ? `<p class="f-hint" style="margin:4px 0 0;">Control Group ${dripWiz.controlPct}% · ${dripWiz.startDate?'Starts '+dripWiz.startDate.replace('T',' '):'Starts immediately on approval'}</p>` : `
     <div class="f-group"><label class="f-label">Control Group %</label><input class="f-input" type="number" min="0" max="50" value="${dripWiz.controlPct}" oninput="dripWiz.controlPct=this.value"><p class="f-hint">Held-back baseline for uplift, set once on Entry — on by default.</p></div>
     <div class="f-row2">
       <div class="f-group"><label class="f-label">Start</label><input class="f-input" type="datetime-local" value="${dripWiz.startDate}" onchange="dripWiz.startDate=this.value"></div>
@@ -7774,8 +7778,24 @@ function renderDripBuilder(){
     </div>
     <p class="f-hint" style="margin-top:-10px;">Leave Start blank to activate immediately once approved. A future Start holds it as Scheduled until then.</p>
     <p class="f-hint" style="background:var(--gray-50);padding:8px 10px;border-radius:6px;margin-top:12px;">🛡 DNC and opt-outs are checked automatically before every send in this campaign — not something you configure per step, same as Nudges.</p>
-    `}
-    <hr style="border:none;border-top:1px solid var(--gray-200);margin:18px 0;">`;
+    <div style="display:flex;gap:8px;margin-top:18px;">
+      <button class="btn secondary" style="flex:1;" ${!dripWiz.name?'disabled style="opacity:.5;"':''} onclick="saveDripCampaign('draft')">Save as Draft</button>
+      <button class="btn primary" style="flex:1;" ${!dripWiz.name?'disabled style="opacity:.5;"':''} onclick="dripWiz.step='build';renderDripBuilder()">Continue to Build →</button>
+    </div>`;
+  document.getElementById('dcbRail').innerHTML = railHtml;
+  document.getElementById('dcbCanvas').innerHTML = `<div class="placeholder" style="margin-top:80px;">Once setup is saved, you'll build the campaign flow here — entry, steps, and exits.</div>`;
+}
+function renderDripBuildStep(){
+  let railHtml = `
+    <div class="wiz-rail-back" onclick="switchPage('drip-list')">${ic('external')} Back to Drip Campaigns</div>
+    <div class="wiz-rail-title">${dripWiz.name||'Untitled Campaign'}</div>
+    <div class="wiz-rail-sub">Step 2 of 2 — Build</div>
+    <div class="f-group" style="display:flex;flex-wrap:wrap;gap:6px;">
+      ${dripWiz.issuer?`<span class="badge gray">${dripWiz.issuer}</span>`:''}
+      ${dripWiz.goal?`<span class="badge success">${dcGoalLabel(dripWiz.goal)}</span>`:''}
+    </div>
+    <div class="add-link" style="margin-bottom:14px;" onclick="dripWiz.step='setup';renderDripBuilder()">${ic('external')} Edit Setup</div>
+    <hr style="border:none;border-top:1px solid var(--gray-200);margin:0 0 14px;">`;
 
   if(dripWiz.root===null){
     railHtml += `<p class="f-hint">Click <b>+ Add Entry</b> on the canvas to choose how customers enter this campaign.</p>`;
