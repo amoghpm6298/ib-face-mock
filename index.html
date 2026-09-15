@@ -236,6 +236,38 @@
     padding:1px 6px;border:1px solid var(--gray-200);border-radius:20px;white-space:nowrap;z-index:1;
   }
 
+  /* Drip Campaigns — builder. Two panes, not the Nudges wizard's three —
+     a tree needs a wide canvas, not a narrow summary strip, so "preview"
+     and "mid" collapse into one canvas pane; the rail is context-sensitive
+     (campaign fields when nothing's selected, the add-step form when a
+     leaf's + is clicked) rather than a fixed linear step list, because a
+     tree doesn't have one linear sequence of steps to walk through. */
+  .dcb-shell{display:flex;height:100vh;}
+  .dcb-rail{width:320px;flex-shrink:0;border-right:1px solid var(--gray-200);padding:24px 20px 100px;overflow-y:auto;background:var(--gray-25);}
+  .dcb-canvas{flex:1;min-width:0;overflow:auto;padding:24px 28px 100px;background:#fbfbfc;}
+  .dc-add-btn{
+    width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--gray-300);background:#fff;
+    color:var(--gray-500);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;margin-top:6px;
+  }
+  .dc-add-btn:hover{border-color:var(--blue-cta);color:var(--blue-cta);border-style:solid;}
+  .dc-node-card.selected-target{border-color:var(--blue-cta);box-shadow:0 0 0 3px rgba(10,102,239,.12);}
+  .dc-node-card .dc-node-remove{
+    position:absolute;top:5px;right:6px;font-size:11px;color:var(--gray-400);cursor:pointer;line-height:1;display:none;
+  }
+  .dc-node-card:hover .dc-node-remove{display:block;}
+  .dc-node-card .dc-node-remove:hover{color:var(--error-text);}
+  .dc-type-picker{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;}
+  .dc-type-opt{
+    border:1.5px solid var(--gray-200);border-radius:8px;padding:9px 10px;cursor:pointer;font-size:12px;font-weight:600;
+  }
+  .dc-type-opt .dc-type-opt-sub{font-size:10.5px;font-weight:500;color:var(--gray-500);margin-top:1px;}
+  .dc-type-opt:hover{border-color:var(--blue-cta);}
+  .dc-type-opt.active{border-color:var(--blue-cta);background:var(--info-bg);}
+  .dc-type-opt.cat-entry{color:var(--info-text);} .dc-type-opt.cat-send{color:var(--blue-cta);}
+  .dc-type-opt.cat-flow{color:var(--gray-600);} .dc-type-opt.cat-split{color:var(--warning-text);}
+  .dc-type-opt.cat-goal{color:var(--success-text);} .dc-type-opt.cat-exit{color:var(--gray-500);}
+
   .dropoff-callout{
     display:flex;align-items:center;gap:8px;margin-top:16px;padding:10px 14px;
     background:var(--warning-bg);border:1px solid var(--warning-border);
@@ -1396,7 +1428,7 @@
         <h1 class="page-title">Drip Campaigns</h1>
         <p class="page-sub">Multi-step, goal-driven sequences built from Nudges — reminders, milestones, and reinforcement journeys.</p>
       </div>
-      <button class="btn primary" onclick="alert('Builder coming next — this pass covers the list and read-only campaign view.')">+ Create Drip Campaign</button>
+      <button class="btn primary" onclick="openDripCreate()">+ Create Drip Campaign</button>
     </div>
     <div class="filters" id="dripListFilters"></div>
     <div class="table-wrap">
@@ -1422,6 +1454,14 @@
 <!-- ============ DRIP CAMPAIGNS — VIEW (read-only tree canvas) ============ -->
 <div class="page-view" id="page-drip-view">
   <div class="page" id="dripViewRoot" style="padding-bottom:60px;"></div>
+</div>
+
+<!-- ============ DRIP CAMPAIGNS — CREATE / EDIT BUILDER ============ -->
+<div class="page-view" id="page-drip-create">
+  <div class="dcb-shell">
+    <div class="dcb-rail" id="dcbRail"></div>
+    <div class="dcb-canvas" id="dcbCanvas"></div>
+  </div>
 </div>
 </div>
 
@@ -1573,6 +1613,7 @@ function switchPage(name){
   if(name==='dnc') renderDnc();
   if(name==='drip-list') renderDripList();
   if(name==='drip-view') renderDripView();
+  if(name==='drip-create') renderDripBuilder();
 }
 
 function toggleSub(el){
@@ -7097,6 +7138,7 @@ const DRIP_STATUS_META = {
   ACTIVE:  {label:'Active',           badge:'success'},
   PAUSED:  {label:'Paused',           badge:'info'},
   COMPLETED:{label:'Completed',       badge:'gray'},
+  KILLED:  {label:'Killed',           badge:'error'},
 };
 
 function renderDripList(){
@@ -7147,19 +7189,295 @@ function dcRenderNode(node){
 function renderDripView(){
   const c = DRIP_CAMPAIGNS.find(x=>x.id===dripViewState.id) || DRIP_CAMPAIGNS[0];
   const sm = DRIP_STATUS_META[c.status];
+  const versionNote = c.versionOf
+    ? `<p class="f-hint" style="margin:6px 0 0;">New version of <a href="#" onclick="event.preventDefault();openDripView('${c.versionOf}')">${DRIP_CAMPAIGNS.find(x=>x.id===c.versionOf)?.name||c.versionOf}</a> — pending approval, doesn't affect customers already enrolled on the live version.</p>`
+    : (DRIP_CAMPAIGNS.some(x=>x.versionOf===c.id) ? `<p class="f-hint" style="margin:6px 0 0;">A newer version of this campaign is pending approval — this version keeps running for everyone already enrolled until then.</p>` : '');
+  const actions = [];
+  if(c.status==='PENDING_REVIEW') actions.push(`<button class="btn primary small" onclick="dripCampaignAction('${c.id}','approve')">Approve & Activate</button>`);
+  if(c.status==='ACTIVE'||c.status==='PAUSED') actions.push(`<button class="btn secondary small" onclick="dripCampaignAction('${c.id}','pause')">${c.status==='PAUSED'?'Resume':'Pause'}</button>`);
+  if(['ACTIVE','PAUSED','PENDING_REVIEW'].includes(c.status)) actions.push(`<button class="btn secondary small" onclick="openDripEdit('${c.id}')">Edit (new version)</button>`);
+  if(['ACTIVE','PAUSED'].includes(c.status)) actions.push(`<button class="btn danger small" onclick="dripCampaignAction('${c.id}','kill')">Kill Switch</button>`);
   document.getElementById('dripViewRoot').innerHTML = `
     <div class="page-header">
       <div>
         <button class="btn secondary small" style="margin-bottom:10px;" onclick="switchPage('drip-list')">← Back to Drip Campaigns</button>
         <h1 class="page-title">${c.name} <span class="badge ${sm.badge}" style="margin-left:8px;vertical-align:middle;">${sm.label}</span></h1>
         <p class="page-sub">Goal: ${c.goal} · Control Group: ${c.controlPct?c.controlPct+'%':'None'} · ${dcCountSends(c.root)} sends</p>
+        ${versionNote}
       </div>
+      <div style="display:flex;gap:8px;">${actions.join('')}</div>
     </div>
     <div class="card" style="padding:0;">
       <div class="dc-tree-wrap">
         <div class="dc-tree-root">${dcRenderNode(c.root)}</div>
       </div>
     </div>`;
+}
+
+/* ---------------- Drip Campaigns: Create / Edit builder ---------------- */
+const DC_ENTRY_TYPES = ['ENTRY_SEGMENT','ENTRY_EVENT','ENTRY_SCHEDULED'];
+const DC_STEP_TYPES = ['SEND','PAUSE','WAIT_UNTIL','SPLIT','RANDOM_SPLIT','GOAL_EXIT','EXIT'];
+const DC_TYPE_SUB = {
+  ENTRY_SEGMENT:'Static or dynamic cohort', ENTRY_EVENT:'Live event, incl. Transaction/EMI/Card Events',
+  ENTRY_SCHEDULED:'Calendar date or recurrence', SEND:'Channel, template, timing',
+  PAUSE:'Fixed wait duration', WAIT_UNTIL:'Wait for an event, with a timeout',
+  SPLIT:'Two bounded sources only — prev. step outcome or entry-event attribute',
+  RANDOM_SPLIT:'Creative A/B, % allocation', GOAL_EXIT:'Objective achieved', EXIT:'Sequence ran out, no goal met',
+};
+let dripWiz = null; // { id, isEdit, versionOf, name, goal, controlPct, root, addingAt, addingType, pendingConfig }
+
+function dcEmptyGoalCheck(question){
+  return n('SPLIT', question, 'Goal check, auto-inserted after every Send', [
+    n('GOAL_EXIT', question.replace(/\?$/,''), '', [], 'Yes'),
+    { type:'EMPTY', branchLabel:'No', children:[] },
+  ]);
+}
+function openDripCreate(){
+  dripWiz = { id:null, isEdit:false, versionOf:null, name:'', goal:'', controlPct:10, root:null, addingAt:null, addingType:null, pendingConfig:{} };
+  switchPage('drip-create');
+}
+function openDripEdit(id){
+  const c = DRIP_CAMPAIGNS.find(x=>x.id===id);
+  dripWiz = { id:null, isEdit:true, versionOf:c.id, name:c.name, goal:c.goal, controlPct:c.controlPct,
+    root: JSON.parse(JSON.stringify(c.root)), addingAt:null, addingType:null, pendingConfig:{} };
+  switchPage('drip-create');
+}
+// Path = array of child indices from root; null path means "root itself".
+function dcGetAt(path){
+  let node = dripWiz.root;
+  for(const i of path) node = node.children[i];
+  return node;
+}
+function dcParentOf(path){
+  let node = dripWiz.root;
+  for(let k=0;k<path.length-1;k++) node = node.children[path[k]];
+  return node;
+}
+function dcSelectAddAt(path){ dripWiz.addingAt = path; dripWiz.addingType = null; dripWiz.pendingConfig = {}; renderDripBuilder(); }
+function dcCancelAdd(){ dripWiz.addingAt = null; dripWiz.addingType = null; renderDripBuilder(); }
+function dcPickType(type){
+  dripWiz.addingType = type;
+  const goalQ = (dripWiz.goal||'Goal') + '?';
+  dripWiz.pendingConfig = {
+    ENTRY_SEGMENT:{cohortDesc:'All eligible customers'},
+    ENTRY_EVENT:{eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:''},
+    ENTRY_SCHEDULED:{recurrence:'1st of every month'},
+    SEND:{name:'Send Message', channel:'WhatsApp', template:'', timing:'Absolute', absTime:'11:00 AM'},
+    PAUSE:{duration:2, unit:'days'},
+    WAIT_UNTIL:{question:goalQ, timeout:'up to 7 days'},
+    SPLIT:{question:goalQ, basis:'Goal reached'},
+    RANDOM_SPLIT:{name:'Channel test', pct1:50},
+    GOAL_EXIT:{reason:dripWiz.goal||'Goal achieved'},
+    EXIT:{reason:'Sequence exhausted'},
+  }[type];
+  renderDripBuilder();
+}
+function dcConfigField(key,val){ dripWiz.pendingConfig[key]=val; renderDripBuilder(); }
+function dcConfirmAddNode(){
+  const t = dripWiz.addingType, p = dripWiz.pendingConfig;
+  let node;
+  if(t==='ENTRY_SEGMENT') node = n('ENTRY_SEGMENT', p.cohortDesc, 'Segment entry');
+  else if(t==='ENTRY_EVENT') node = n('ENTRY_EVENT', p.eventType||'Event Trigger', p.eventCategory);
+  else if(t==='ENTRY_SCHEDULED') node = n('ENTRY_SCHEDULED', 'Scheduled entry', p.recurrence);
+  else if(t==='SEND'){
+    const meta = `${p.channel} · ${p.timing==='Absolute'?p.absTime:'Relative'}${p.template?' · Template: '+p.template:''}`;
+    node = n('SEND', p.name, meta, [dcEmptyGoalCheck((dripWiz.goal||'Goal')+'?')]);
+  }
+  else if(t==='PAUSE') node = n('PAUSE', `Wait ${p.duration} ${p.unit}`, '');
+  else if(t==='WAIT_UNTIL') node = n('WAIT_UNTIL', p.question, `Wait ${p.timeout} for a response`, [
+    n('GOAL_EXIT', p.question.replace(/\?$/,''), '', [], 'Yes'), { type:'EMPTY', branchLabel:'No', children:[] },
+  ]);
+  else if(t==='SPLIT') node = n('SPLIT', p.question, p.basis==='Goal reached'?'Goal check':'Custom condition split', [
+    n('GOAL_EXIT', p.question.replace(/\?$/,''), '', [], 'Yes'), { type:'EMPTY', branchLabel:'No', children:[] },
+  ]);
+  else if(t==='RANDOM_SPLIT'){
+    const p2 = 100-Number(p.pct1);
+    node = n('RANDOM_SPLIT', p.name, `${p.pct1} / ${p2} allocation`, [
+      { type:'EMPTY', branchLabel:p.pct1+'%', children:[] }, { type:'EMPTY', branchLabel:p2+'%', children:[] },
+    ]);
+  }
+  else if(t==='GOAL_EXIT') node = n('GOAL_EXIT', p.reason, '');
+  else if(t==='EXIT') node = n('EXIT', p.reason, '');
+
+  if(dripWiz.root===null){ dripWiz.root = node; }
+  else {
+    const target = dcGetAt(dripWiz.addingAt);
+    if(target && target.type==='EMPTY'){
+      // Filling a branch slot (Yes/No, or a Random Split arm) — replace the
+      // placeholder in place, keeping its branch label.
+      const parent = dcParentOf(dripWiz.addingAt);
+      const idx = dripWiz.addingAt[dripWiz.addingAt.length-1];
+      node.branchLabel = target.branchLabel;
+      parent.children[idx] = node;
+    } else {
+      // Growing a real leaf (incl. root itself once it has an entry but no
+      // children yet) — append as its first/next child, don't replace it.
+      target.children.push(node);
+    }
+  }
+  dripWiz.addingAt = null; dripWiz.addingType = null;
+  renderDripBuilder();
+}
+function dcRemoveNode(path){
+  if(path.length===0){ dripWiz.root = null; renderDripBuilder(); return; }
+  const parent = dcParentOf(path), idx = path[path.length-1];
+  const label = parent.children[idx].branchLabel;
+  // A branch under Split/Random Split can't just vanish — it reverts to an
+  // empty, re-addable slot so the node stays structurally valid; only a
+  // true leaf hanging off a non-branching parent gets fully spliced out.
+  if(['SPLIT','RANDOM_SPLIT','WAIT_UNTIL'].includes(parent.type)) parent.children[idx] = {type:'EMPTY', branchLabel:label, children:[]};
+  else parent.children.splice(idx,1);
+  renderDripBuilder();
+}
+
+function dcRenderNodeEditable(node, path){
+  if(node.type==='EMPTY'){
+    return `<div class="dc-subtree"><div class="dc-add-btn" onclick="dcSelectAddAt(${JSON.stringify(path)})" title="Add next step">+</div></div>`;
+  }
+  const meta = DC_NODE_META[node.type];
+  const canGrow = node.children.length===0 && node.type!=='GOAL_EXIT' && node.type!=='EXIT';
+  const isSelected = dripWiz.addingAt && JSON.stringify(dripWiz.addingAt)===JSON.stringify(path);
+  return `
+  <div class="dc-subtree">
+    <div class="dc-node-card cat-${meta.cat} ${isSelected?'selected-target':''}">
+      ${path.length>0?`<div class="dc-node-remove" onclick="event.stopPropagation();dcRemoveNode(${JSON.stringify(path)})" title="Remove">✕</div>`:''}
+      <div class="dc-node-type">${meta.type}</div>
+      <div class="dc-node-label">${node.label}</div>
+      ${node.meta?`<div class="dc-node-meta">${node.meta}</div>`:''}
+    </div>
+    ${canGrow?`<div class="dc-add-btn" onclick="dcSelectAddAt(${JSON.stringify(path)})" title="Add next step">+</div>`:''}
+    ${node.children.length?`
+    <div class="dc-down-stub"></div>
+    <div class="dc-children">
+      ${node.children.map((c,i)=>`<div class="dc-child">${c.branchLabel?`<div class="dc-branch-label">${c.branchLabel}</div>`:''}${dcRenderNodeEditable(c, path.concat(i))}</div>`).join('')}
+    </div>`:''}
+  </div>`;
+}
+
+function dcRailFormFor(type){
+  const p = dripWiz.pendingConfig;
+  const opt = (v,l)=>`<option value="${v}" ${p._cur===v?'selected':''}>${l}</option>`;
+  if(type==='ENTRY_SEGMENT') return `<div class="f-group"><label class="f-label">Cohort description</label><input class="f-input" type="text" value="${p.cohortDesc}" oninput="dcConfigField('cohortDesc',this.value)"></div>`;
+  if(type==='ENTRY_EVENT') return `
+    <div class="f-group"><label class="f-label">Event Category</label>
+      <select class="f-input" onchange="dcConfigField('eventCategory',this.value);dcConfigField('eventType','')">
+        ${Object.keys(EVENT_CATEGORIES).map(k=>`<option value="${k}" ${p.eventCategory===k?'selected':''}>${k}${EVENT_CATEGORIES[k].isNew?' (New)':''}</option>`).join('')}
+      </select></div>
+    <div class="f-group"><label class="f-label">Event Type</label>
+      <select class="f-input" onchange="dcConfigField('eventType',this.value)">
+        <option value="">Select event</option>
+        ${(EVENT_CATEGORIES[p.eventCategory]?.events||[]).map(e=>`<option value="${e}" ${p.eventType===e?'selected':''}>${e}</option>`).join('')}
+      </select></div>`;
+  if(type==='ENTRY_SCHEDULED') return `<div class="f-group"><label class="f-label">Recurrence</label><input class="f-input" type="text" value="${p.recurrence}" oninput="dcConfigField('recurrence',this.value)"></div>`;
+  if(type==='SEND') return `
+    <div class="f-group"><label class="f-label">Step name</label><input class="f-input" type="text" value="${p.name}" oninput="dcConfigField('name',this.value)"></div>
+    <div class="f-row2">
+      <div class="f-group"><label class="f-label">Channel</label><select class="f-input" onchange="dcConfigField('channel',this.value)">${['WhatsApp','SMS','Email'].map(c=>`<option ${p.channel===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="f-group"><label class="f-label">Timing</label><select class="f-input" onchange="dcConfigField('timing',this.value)"><option ${p.timing==='Absolute'?'selected':''}>Absolute</option><option ${p.timing==='Relative'?'selected':''}>Relative</option></select></div>
+    </div>
+    ${p.timing==='Absolute'?`<div class="f-group"><label class="f-label">Send time</label><input class="f-input" type="text" value="${p.absTime}" oninput="dcConfigField('absTime',this.value)"></div>`:''}
+    <div class="f-group"><label class="f-label">Template</label><input class="f-input" type="text" placeholder="Template name" value="${p.template}" oninput="dcConfigField('template',this.value)"></div>
+    <p class="f-hint">A goal-check step is auto-inserted right after this Send — same "define once, check everywhere" pattern used across this campaign.</p>`;
+  if(type==='PAUSE') return `<div class="f-row2">
+      <div class="f-group"><label class="f-label">Duration</label><input class="f-input" type="number" min="1" value="${p.duration}" oninput="dcConfigField('duration',this.value)"></div>
+      <div class="f-group"><label class="f-label">Unit</label><select class="f-input" onchange="dcConfigField('unit',this.value)"><option ${p.unit==='days'?'selected':''}>days</option><option ${p.unit==='hours'?'selected':''}>hours</option></select></div>
+    </div>`;
+  if(type==='WAIT_UNTIL') return `
+    <div class="f-group"><label class="f-label">Waiting for</label><input class="f-input" type="text" value="${p.question}" oninput="dcConfigField('question',this.value)"></div>
+    <div class="f-group"><label class="f-label">Timeout</label><input class="f-input" type="text" value="${p.timeout}" oninput="dcConfigField('timeout',this.value)"></div>`;
+  if(type==='SPLIT') return `
+    <div class="f-group"><label class="f-label">Condition</label><input class="f-input" type="text" value="${p.question}" oninput="dcConfigField('question',this.value)"></div>
+    <div class="f-group"><label class="f-label">Basis</label><select class="f-input" onchange="dcConfigField('basis',this.value)">
+      <option ${p.basis==='Goal reached'?'selected':''}>Goal reached</option><option ${p.basis==='Custom condition'?'selected':''}>Custom condition</option></select>
+      <p class="f-hint">Bounded to two sources: the previous step's engagement outcome, or an attribute of the entry event — not arbitrary attributes anywhere in the flow.</p></div>`;
+  if(type==='RANDOM_SPLIT') return `
+    <div class="f-group"><label class="f-label">Step name</label><input class="f-input" type="text" value="${p.name}" oninput="dcConfigField('name',this.value)"></div>
+    <div class="f-group"><label class="f-label">Allocation — branch 1 %</label><input class="f-input" type="number" min="1" max="99" value="${p.pct1}" oninput="dcConfigField('pct1',this.value)"><p class="f-hint">Branch 2 gets the remaining ${100-Number(p.pct1||0)}%.</p></div>`;
+  if(type==='GOAL_EXIT'||type==='EXIT') return `<div class="f-group"><label class="f-label">Reason</label><input class="f-input" type="text" value="${p.reason}" oninput="dcConfigField('reason',this.value)"></div>`;
+  return '';
+}
+
+function renderDripBuilder(){
+  const availableTypes = dripWiz.root===null ? DC_ENTRY_TYPES : (dripWiz.addingAt!==null ? DC_STEP_TYPES : []);
+  let railHtml = `
+    <div class="wiz-rail-back" onclick="switchPage('drip-list')">${ic('external')} Back to Drip Campaigns</div>
+    <div class="wiz-rail-title">${dripWiz.isEdit?'Edit Drip Campaign':'New Drip Campaign'}</div>
+    <div class="wiz-rail-sub">${dripWiz.isEdit?'Saves as a new version — customers already enrolled keep running on the live version':'Manual build'}</div>
+    <div class="f-group"><label class="f-label">Campaign name</label><input class="f-input" type="text" value="${dripWiz.name}" oninput="dripWiz.name=this.value"></div>
+    <div class="f-group"><label class="f-label">Goal</label><input class="f-input" type="text" value="${dripWiz.goal}" oninput="dripWiz.goal=this.value" placeholder="e.g. Card Activated"></div>
+    <div class="f-group"><label class="f-label">Control Group %</label><input class="f-input" type="number" min="0" max="50" value="${dripWiz.controlPct}" oninput="dripWiz.controlPct=this.value"><p class="f-hint">Held-back baseline for uplift, set once on Entry — on by default.</p></div>
+    <hr style="border:none;border-top:1px solid var(--gray-200);margin:18px 0;">`;
+
+  if(dripWiz.root===null){
+    railHtml += `<div class="wiz-group-label" style="padding-left:0;">Choose entry type</div>` + dcTypePickerHtml(DC_ENTRY_TYPES);
+    if(dripWiz.addingType) railHtml += dcRailFormFor(dripWiz.addingType) + `<button class="btn primary" style="width:100%;margin-top:6px;" onclick="dcConfirmAddNode()">Add Entry</button>`;
+  } else if(dripWiz.addingAt!==null){
+    railHtml += `<div class="wiz-group-label" style="padding-left:0;">Add next step</div>` + dcTypePickerHtml(DC_STEP_TYPES);
+    if(dripWiz.addingType) railHtml += dcRailFormFor(dripWiz.addingType) + `
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button class="btn secondary" style="flex:1;" onclick="dcCancelAdd()">Cancel</button>
+        <button class="btn primary" style="flex:1;" onclick="dcConfirmAddNode()">Add Step</button>
+      </div>`;
+    else railHtml += `<button class="btn secondary" style="width:100%;" onclick="dcCancelAdd()">Cancel</button>`;
+  } else {
+    const open = dcTreeHasOpenBranches(dripWiz.root);
+    const blocked = !dripWiz.name || open;
+    railHtml += `<p class="f-hint">Click any <b>+</b> on the canvas to add the next step. Every branch needs to end in a Goal-Based Exit or Exit before this campaign is ready to save.</p>
+      ${open?`<p class="f-hint" style="color:var(--warning-text);font-weight:600;">⚠ One or more branches are still open — finish every path before saving.</p>`:''}
+      <button class="btn primary" style="width:100%;margin-top:14px;" ${blocked?'disabled style="opacity:.5;"':''} onclick="saveDripCampaign()">Save Campaign</button>`;
+  }
+  document.getElementById('dcbRail').innerHTML = railHtml;
+  document.getElementById('dcbCanvas').innerHTML = dripWiz.root===null
+    ? `<div class="placeholder" style="margin-top:80px;">Pick an entry type on the left to start building.</div>`
+    : `<div class="dc-tree-root">${dcRenderNodeEditable(dripWiz.root, [])}</div>`;
+}
+function dcTypePickerHtml(types){
+  return `<div class="dc-type-picker">${types.map(t=>`
+    <div class="dc-type-opt cat-${DC_NODE_META[t].cat} ${dripWiz.addingType===t?'active':''}" onclick="dcPickType('${t}')">
+      ${DC_NODE_META[t].type}<div class="dc-type-opt-sub">${DC_TYPE_SUB[t]}</div>
+    </div>`).join('')}</div>`;
+}
+// A branch is "open" if it's a real node with room to grow (a leaf that
+// isn't a terminal Goal/Exit) or an unfilled EMPTY slot — either way the
+// campaign can't go live with it hanging, since there's no defined next
+// action for a customer who reaches it.
+function dcTreeHasOpenBranches(node){
+  if(!node) return true;
+  if(node.type==='EMPTY') return true;
+  if(node.children.length===0) return node.type!=='GOAL_EXIT' && node.type!=='EXIT';
+  return node.children.some(dcTreeHasOpenBranches);
+}
+function saveDripCampaign(){
+  if(!dripWiz.name){ showToast('Campaign needs a name before it can be saved.','error'); return; }
+  if(dcTreeHasOpenBranches(dripWiz.root)){ showToast('Every branch needs to end in a Goal-Based Exit or Exit before this can be saved.','error'); return; }
+  const newId = 'DRIP-'+String(Math.max(...DRIP_CAMPAIGNS.map(c=>parseInt(c.id.split('-')[1])))+1).padStart(3,'0');
+  if(dripWiz.isEdit){
+    DRIP_CAMPAIGNS.push({ id:newId, name:dripWiz.name, goal:dripWiz.goal, controlPct:Number(dripWiz.controlPct), status:'PENDING_REVIEW',
+      versionOf:dripWiz.versionOf, root:dripWiz.root });
+    showToast(`Saved as a new version, pending approval — "${dripWiz.name}" stays live and unchanged for customers already enrolled.`);
+    openDripView(dripWiz.versionOf);
+  } else {
+    DRIP_CAMPAIGNS.push({ id:newId, name:dripWiz.name, goal:dripWiz.goal, controlPct:Number(dripWiz.controlPct), status:'PENDING_REVIEW', root:dripWiz.root });
+    switchPage('drip-list');
+    showToast(`"${dripWiz.name}" saved and sent for approval.`);
+  }
+}
+function dripCampaignAction(id, action){
+  const c = DRIP_CAMPAIGNS.find(x=>x.id===id);
+  if(action==='pause'){ c.status = c.status==='PAUSED' ? 'ACTIVE' : 'PAUSED'; renderDripView(); showToast(c.status==='PAUSED'?`"${c.name}" paused — new entries stop, in-flight customers freeze at their current step.`:`"${c.name}" resumed.`); }
+  if(action==='kill'){
+    showModal(`
+      <div class="modal-head"><div class="modal-title">Kill switch — "${c.name}"</div></div>
+      <p class="card-sub">This immediately exits <b>every customer currently enrolled</b>, regardless of where they are in the sequence. Not the same as Pause — there's no resuming from this. Use it only for a real incident (e.g. a template that shouldn't have gone out).</p>
+      <div class="wiz-footer" style="position:static;margin-top:16px;padding:0;border:none;">
+        <button class="btn secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn danger" onclick="closeModal();dripCampaignAction('${c.id}','kill-confirmed')">Kill this campaign</button>
+      </div>`);
+    return;
+  }
+  if(action==='kill-confirmed'){ c.status = 'KILLED'; showToast(`"${c.name}" killed — every enrolled customer has been exited.`,'error'); }
+  if(action==='approve'){ c.status = 'ACTIVE'; showToast(`"${c.name}" approved and active.`); }
+  renderDripView();
 }
 
 /* ---------------- Init ---------------- */
