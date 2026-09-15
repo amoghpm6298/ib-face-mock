@@ -7309,10 +7309,8 @@ function dcRenderGoalDrawer(){
           <option value="">Select event</option>
           ${(EVENT_CATEGORIES[g.eventCategory]?.events||[]).map(e=>`<option value="${e}" ${g.eventType===e?'selected':''}>${e}</option>`).join('')}
         </select></div>
-      <div class="f-group"><label class="f-label">Outcome <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
-        <p class="f-hint" style="margin-top:0;">The event firing at all usually isn't the real goal — e.g. EMI_STATUS_CHANGED fires on Failed too. Narrow it to the actual outcome.</p>
-        ${DC_EVENT_ENTITY[g.eventCategory] ? dcCondRowsHtml(g.conditions, DC_EVENT_ENTITY[g.eventCategory], 'goal') : `<p class="f-hint" style="margin:0;">No typed attributes defined yet for ${g.eventCategory}.</p>`}
-      </div>
+      <p class="f-hint" style="margin:0 0 4px;">The event firing at all usually isn't the real goal — e.g. EMI_STATUS_CHANGED fires on Failed too. Narrow it to the actual outcome.</p>
+      ${dcConditionsSectionHtml(g.conditions, DC_EVENT_ENTITY[g.eventCategory], 'goal')}
     </div>
     <div class="sd-foot">
       <button class="btn secondary" onclick="closeSideDrawer()">Cancel</button>
@@ -7374,6 +7372,29 @@ function dcCondUpdate(containerKey, idx, field, val){
   else if(field==='__add') arr.push({attribute:'', operator:'', value:''});
   else { arr[idx][field]=val; if(field==='attribute') arr[idx].value=''; }
   if(containerKey==='goal') dcRenderGoalDrawer(); else dcRenderAddDrawer();
+}
+// Entry point every condition-row call site should use instead of
+// dcCondRowsHtml directly — some entities have one attribute that IS
+// the point of picking that event type at all (New Status for
+// EMI_STATUS_CHANGED — the event is literally named "status changed"),
+// and burying it behind "Add condition" -> pick from a 2-option list
+// read as "doesn't have it" even though it technically worked. Promote
+// that one field to always-visible; everything else stays generic.
+function dcConditionsSectionHtml(conditions, entity, containerKey){
+  if(entity==='EMI Request') return dcPromotedFieldHtml(conditions, entity, 'New Status', containerKey);
+  if(!entity) return `<div class="f-group"><label class="f-label">Conditions <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label><p class="f-hint" style="margin:0;">No typed attributes defined yet for this category — narrowing by attribute isn't available.</p></div>`;
+  return `<div class="f-group"><label class="f-label">Conditions <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>${dcCondRowsHtml(conditions, entity, containerKey)}</div>`;
+}
+function dcPromotedFieldHtml(conditions, entity, attribute, containerKey){
+  let idx = conditions.findIndex(c=>c.attribute===attribute);
+  if(idx===-1){ conditions.push({attribute, operator:'Equals', value:''}); idx = conditions.length-1; }
+  const meta = ELIGIBILITY_META[entity][attribute];
+  const val = conditions[idx].value;
+  return `<div class="f-group"><label class="f-label">Status</label>
+    <select class="f-input" onchange="dcCondUpdate('${containerKey}',${idx},'value',this.value)">
+      <option value="">Any status</option>
+      ${meta.options.map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}
+    </select></div>`;
 }
 function dcCondRowsHtml(conditions, entity, containerKey){
   const meta = entity ? ELIGIBILITY_META[entity] : null;
@@ -7586,9 +7607,7 @@ function dcDrawerFormFor(type){
         <option value="">Select event</option>
         ${(EVENT_CATEGORIES[p.eventCategory]?.events||[]).map(e=>`<option value="${e}" ${p.eventType===e?'selected':''}>${e}</option>`).join('')}
       </select></div>
-    <div class="f-group"><label class="f-label">Conditions <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
-      ${DC_EVENT_ENTITY[p.eventCategory] ? dcCondRowsHtml(p.conditions, DC_EVENT_ENTITY[p.eventCategory], 'entry') : `<p class="f-hint" style="margin:0;">No typed attributes defined yet for ${p.eventCategory} — narrowing by attribute isn't available for this category.</p>`}
-    </div>`;
+    ${dcConditionsSectionHtml(p.conditions, DC_EVENT_ENTITY[p.eventCategory], 'entry')}`;
   if(type==='ENTRY_SCHEDULED') return `
     <div class="f-group"><label class="f-label">Repeats</label>
       <select class="f-input" onchange="dcConfigField('recurrenceType',this.value)">
@@ -7666,26 +7685,40 @@ function dcDrawerFormFor(type){
       <div class="f-group"><label class="f-label">Timeout after</label><input class="f-input" type="number" min="1" value="${p.duration}" oninput="dcConfigField('duration',this.value)"></div>
       <div class="f-group"><label class="f-label">Unit</label><select class="f-input" onchange="dcConfigField('unit',this.value)"><option ${p.unit==='days'?'selected':''}>days</option><option ${p.unit==='hours'?'selected':''}>hours</option></select></div>
     </div>
-    <div class="f-group"><label class="f-label">Conditions <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
-      ${DC_EVENT_ENTITY[p.eventCategory] ? dcCondRowsHtml(p.conditions, DC_EVENT_ENTITY[p.eventCategory], 'entry') : `<p class="f-hint" style="margin:0;">No typed attributes defined yet for ${p.eventCategory} — narrowing by attribute isn't available for this category.</p>`}
-    </div>`;
+    ${dcConditionsSectionHtml(p.conditions, DC_EVENT_ENTITY[p.eventCategory], 'entry')}`;
   if(type==='SPLIT'){
     const goalQ = (dcGoalLabel(dripWiz.goal)||'Goal')+'?';
+    // Built as plain variables rather than nested inline template
+    // ternaries — this block hit a real "Missing } in template
+    // expression" syntax error once nesting went one level deeper than
+    // the original three; flat variables are easier to get right and
+    // easier to fix later than counting backticks by eye.
+    let basisHtml;
+    if(p.basis==='Goal reached'){
+      basisHtml = `<div class="f-group"><label class="f-label">Condition</label><input class="f-input" type="text" value="${goalQ}" disabled style="background:var(--gray-100);color:var(--gray-500);"></div>`;
+    } else {
+      const sourceEntity = DC_EVENT_ENTITY[dripWiz.entryEventCategory];
+      let customHtml;
+      if(p.customSource==='Previous step outcome'){
+        customHtml = `<div class="f-group"><label class="f-label">Outcome</label><select class="f-input" onchange="dcConfigField('outcome',this.value)">
+          ${['Delivered','Opened','Clicked','Not Opened','Bounced'].map(o=>`<option ${p.outcome===o?'selected':''}>${o}</option>`).join('')}</select></div>`;
+      } else if(sourceEntity==='EMI Request'){
+        customHtml = dcPromotedFieldHtml(p.customConditions, 'EMI Request', 'New Status', 'splitCustom');
+      } else if(sourceEntity){
+        customHtml = `<div class="f-group"><label class="f-label">Condition</label>${dcCondRowsHtml(p.customConditions, sourceEntity, 'splitCustom')}</div>`;
+      } else {
+        const reason = dripWiz.entryEventCategory ? `No typed attributes defined yet for ${dripWiz.entryEventCategory}.` : `Entry isn't an Event Trigger, so there's no entry-event attribute to filter on.`;
+        customHtml = `<p class="f-hint" style="margin:0;">${reason}</p>`;
+      }
+      basisHtml = `<div class="f-group"><label class="f-label">Source</label><select class="f-input" onchange="dcConfigField('customSource',this.value)">
+        <option ${p.customSource==='Previous step outcome'?'selected':''}>Previous step outcome</option>
+        <option ${p.customSource==='Entry event attribute'?'selected':''}>Entry event attribute</option></select></div>
+        ${customHtml}`;
+    }
     return `
     <div class="f-group"><label class="f-label">Basis</label><select class="f-input" onchange="dcConfigField('basis',this.value)">
       <option ${p.basis==='Goal reached'?'selected':''}>Goal reached</option><option ${p.basis==='Custom condition'?'selected':''}>Custom condition</option></select></div>
-    ${p.basis==='Goal reached'?`<div class="f-group"><label class="f-label">Condition</label><input class="f-input" type="text" value="${goalQ}" disabled style="background:var(--gray-100);color:var(--gray-500);"></div>`:`
-    <div class="f-group"><label class="f-label">Source</label><select class="f-input" onchange="dcConfigField('customSource',this.value)">
-      <option ${p.customSource==='Previous step outcome'?'selected':''}>Previous step outcome</option>
-      <option ${p.customSource==='Entry event attribute'?'selected':''}>Entry event attribute</option></select></div>
-    ${p.customSource==='Previous step outcome'?`
-      <div class="f-group"><label class="f-label">Outcome</label><select class="f-input" onchange="dcConfigField('outcome',this.value)">
-        ${['Delivered','Opened','Clicked','Not Opened','Bounced'].map(o=>`<option ${p.outcome===o?'selected':''}>${o}</option>`).join('')}</select></div>`:`
-      <div class="f-group"><label class="f-label">Condition</label>
-        ${DC_EVENT_ENTITY[dripWiz.entryEventCategory]
-          ? dcCondRowsHtml(p.customConditions, DC_EVENT_ENTITY[dripWiz.entryEventCategory], 'splitCustom')
-          : `<p class="f-hint" style="margin:0;">${dripWiz.entryEventCategory?`No typed attributes defined yet for ${dripWiz.entryEventCategory}.`:'Entry isn\'t an Event Trigger, so there\'s no entry-event attribute to filter on.'}</p>`}
-      </div>`}`}
+    ${basisHtml}
     <p class="f-hint">Bounded to two sources: the previous step's engagement outcome, or an attribute of the entry event — not arbitrary attributes anywhere in the flow.</p>`;
   }
   if(type==='RANDOM_SPLIT'){
