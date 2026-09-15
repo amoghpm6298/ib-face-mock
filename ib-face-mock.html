@@ -4044,10 +4044,18 @@ function renderAnalytics(){
       const maxCount = stages[0].count || 1;
       return stages.map((f,i)=>{
         const isLast = i===stages.length-1;
+        // Math.round(0.45) is 0 — the Booked bar's real share is small
+        // enough that its fill was rendering at literally zero width, not
+        // just thin. A 1% floor keeps it visible as a real sliver instead
+        // of invisible. The label itself also gets its own green
+        // checkmark, independent of the bar entirely — at this scale the
+        // bar can never carry enough pixels to read as an "identifier" on
+        // its own, so the label has to.
+        const barWidth = f.count>0 ? Math.max(1, Math.round((f.count/maxCount)*100)) : 0;
         return `
         <div class="funnel-row">
-          <div class="funnel-label">${f.label}</div>
-          <div class="funnel-bar-track" style="background:var(--error-bg);"><div class="funnel-bar-fill" style="width:${Math.round((f.count/maxCount)*100)}%;${isLast?'background:var(--success-border);':''}"></div></div>
+          <div class="funnel-label">${isLast?'<span style="color:var(--success-text);font-weight:700;">✓ </span>':''}${f.label}</div>
+          <div class="funnel-bar-track" style="background:var(--error-bg);"><div class="funnel-bar-fill" style="width:${barWidth}%;${isLast?'background:var(--success-border);':''}"></div></div>
           <div class="funnel-count">${f.count}</div>
           <div class="funnel-pct">${fmtFunnelPct(f.count,maxCount)}</div>
         </div>`;
