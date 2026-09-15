@@ -1440,7 +1440,8 @@
       <table>
         <thead>
           <tr>
-            <th style="width:26%">Campaign Name</th>
+            <th style="width:22%">Campaign Name</th>
+            <th>Issuer</th>
             <th>Goal</th>
             <th>Entry</th>
             <th>Steps</th>
@@ -4421,6 +4422,11 @@ const EVENT_CATEGORIES = {
   // than blending them in as if they were audited, current behavior.
   'Transaction Events': {fields:[], events:['Transaction'], isNew:true},
   'EMI Events': {fields:[], events:['EMI_STATUS_CHANGED'], isNew:true},
+  // Completes a gap flagged earlier but not yet built: card lifecycle
+  // (issuance/activation/load/inactivity) needs its own category, same
+  // isNew:true treatment as Transaction/EMI Events — processor-level
+  // data, not app-instrumented, not real in Quibbler today either.
+  'Card Events': {fields:[], events:['Card Issued','Card Activated','Card Loaded','Card Inactive'], isNew:true},
 };
 // Event Conditions are attribute-based per event type, not entity-based —
 // the attribute is effectively locked once the event is chosen.
@@ -4734,7 +4740,7 @@ function wizFooter(nextLabel){
 // existing Nudges call sites don't need updating. Never assume a single
 // hardcoded global here again; that was the exact bug class that broke the
 // Incentive step's Smart Tags field (chipGroup called with wiz===null).
-function getScopeDraft(scopeVar){ return scopeVar==='iwiz' ? iwiz.draft : scopeVar==='bwiz' ? bwiz.draft : scopeVar==='awiz' ? awiz.draft : wiz.draft; }
+function getScopeDraft(scopeVar){ return scopeVar==='iwiz' ? iwiz.draft : scopeVar==='bwiz' ? bwiz.draft : scopeVar==='awiz' ? awiz.draft : scopeVar==='drip' ? dripWiz : wiz.draft; }
 function chipToggle(key, val, scopeVar){
   scopeVar = scopeVar || 'wiz';
   const draft = getScopeDraft(scopeVar);
@@ -4745,6 +4751,7 @@ function chipToggle(key, val, scopeVar){
   else if(scopeVar==='iwiz'){ renderIncentiveStep(INCENTIVE_STEPS[iwiz.stepIdx].id); }
   else if(scopeVar==='bwiz'){ renderBatchWizStep(BATCH_STEPS[bwiz.stepIdx].id); }
   else if(scopeVar==='awiz'){ renderAbStep(AB_STEPS[awiz.stepIdx].id); }
+  else if(scopeVar==='drip'){ renderDripBuilder(); }
 }
 function isChipSel(key,val,scopeVar){ return (getScopeDraft(scopeVar||'wiz')[key]||[]).includes(val); }
 function chipGroup(key, options, scopeVar){
@@ -7045,6 +7052,7 @@ const DC_NODE_META = {
   ENTRY_EVENT:     {cat:'entry', type:'Entry · Event Trigger'},
   ENTRY_SCHEDULED: {cat:'entry', type:'Entry · Scheduled'},
   SEND:            {cat:'send',  type:'Send'},
+  CHANNEL_FAILOVER:{cat:'send',  type:'Channel Failover'},
   PAUSE:           {cat:'flow',  type:'Pause'},
   WAIT_UNTIL:      {cat:'flow',  type:'Wait Until'},
   SPLIT:           {cat:'split', type:'Conditional Split'},
@@ -7061,7 +7069,7 @@ function dcCountSends(node){
 }
 
 const DRIP_CAMPAIGNS = [
-  { id:'DRIP-001', name:'Card Activation Reminder', goal:'Card Activated', controlPct:10, status:'ACTIVE',
+  { id:'DRIP-001', name:'Card Activation Reminder', issuer:'IndusInd Bank (IBL)', programs:[], goal:{eventCategory:'Card Events', eventType:'Card Activated', conditions:[]}, controlPct:10, status:'ACTIVE',
     root: n('ENTRY_EVENT','Card Issued','Card Events · fires on issuance',[
       n('SEND','Welcome + Activate CTA','WhatsApp · 11:00 AM · Template: card_activate_welcome',[
         n('SPLIT','Card Activated?','Goal check, auto-inserted after every Send',[
@@ -7084,7 +7092,7 @@ const DRIP_CAMPAIGNS = [
         ]),
       ]),
     ])},
-  { id:'DRIP-002', name:'OS to EMI — Reminder Push', goal:'Converted to EMI', controlPct:10, status:'ACTIVE',
+  { id:'DRIP-002', name:'OS to EMI — Reminder Push', issuer:'IndusInd Bank (IBL)', programs:[], goal:{eventCategory:'EMI Events', eventType:'EMI_STATUS_CHANGED', conditions:[{attribute:'New Status', operator:'Equals', value:'Successful'}]}, controlPct:10, status:'ACTIVE',
     root: n('ENTRY_SEGMENT','All Eligible Customers','OS > ₹5,000 · Card Events',[
       n('RANDOM_SPLIT','Channel test','50 / 50 allocation',[
         n('SEND','OS to EMI Offer','WhatsApp · 11:00 AM · Template: os_emi_offer_wa',[
@@ -7115,14 +7123,18 @@ const DRIP_CAMPAIGNS = [
         ],'50% SMS'),
       ]),
     ])},
-  { id:'DRIP-003', name:'Spend Milestone Rewards', goal:'None — checkpoints are independent', controlPct:0, status:'DRAFT',
+  { id:'DRIP-003', name:'Spend Milestone Rewards', issuer:'Yes Bank', programs:[], goal:null, controlPct:0, status:'DRAFT',
     root: n('ENTRY_EVENT','Card Activated','Card Events · anchor for every checkpoint below',[
       n('PAUSE','Wait 30 days','',[ n('SEND','Milestone reward — Tier 1','WhatsApp · Template: milestone_m1',[ n('EXIT','Checkpoint complete','',[]) ]) ],'Month 1'),
       n('PAUSE','Wait 90 days','',[ n('SEND','Milestone reward — Tier 2','WhatsApp · Template: milestone_m3',[ n('EXIT','Checkpoint complete','',[]) ]) ],'Month 3'),
       n('PAUSE','Wait 180 days','',[ n('SEND','Milestone reward — Tier 3','WhatsApp · Template: milestone_m6',[ n('EXIT','Checkpoint complete','',[]) ]) ],'Month 6'),
       n('PAUSE','Wait 365 days','',[ n('SEND','Milestone reward — Tier 4','WhatsApp · Template: milestone_m12',[ n('EXIT','Checkpoint complete','',[]) ]) ],'Month 12'),
     ])},
-  { id:'DRIP-004', name:'Reward Points Expiry Reminder', goal:'RP Redeemed', controlPct:5, status:'PAUSED',
+  // No "Rewards Events" category exists yet (only Journey/Offer/
+  // Transaction/EMI/Card) — Transaction is the closest real stand-in
+  // for "a redemption occurred," not a precise fit. Flagging rather
+  // than inventing a 6th category as a silent side effect of this fix.
+  { id:'DRIP-004', name:'Reward Points Expiry Reminder', issuer:'Yes Bank', programs:[], goal:{eventCategory:'Transaction Events', eventType:'Transaction', conditions:[]}, controlPct:5, status:'PAUSED',
     root: n('ENTRY_SCHEDULED','Monthly RP expiry scan','1st of every month · RP expiring within 30 days',[
       n('SEND','RP expiring soon','WhatsApp · Template: rp_expiry_t30',[
         n('WAIT_UNTIL','Redeemed?','Wait up to 20 days for a redemption event',[
@@ -7141,6 +7153,7 @@ const DRIP_STATUS_META = {
   DRAFT:   {label:'Draft',            badge:'gray'},
   PENDING_REVIEW: {label:'Pending Approval', badge:'warning'},
   ACTIVE:  {label:'Active',           badge:'success'},
+  SCHEDULED:{label:'Scheduled',       badge:'info'},
   PAUSED:  {label:'Paused',           badge:'info'},
   COMPLETED:{label:'Completed',       badge:'gray'},
   KILLED:  {label:'Killed',           badge:'error'},
@@ -7155,13 +7168,14 @@ function renderDripList(){
   document.getElementById('dripListCount').textContent = `${DRIP_CAMPAIGNS.length} campaigns`;
   document.getElementById('dripListBody').innerHTML = DRIP_CAMPAIGNS.map(c=>{
     const sm = DRIP_STATUS_META[c.status];
-    const entryMeta = DC_NODE_META[c.root.type];
+    const entryMeta = c.root ? DC_NODE_META[c.root.type] : null;
     return `
-    <tr onclick="openDripView('${c.id}')" style="cursor:pointer;">
+    <tr onclick="${c.status==='DRAFT'?`openDripEditDraft('${c.id}')`:`openDripView('${c.id}')`}" style="cursor:pointer;">
       <td><b>${c.name}</b></td>
-      <td>${c.goal}</td>
-      <td>${entryMeta.type}</td>
-      <td>${dcCountSends(c.root)}</td>
+      <td>${c.issuer||'—'}</td>
+      <td>${dcGoalLabel(c.goal)||'None — independent checkpoints'}</td>
+      <td>${entryMeta?entryMeta.type:'— no entry set —'}</td>
+      <td>${c.root?dcCountSends(c.root):'—'}</td>
       <td>${c.controlPct?c.controlPct+'%':'—'}</td>
       <td><span class="badge ${sm.badge}">${sm.label}</span></td>
       <td onclick="event.stopPropagation()">
@@ -7198,33 +7212,34 @@ function renderDripView(){
     ? `<p class="f-hint" style="margin:6px 0 0;">New version of <a href="#" onclick="event.preventDefault();openDripView('${c.versionOf}')">${DRIP_CAMPAIGNS.find(x=>x.id===c.versionOf)?.name||c.versionOf}</a> — pending approval, doesn't affect customers already enrolled on the live version.</p>`
     : (DRIP_CAMPAIGNS.some(x=>x.versionOf===c.id) ? `<p class="f-hint" style="margin:6px 0 0;">A newer version of this campaign is pending approval — this version keeps running for everyone already enrolled until then.</p>` : '');
   const actions = [];
-  if(c.status==='PENDING_REVIEW') actions.push(`<button class="btn primary small" onclick="dripCampaignAction('${c.id}','approve')">Approve & Activate</button>`);
-  if(c.status==='ACTIVE'||c.status==='PAUSED') actions.push(`<button class="btn secondary small" onclick="dripCampaignAction('${c.id}','pause')">${c.status==='PAUSED'?'Resume':'Pause'}</button>`);
-  if(['ACTIVE','PAUSED','PENDING_REVIEW'].includes(c.status)) actions.push(`<button class="btn secondary small" onclick="openDripEdit('${c.id}')">Edit (new version)</button>`);
-  if(['ACTIVE','PAUSED'].includes(c.status)) actions.push(`<button class="btn danger small" onclick="dripCampaignAction('${c.id}','kill')">Kill Switch</button>`);
+  if(c.status==='PENDING_REVIEW') actions.push(`<button class="btn primary small" onclick="dripCampaignAction('${c.id}','approve')">${c.startDate?'Approve (starts '+c.startDate.replace('T',' ')+')':'Approve & Activate'}</button>`);
+  if(['ACTIVE','PAUSED','SCHEDULED'].includes(c.status)) actions.push(`<button class="btn secondary small" onclick="dripCampaignAction('${c.id}','pause')">${c.status==='PAUSED'?'Resume':'Pause'}</button>`);
+  if(['ACTIVE','PAUSED','SCHEDULED','PENDING_REVIEW'].includes(c.status)) actions.push(`<button class="btn secondary small" onclick="openDripEdit('${c.id}')">Edit (new version)</button>`);
+  if(['ACTIVE','PAUSED','SCHEDULED'].includes(c.status)) actions.push(`<button class="btn danger small" onclick="dripCampaignAction('${c.id}','kill')">Kill Switch</button>`);
   document.getElementById('dripViewRoot').innerHTML = `
     <div class="page-header">
       <div>
         <button class="btn secondary small" style="margin-bottom:10px;" onclick="switchPage('drip-list')">← Back to Drip Campaigns</button>
         <h1 class="page-title">${c.name} <span class="badge ${sm.badge}" style="margin-left:8px;vertical-align:middle;">${sm.label}</span></h1>
-        <p class="page-sub">Goal: ${c.goal} · Control Group: ${c.controlPct?c.controlPct+'%':'None'} · ${dcCountSends(c.root)} sends</p>
+        <p class="page-sub">${c.issuer||'No issuer set'}${c.programs&&c.programs.length?' · '+c.programs.join(', '):''} · Goal: ${dcGoalLabel(c.goal)?`${dcGoalLabel(c.goal)} (${c.goal.eventCategory})`:'None — independent checkpoints'} · Control Group: ${c.controlPct?c.controlPct+'%':'None'} · ${c.root?dcCountSends(c.root):0} sends</p>
         ${versionNote}
       </div>
       <div style="display:flex;gap:8px;">${actions.join('')}</div>
     </div>
     <div class="card" style="padding:0;">
       <div class="dc-tree-wrap">
-        <div class="dc-tree-root">${dcRenderNode(c.root)}</div>
+        <div class="dc-tree-root">${c.root?dcRenderNode(c.root):'<div class="placeholder">No steps yet — still a draft.</div>'}</div>
       </div>
     </div>`;
 }
 
 /* ---------------- Drip Campaigns: Create / Edit builder ---------------- */
 const DC_ENTRY_TYPES = ['ENTRY_SEGMENT','ENTRY_EVENT','ENTRY_SCHEDULED'];
-const DC_STEP_TYPES = ['SEND','PAUSE','WAIT_UNTIL','SPLIT','RANDOM_SPLIT','GOAL_EXIT','EXIT'];
+const DC_STEP_TYPES = ['SEND','CHANNEL_FAILOVER','PAUSE','WAIT_UNTIL','SPLIT','RANDOM_SPLIT','GOAL_EXIT','EXIT'];
 const DC_TYPE_SUB = {
   ENTRY_SEGMENT:'Static or dynamic cohort', ENTRY_EVENT:'Live event, incl. Transaction/EMI/Card Events',
   ENTRY_SCHEDULED:'Calendar date or recurrence', SEND:'Channel, template, timing',
+  CHANNEL_FAILOVER:'Retry on a fallback channel if primary delivery fails',
   PAUSE:'Fixed wait duration', WAIT_UNTIL:'Wait for an event, with a timeout',
   SPLIT:'Two bounded sources only — prev. step outcome or entry-event attribute',
   RANDOM_SPLIT:'Creative A/B, % allocation', GOAL_EXIT:'Objective achieved', EXIT:'Sequence ran out, no goal met',
@@ -7238,12 +7253,79 @@ function dcEmptyGoalCheck(question){
   ]);
 }
 function openDripCreate(){
-  dripWiz = { id:null, isEdit:false, versionOf:null, name:'', goal:'', controlPct:10, root:null, addingAt:null, addingType:null, pendingConfig:{} };
+  dripWiz = { id:null, isEdit:false, isDraftContinuation:false, versionOf:null, name:'', goal:null, controlPct:10,
+    issuer:'', programs:[], startDate:'', endDate:'', entryEventCategory:null, root:null, addingAt:null, addingType:null, pendingConfig:{} };
   switchPage('drip-create');
+}
+// Continuing a not-yet-live Draft — edited in place, no versioning. A
+// Draft was never running, so there's no in-flight-customer concern the
+// version-pinning design exists to protect against; that only applies
+// once something has actually gone out to real customers.
+function openDripEditDraft(id){
+  const c = DRIP_CAMPAIGNS.find(x=>x.id===id);
+  dripWiz = { id:c.id, isEdit:false, isDraftContinuation:true, versionOf:null, name:c.name, goal:c.goal?{...c.goal}:null,
+    controlPct:c.controlPct, issuer:c.issuer||'', programs:c.programs?[...c.programs]:[], startDate:c.startDate||'', endDate:c.endDate||'',
+    entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null,
+    root: c.root?JSON.parse(JSON.stringify(c.root)):null, addingAt:null, addingType:null, pendingConfig:{} };
+  switchPage('drip-create');
+}
+function dcNextId(){ return 'DRIP-'+String(Math.max(...DRIP_CAMPAIGNS.map(c=>parseInt(c.id.split('-')[1])))+1).padStart(3,'0'); }
+// Goal used to be a free-text string — no actual event behind it, so the
+// auto-inserted "Goal reached?" check after every Send didn't resolve to
+// anything real. Braze's own docs confirm conversion events "must be based
+// on user actions rather than attribute changes" — same Event Category +
+// Event Type shape Entry/Wait Until already use, not a bespoke field.
+// {eventCategory, eventType} or null (a milestone campaign, e.g. DRIP-003,
+// legitimately has no single shared goal — its checkpoints are independent).
+function dcGoalLabel(g){
+  if(!g || !g.eventType) return null;
+  const cond = dcCondSummary(g.conditions);
+  return cond ? `${g.eventType} (${cond})` : g.eventType;
+}
+function dcOpenGoalDrawer(){
+  // Conditions array cloned independently, not just the object shallow-
+  // copied — otherwise editing then Cancel would still have mutated the
+  // live goal's conditions in place (push/splice mutate, they don't
+  // reassign), silently defeating Cancel.
+  dripWiz._goalDraft = dripWiz.goal
+    ? {...dripWiz.goal, conditions:[...(dripWiz.goal.conditions||[])]}
+    : {eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:'', conditions:[]};
+  dcRenderGoalDrawer();
+}
+function dcGoalField(key,val){ dripWiz._goalDraft[key]=val; dcRenderGoalDrawer(); }
+function dcConfirmGoal(){ dripWiz.goal = {...dripWiz._goalDraft, conditions:[...dripWiz._goalDraft.conditions]}; closeSideDrawer(); renderDripBuilder(); }
+function dcRenderGoalDrawer(){
+  const g = dripWiz._goalDraft;
+  openSideDrawer(`
+    <div class="sd-head"><div class="sd-title">Define Goal</div><button class="drawer-close" onclick="closeSideDrawer()">×</button></div>
+    <div class="sd-body">
+      <p class="f-hint" style="margin-top:0;">Defined once, here — every auto-inserted goal-check after a Send, and any Split using "Goal reached," checks against this same event. Change it here, not per-step.</p>
+      <div class="f-group"><label class="f-label">Event Category</label>
+        <select class="f-input" onchange="dcGoalField('eventCategory',this.value);dcGoalField('eventType','')">
+          ${Object.keys(EVENT_CATEGORIES).map(k=>`<option value="${k}" ${g.eventCategory===k?'selected':''}>${k}${EVENT_CATEGORIES[k].isNew?' (New)':''}</option>`).join('')}
+        </select></div>
+      <div class="f-group"><label class="f-label">Event Type</label>
+        <select class="f-input" onchange="dcGoalField('eventType',this.value)">
+          <option value="">Select event</option>
+          ${(EVENT_CATEGORIES[g.eventCategory]?.events||[]).map(e=>`<option value="${e}" ${g.eventType===e?'selected':''}>${e}</option>`).join('')}
+        </select></div>
+      <div class="f-group"><label class="f-label">Outcome <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
+        <p class="f-hint" style="margin-top:0;">The event firing at all usually isn't the real goal — e.g. EMI_STATUS_CHANGED fires on Failed too. Narrow it to the actual outcome.</p>
+        ${DC_EVENT_ENTITY[g.eventCategory] ? dcCondRowsHtml(g.conditions, DC_EVENT_ENTITY[g.eventCategory], 'goal') : `<p class="f-hint" style="margin:0;">No typed attributes defined yet for ${g.eventCategory}.</p>`}
+      </div>
+    </div>
+    <div class="sd-foot">
+      <button class="btn secondary" onclick="closeSideDrawer()">Cancel</button>
+      <button class="btn primary" ${!g.eventType?'disabled style="opacity:.5;"':''} onclick="dcConfirmGoal()">Save Goal</button>
+    </div>`, 520);
 }
 function openDripEdit(id){
   const c = DRIP_CAMPAIGNS.find(x=>x.id===id);
-  dripWiz = { id:null, isEdit:true, versionOf:c.id, name:c.name, goal:c.goal, controlPct:c.controlPct,
+  // Start/End Date deliberately reset, not inherited — a new version's
+  // activation timing is its own fresh decision, not a copy-forward.
+  dripWiz = { id:null, isEdit:true, isDraftContinuation:false, versionOf:c.id, name:c.name, goal:c.goal?{...c.goal}:null,
+    controlPct:c.controlPct, issuer:c.issuer||'', programs:c.programs?[...c.programs]:[], startDate:'', endDate:'',
+    entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null,
     root: JSON.parse(JSON.stringify(c.root)), addingAt:null, addingType:null, pendingConfig:{} };
   switchPage('drip-create');
 }
@@ -7270,33 +7352,95 @@ function dcSelectAddAt(path){
   dcRenderAddDrawer();
 }
 function dcCancelAdd(){ dripWiz.addingAt = null; dripWiz.addingType = null; closeSideDrawer(); renderDripBuilder(); }
+// Event Category -> the ELIGIBILITY_META entity carrying its real typed
+// attributes, reused as-is rather than duplicating attribute lists.
+// Journey/Offer/Card Events have no such entity yet (Card Events is
+// itself brand new — see EVENT_CATEGORIES) so they fall back to a plain
+// text attribute name, same fallback condRow() already uses for
+// not-yet-typed entities.
+const DC_EVENT_ENTITY = {'Transaction Events':'Transaction', 'EMI Events':'EMI Request'};
+// containerKey identifies which array this row-set edits, same pattern
+// condRow()/wizCondUpdate use with containerKey to share one update
+// function across multiple condition arrays instead of one per array.
+function dcCondArrayFor(containerKey){
+  if(containerKey==='entry') return dripWiz.pendingConfig.conditions;
+  if(containerKey==='goal') return dripWiz._goalDraft.conditions;
+  if(containerKey==='splitCustom') return dripWiz.pendingConfig.customConditions;
+  if(containerKey==='segment') return dripWiz.pendingConfig.conditions;
+}
+function dcCondUpdate(containerKey, idx, field, val){
+  const arr = dcCondArrayFor(containerKey);
+  if(field==='__remove') arr.splice(idx,1);
+  else if(field==='__add') arr.push({attribute:'', operator:'', value:''});
+  else { arr[idx][field]=val; if(field==='attribute') arr[idx].value=''; }
+  if(containerKey==='goal') dcRenderGoalDrawer(); else dcRenderAddDrawer();
+}
+function dcCondRowsHtml(conditions, entity, containerKey){
+  const meta = entity ? ELIGIBILITY_META[entity] : null;
+  const attrOptions = meta ? Object.keys(meta) : null;
+  const rows = conditions.map((c,i)=>{
+    const attrMeta = meta ? meta[c.attribute] : null;
+    const attrField = attrOptions
+      ? `<select onchange="dcCondUpdate('${containerKey}',${i},'attribute',this.value)">
+          <option value="">Attribute</option>
+          ${attrOptions.map(a=>`<option value="${a}" ${c.attribute===a?'selected':''}>${a}</option>`).join('')}
+        </select>`
+      : `<input type="text" class="f-input" placeholder="Attribute" value="${c.attribute||''}" oninput="dcCondUpdate('${containerKey}',${i},'attribute',this.value)">`;
+    let valueField;
+    if(attrMeta?.type==='select') valueField = `<select onchange="dcCondUpdate('${containerKey}',${i},'value',this.value)"><option value="">Value</option>${attrMeta.options.map(o=>`<option ${c.value===o?'selected':''}>${o}</option>`).join('')}</select>`;
+    else if(attrMeta?.type==='bool') valueField = `<select onchange="dcCondUpdate('${containerKey}',${i},'value',this.value)"><option value="">Value</option><option ${c.value==='true'?'selected':''}>true</option><option ${c.value==='false'?'selected':''}>false</option></select>`;
+    else if(attrMeta?.type==='number') valueField = `<input type="number" class="f-input" placeholder="Value" value="${c.value||''}" oninput="dcCondUpdate('${containerKey}',${i},'value',this.value)">`;
+    else if(attrMeta?.type==='date') valueField = `<input type="date" class="f-input" value="${c.value||''}" onchange="dcCondUpdate('${containerKey}',${i},'value',this.value)">`;
+    else valueField = `<input type="text" class="f-input" placeholder="Value" value="${c.value||''}" oninput="dcCondUpdate('${containerKey}',${i},'value',this.value)">`;
+    const opOptions = attrMeta?.type==='number'||attrMeta?.type==='date' ? ['Equals','Greater than','Less than','Between'] : ['Equals','Not Equals'];
+    return `<div class="cond-row">
+      ${attrField}
+      <select onchange="dcCondUpdate('${containerKey}',${i},'operator',this.value)"><option value="">Operator</option>${opOptions.map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}</select>
+      ${valueField}
+      <div class="cond-remove" onclick="dcCondUpdate('${containerKey}',${i},'__remove')">✕</div>
+    </div>`;
+  }).join('');
+  return `${rows}<div class="add-link" onclick="dcCondUpdate('${containerKey}',-1,'__add')">${ic('workflow')} Add condition</div>`;
+}
 function dcOrdinal(n){ n=Number(n); const s=['th','st','nd','rd'], v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
 function dcRecurrenceLabel(p){
-  if(p.recurrenceType==='Weekly') return `Every ${p.weekInterval} week${Number(p.weekInterval)===1?'':'s'} on ${p.dayOfWeek}`;
-  if(p.recurrenceType==='Daily') return `Every ${p.dayInterval} day${Number(p.dayInterval)===1?'':'s'}`;
-  return `${p.dayOfMonth==='last'?'Last day':dcOrdinal(p.dayOfMonth)} of every month`;
+  const base = p.recurrenceType==='Weekly' ? `Every ${p.weekInterval} week${Number(p.weekInterval)===1?'':'s'} on ${p.dayOfWeek}`
+    : p.recurrenceType==='Daily' ? `Every ${p.dayInterval} day${Number(p.dayInterval)===1?'':'s'}`
+    : `${p.dayOfMonth==='last'?'Last day':dcOrdinal(p.dayOfMonth)} of every month`;
+  return p.timeOfDay ? `${base} at ${p.timeOfDay}` : base;
 }
 function dcPickType(type){
   dripWiz.addingType = type;
   dripWiz.pendingConfig = {
-    ENTRY_SEGMENT:{cohortDesc:'All eligible customers'},
-    ENTRY_EVENT:{eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:''},
-    ENTRY_SCHEDULED:{recurrenceType:'Monthly', dayOfMonth:'1', weekInterval:'1', dayOfWeek:'Monday', dayInterval:'1'},
-    SEND:{name:'Send Message', channel:'WHATSAPP', account:'', templateId:'', timing:'Absolute', absTime:'11:00'},
+    ENTRY_SEGMENT:{cohortDesc:'All eligible customers', entity:'Customer', conditions:[]},
+    ENTRY_EVENT:{eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:'', conditions:[]},
+    ENTRY_SCHEDULED:{recurrenceType:'Monthly', dayOfMonth:'1', weekInterval:'1', dayOfWeek:'Monday', dayInterval:'1', timeOfDay:'09:00'},
+    SEND:{name:'Send Message', channel:'WHATSAPP', account:'', templateId:'', timing:'Absolute', absTime:'11:00',
+      relativeAnchor:'Previous Step', relativeDuration:1, relativeUnit:'days'},
+    CHANNEL_FAILOVER:{primaryChannel:'WHATSAPP', fallbackChannel:'SMS'},
     PAUSE:{duration:2, unit:'days'},
-    WAIT_UNTIL:{eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:'', duration:7, unit:'days'},
-    SPLIT:{basis:'Goal reached', customSource:'Previous step outcome', outcome:'Clicked', customText:''},
-    RANDOM_SPLIT:{name:'Channel test', pct1:50},
-    GOAL_EXIT:{reason:dripWiz.goal||'Goal achieved'},
+    WAIT_UNTIL:{eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:'', duration:7, unit:'days', conditions:[]},
+    SPLIT:{basis:'Goal reached', customSource:'Previous step outcome', outcome:'Clicked', customConditions:[]},
+    RANDOM_SPLIT:{name:'Channel test', branches:[{label:'A', pct:50},{label:'B', pct:50}]},
+    GOAL_EXIT:{reason:dcGoalLabel(dripWiz.goal)||'Goal achieved'},
     EXIT:{reason:'Sequence exhausted'},
   }[type];
   dcRenderAddDrawer();
 }
 function dcConfigField(key,val){ dripWiz.pendingConfig[key]=val; dcRenderAddDrawer(); }
+function dcRandomBranchField(i,key,val){ dripWiz.pendingConfig.branches[i][key]=val; dcRenderAddDrawer(); }
+function dcAddRandomBranch(){
+  const b = dripWiz.pendingConfig.branches;
+  b.push({label:String.fromCharCode(65+b.length), pct:0});
+  dcRenderAddDrawer();
+}
+function dcRemoveRandomBranch(i){ dripWiz.pendingConfig.branches.splice(i,1); dcRenderAddDrawer(); }
 function dcAddFormValid(t){
   const p = dripWiz.pendingConfig;
   if(t==='ENTRY_EVENT'||t==='WAIT_UNTIL') return !!p.eventType;
   if(t==='SEND') return !!(p.account && p.templateId);
+  if(t==='RANDOM_SPLIT') return p.branches.reduce((s,b)=>s+Number(b.pct||0),0)===100;
+  if(t==='CHANNEL_FAILOVER') return !!(p.primaryChannel && p.fallbackChannel && p.primaryChannel!==p.fallbackChannel);
   return true;
 }
 function dcRenderAddDrawer(){
@@ -7317,36 +7461,50 @@ function dcRenderAddDrawer(){
       <button class="btn primary" ${!(t&&dcAddFormValid(t))?'disabled style="opacity:.5;"':''} onclick="dcConfirmAddNode()">${isEntry?'Add Entry':'Add Step'}</button>
     </div>`, 620);
 }
+// Short readable summary of a condition array for a node's meta line —
+// "Amount = 2000, MCC = 5411" rather than making a reviewer open the
+// drawer again to see what was actually configured.
+function dcCondSummary(conditions){
+  return (conditions||[]).filter(c=>c.attribute&&c.value).map(c=>`${c.attribute} ${c.operator==='Not Equals'?'≠':c.operator==='Equals'?'=':c.operator||'='} ${c.value}`).join(', ');
+}
 function dcConfirmAddNode(){
   const t = dripWiz.addingType, p = dripWiz.pendingConfig;
   let node;
-  if(t==='ENTRY_SEGMENT') node = n('ENTRY_SEGMENT', p.cohortDesc, 'Segment entry');
-  else if(t==='ENTRY_EVENT') node = n('ENTRY_EVENT', p.eventType||'Event Trigger', p.eventCategory);
+  if(t==='ENTRY_SEGMENT'){
+    const condSummary = dcCondSummary(p.conditions);
+    node = n('ENTRY_SEGMENT', p.cohortDesc, condSummary ? `${p.entity} · ${condSummary}` : `${p.entity} · no conditions — static snapshot`);
+  }
+  else if(t==='ENTRY_EVENT'){
+    dripWiz.entryEventCategory = p.eventCategory;
+    const condSummary = dcCondSummary(p.conditions);
+    node = n('ENTRY_EVENT', p.eventType||'Event Trigger', condSummary ? `${p.eventCategory} · ${condSummary}` : p.eventCategory);
+  }
   else if(t==='ENTRY_SCHEDULED') node = n('ENTRY_SCHEDULED', 'Scheduled entry', dcRecurrenceLabel(p));
   else if(t==='SEND'){
     const tmpl = COMMS_TEMPLATES.find(x=>x.id===p.templateId);
-    const meta = `${CHANNEL_CONFIG_LABELS[p.channel]} · ${p.account} · ${p.timing==='Absolute'?p.absTime:'Relative'}${tmpl?' · Template: '+tmpl.name:''}`;
-    node = n('SEND', p.name, meta, [dcEmptyGoalCheck((dripWiz.goal||'Goal')+'?')]);
+    const timingLabel = p.timing==='Absolute' ? p.absTime : `${p.relativeDuration} ${p.relativeUnit} after ${p.relativeAnchor}`;
+    const meta = `${CHANNEL_CONFIG_LABELS[p.channel]} · ${p.account} · ${timingLabel}${tmpl?' · Template: '+tmpl.name:''}`;
+    node = n('SEND', p.name, meta, [dcEmptyGoalCheck((dcGoalLabel(dripWiz.goal)||'Goal')+'?')]);
   }
+  else if(t==='CHANNEL_FAILOVER') node = n('CHANNEL_FAILOVER', `${CHANNEL_CONFIG_LABELS[p.primaryChannel]} → ${CHANNEL_CONFIG_LABELS[p.fallbackChannel]}`, 'Retries on fallback if primary delivery fails');
   else if(t==='PAUSE') node = n('PAUSE', `Wait ${p.duration} ${p.unit}`, '');
   else if(t==='WAIT_UNTIL'){
     const label = p.eventType||'Wait Until';
-    node = n('WAIT_UNTIL', label, `Timeout after ${p.duration} ${p.unit} · ${p.eventCategory}`, [
+    const condSummary = dcCondSummary(p.conditions);
+    node = n('WAIT_UNTIL', label, `Timeout after ${p.duration} ${p.unit} · ${p.eventCategory}${condSummary?' · '+condSummary:''}`, [
       n('GOAL_EXIT', label, '', [], 'Yes'), { type:'EMPTY', branchLabel:'No', children:[] },
     ]);
   }
   else if(t==='SPLIT'){
-    const goalQ = (dripWiz.goal||'Goal')+'?';
-    const question = p.basis==='Goal reached' ? goalQ : (p.customSource==='Previous step outcome' ? `Previous step: ${p.outcome}?` : (p.customText||'Custom condition'));
+    const goalQ = (dcGoalLabel(dripWiz.goal)||'Goal')+'?';
+    const question = p.basis==='Goal reached' ? goalQ : (p.customSource==='Previous step outcome' ? `Previous step: ${p.outcome}?` : (dcCondSummary(p.customConditions)||'Custom condition')+'?');
     node = n('SPLIT', question, p.basis==='Goal reached'?'Goal check':'Custom condition split', [
       n('GOAL_EXIT', question.replace(/\?$/,''), '', [], 'Yes'), { type:'EMPTY', branchLabel:'No', children:[] },
     ]);
   }
   else if(t==='RANDOM_SPLIT'){
-    const p2 = 100-Number(p.pct1);
-    node = n('RANDOM_SPLIT', p.name, `${p.pct1} / ${p2} allocation`, [
-      { type:'EMPTY', branchLabel:p.pct1+'%', children:[] }, { type:'EMPTY', branchLabel:p2+'%', children:[] },
-    ]);
+    node = n('RANDOM_SPLIT', p.name, p.branches.map(b=>`${b.label} ${b.pct}%`).join(' / ')+' allocation',
+      p.branches.map(b=>({type:'EMPTY', branchLabel:`${b.label} (${b.pct}%)`, children:[]})));
   }
   else if(t==='GOAL_EXIT') node = n('GOAL_EXIT', p.reason, '');
   else if(t==='EXIT') node = n('EXIT', p.reason, '');
@@ -7409,7 +7567,15 @@ function dcRenderNodeEditable(node, path){
 
 function dcDrawerFormFor(type){
   const p = dripWiz.pendingConfig;
-  if(type==='ENTRY_SEGMENT') return `<div class="f-group"><label class="f-label">Cohort description</label><input class="f-input" type="text" value="${p.cohortDesc}" oninput="dcConfigField('cohortDesc',this.value)"></div>`;
+  if(type==='ENTRY_SEGMENT') return `
+    <div class="f-group"><label class="f-label">Segment name</label><input class="f-input" type="text" value="${p.cohortDesc}" oninput="dcConfigField('cohortDesc',this.value)"></div>
+    <div class="f-group"><label class="f-label">Entity</label>
+      <select class="f-input" onchange="dcConfigField('entity',this.value);dripWiz.pendingConfig.conditions=[]">
+        ${['Customer','Account','Card'].map(e=>`<option ${p.entity===e?'selected':''}>${e}</option>`).join('')}
+      </select></div>
+    <div class="f-group"><label class="f-label">Conditions <span style="font-weight:400;color:var(--gray-500);">(optional — a static snapshot if none set)</span></label>
+      ${dcCondRowsHtml(p.conditions, p.entity, 'segment')}
+    </div>`;
   if(type==='ENTRY_EVENT') return `
     <div class="f-group"><label class="f-label">Event Category</label>
       <select class="f-input" onchange="dcConfigField('eventCategory',this.value);dcConfigField('eventType','')">
@@ -7419,7 +7585,10 @@ function dcDrawerFormFor(type){
       <select class="f-input" onchange="dcConfigField('eventType',this.value)">
         <option value="">Select event</option>
         ${(EVENT_CATEGORIES[p.eventCategory]?.events||[]).map(e=>`<option value="${e}" ${p.eventType===e?'selected':''}>${e}</option>`).join('')}
-      </select></div>`;
+      </select></div>
+    <div class="f-group"><label class="f-label">Conditions <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
+      ${DC_EVENT_ENTITY[p.eventCategory] ? dcCondRowsHtml(p.conditions, DC_EVENT_ENTITY[p.eventCategory], 'entry') : `<p class="f-hint" style="margin:0;">No typed attributes defined yet for ${p.eventCategory} — narrowing by attribute isn't available for this category.</p>`}
+    </div>`;
   if(type==='ENTRY_SCHEDULED') return `
     <div class="f-group"><label class="f-label">Repeats</label>
       <select class="f-input" onchange="dcConfigField('recurrenceType',this.value)">
@@ -7439,6 +7608,7 @@ function dcDrawerFormFor(type){
         <div class="f-group"><label class="f-label">On</label><select class="f-input" onchange="dcConfigField('dayOfWeek',this.value)">${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d=>`<option ${p.dayOfWeek===d?'selected':''}>${d}</option>`).join('')}</select></div>
       </div>`:''}
     ${p.recurrenceType==='Daily'?`<div class="f-group"><label class="f-label">Every N days</label><input class="f-input" type="number" min="1" value="${p.dayInterval}" oninput="dcConfigField('dayInterval',this.value)"></div>`:''}
+    <div class="f-group"><label class="f-label">At</label><input class="f-input" type="time" value="${p.timeOfDay}" onchange="dcConfigField('timeOfDay',this.value)"></div>
     <p class="f-hint">${dcRecurrenceLabel(p)}</p>`;
   if(type==='SEND'){
     const accounts = [...new Set(COMMS_TEMPLATES.filter(x=>x.channelType===p.channel).map(x=>x.accountName))];
@@ -7449,7 +7619,17 @@ function dcDrawerFormFor(type){
       <div class="f-group"><label class="f-label">Channel</label><select class="f-input" onchange="dcConfigField('channel',this.value);dcConfigField('account','');dcConfigField('templateId','')">${Object.keys(CHANNEL_CONFIG_LABELS).map(c=>`<option value="${c}" ${p.channel===c?'selected':''}>${CHANNEL_CONFIG_LABELS[c]}</option>`).join('')}</select></div>
       <div class="f-group"><label class="f-label">Timing</label><select class="f-input" onchange="dcConfigField('timing',this.value)"><option ${p.timing==='Absolute'?'selected':''}>Absolute</option><option ${p.timing==='Relative'?'selected':''}>Relative</option></select></div>
     </div>
-    ${p.timing==='Absolute'?`<div class="f-group"><label class="f-label">Send time</label><input class="f-input" type="time" value="${p.absTime}" oninput="dcConfigField('absTime',this.value)"></div>`:''}
+    ${p.timing==='Absolute'
+      ?`<div class="f-group"><label class="f-label">Send time</label><input class="f-input" type="time" value="${p.absTime}" oninput="dcConfigField('absTime',this.value)"></div>`
+      :`<div class="f-row2">
+          <div class="f-group"><label class="f-label">After</label><select class="f-input" onchange="dcConfigField('relativeAnchor',this.value)"><option ${p.relativeAnchor==='Entry'?'selected':''}>Entry</option><option ${p.relativeAnchor==='Previous Step'?'selected':''}>Previous Step</option></select></div>
+          <div class="f-group"><label class="f-label">Delay</label>
+            <div style="display:flex;gap:6px;">
+              <input class="f-input" type="number" min="0" value="${p.relativeDuration}" oninput="dcConfigField('relativeDuration',this.value)">
+              <select class="f-input" onchange="dcConfigField('relativeUnit',this.value)"><option ${p.relativeUnit==='hours'?'selected':''}>hours</option><option ${p.relativeUnit==='days'?'selected':''}>days</option></select>
+            </div>
+          </div>
+        </div>`}
     <div class="f-group"><label class="f-label">Account</label>
       <select class="f-input" onchange="dcConfigField('account',this.value);dcConfigField('templateId','')">
         <option value="">Select account</option>${accounts.map(a=>`<option ${p.account===a?'selected':''}>${a}</option>`).join('')}
@@ -7462,6 +7642,12 @@ function dcDrawerFormFor(type){
     </div>
     <p class="f-hint">A goal-check step is auto-inserted right after this Send — same "define once, check everywhere" pattern used across this campaign.</p>`;
   }
+  if(type==='CHANNEL_FAILOVER') return `
+    <div class="f-row2">
+      <div class="f-group"><label class="f-label">Primary Channel</label><select class="f-input" onchange="dcConfigField('primaryChannel',this.value);if(dripWiz.pendingConfig.fallbackChannel===this.value)dcConfigField('fallbackChannel','')">${Object.keys(CHANNEL_CONFIG_LABELS).map(c=>`<option value="${c}" ${p.primaryChannel===c?'selected':''}>${CHANNEL_CONFIG_LABELS[c]}</option>`).join('')}</select></div>
+      <div class="f-group"><label class="f-label">Fallback Channel</label><select class="f-input" onchange="dcConfigField('fallbackChannel',this.value)">${Object.keys(CHANNEL_CONFIG_LABELS).filter(c=>c!==p.primaryChannel).map(c=>`<option value="${c}" ${p.fallbackChannel===c?'selected':''}>${CHANNEL_CONFIG_LABELS[c]}</option>`).join('')}</select></div>
+    </div>
+    <p class="f-hint">If the primary channel's delivery fails, this retries once on the fallback channel before continuing the sequence.</p>`;
   if(type==='PAUSE') return `<div class="f-row2">
       <div class="f-group"><label class="f-label">Duration</label><input class="f-input" type="number" min="1" value="${p.duration}" oninput="dcConfigField('duration',this.value)"></div>
       <div class="f-group"><label class="f-label">Unit</label><select class="f-input" onchange="dcConfigField('unit',this.value)"><option ${p.unit==='days'?'selected':''}>days</option><option ${p.unit==='hours'?'selected':''}>hours</option></select></div>
@@ -7479,9 +7665,12 @@ function dcDrawerFormFor(type){
     <div class="f-row2">
       <div class="f-group"><label class="f-label">Timeout after</label><input class="f-input" type="number" min="1" value="${p.duration}" oninput="dcConfigField('duration',this.value)"></div>
       <div class="f-group"><label class="f-label">Unit</label><select class="f-input" onchange="dcConfigField('unit',this.value)"><option ${p.unit==='days'?'selected':''}>days</option><option ${p.unit==='hours'?'selected':''}>hours</option></select></div>
+    </div>
+    <div class="f-group"><label class="f-label">Conditions <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
+      ${DC_EVENT_ENTITY[p.eventCategory] ? dcCondRowsHtml(p.conditions, DC_EVENT_ENTITY[p.eventCategory], 'entry') : `<p class="f-hint" style="margin:0;">No typed attributes defined yet for ${p.eventCategory} — narrowing by attribute isn't available for this category.</p>`}
     </div>`;
   if(type==='SPLIT'){
-    const goalQ = (dripWiz.goal||'Goal')+'?';
+    const goalQ = (dcGoalLabel(dripWiz.goal)||'Goal')+'?';
     return `
     <div class="f-group"><label class="f-label">Basis</label><select class="f-input" onchange="dcConfigField('basis',this.value)">
       <option ${p.basis==='Goal reached'?'selected':''}>Goal reached</option><option ${p.basis==='Custom condition'?'selected':''}>Custom condition</option></select></div>
@@ -7492,12 +7681,29 @@ function dcDrawerFormFor(type){
     ${p.customSource==='Previous step outcome'?`
       <div class="f-group"><label class="f-label">Outcome</label><select class="f-input" onchange="dcConfigField('outcome',this.value)">
         ${['Delivered','Opened','Clicked','Not Opened','Bounced'].map(o=>`<option ${p.outcome===o?'selected':''}>${o}</option>`).join('')}</select></div>`:`
-      <div class="f-group"><label class="f-label">Condition</label><input class="f-input" type="text" placeholder="e.g. Amount &gt; 2000" value="${p.customText}" oninput="dcConfigField('customText',this.value)"></div>`}`}
+      <div class="f-group"><label class="f-label">Condition</label>
+        ${DC_EVENT_ENTITY[dripWiz.entryEventCategory]
+          ? dcCondRowsHtml(p.customConditions, DC_EVENT_ENTITY[dripWiz.entryEventCategory], 'splitCustom')
+          : `<p class="f-hint" style="margin:0;">${dripWiz.entryEventCategory?`No typed attributes defined yet for ${dripWiz.entryEventCategory}.`:'Entry isn\'t an Event Trigger, so there\'s no entry-event attribute to filter on.'}</p>`}
+      </div>`}`}
     <p class="f-hint">Bounded to two sources: the previous step's engagement outcome, or an attribute of the entry event — not arbitrary attributes anywhere in the flow.</p>`;
   }
-  if(type==='RANDOM_SPLIT') return `
+  if(type==='RANDOM_SPLIT'){
+    const total = p.branches.reduce((s,b)=>s+Number(b.pct||0),0);
+    return `
     <div class="f-group"><label class="f-label">Step name</label><input class="f-input" type="text" value="${p.name}" oninput="dcConfigField('name',this.value)"></div>
-    <div class="f-group"><label class="f-label">Allocation — branch 1 %</label><input class="f-input" type="number" min="1" max="99" value="${p.pct1}" oninput="dcConfigField('pct1',this.value)"><p class="f-hint">Branch 2 gets the remaining ${100-Number(p.pct1||0)}%.</p></div>`;
+    <div class="f-group"><label class="f-label">Branches</label>
+      ${p.branches.map((b,i)=>`
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+          <input class="f-input" type="text" style="flex:2;" placeholder="Label" value="${b.label}" oninput="dcRandomBranchField(${i},'label',this.value)">
+          <input class="f-input" type="number" min="1" max="99" style="flex:1;" value="${b.pct}" oninput="dcRandomBranchField(${i},'pct',this.value)">
+          <span style="font-size:12px;color:var(--gray-500);">%</span>
+          ${p.branches.length>2?`<div class="cond-remove" onclick="dcRemoveRandomBranch(${i})">✕</div>`:''}
+        </div>`).join('')}
+      <div class="add-link" onclick="dcAddRandomBranch()">${ic('workflow')} Add branch</div>
+      <p class="f-hint" style="color:${total===100?'var(--gray-500)':'var(--warning-text)'};font-weight:${total===100?400:600};">Total: ${total}%${total!==100?' — must add up to 100%':''}</p>
+    </div>`;
+  }
   if(type==='GOAL_EXIT'||type==='EXIT') return `<div class="f-group"><label class="f-label">Reason</label><input class="f-input" type="text" value="${p.reason}" oninput="dcConfigField('reason',this.value)"></div>`;
   return '';
 }
@@ -7508,19 +7714,45 @@ function renderDripBuilder(){
     <div class="wiz-rail-title">${dripWiz.isEdit?'Edit Drip Campaign':'New Drip Campaign'}</div>
     <div class="wiz-rail-sub">${dripWiz.isEdit?'Saves as a new version — customers already enrolled keep running on the live version':'Manual build'}</div>
     <div class="f-group"><label class="f-label">Campaign name</label><input class="f-input" type="text" value="${dripWiz.name}" oninput="dripWiz.name=this.value"></div>
-    <div class="f-group"><label class="f-label">Goal</label><input class="f-input" type="text" value="${dripWiz.goal}" oninput="dripWiz.goal=this.value" placeholder="e.g. Card Activated"></div>
+    <div class="f-group"><label class="f-label">Issuer</label>
+      <select class="f-input" onchange="dripWiz.issuer=this.value;dripWiz.programs=[];renderDripBuilder()">
+        <option value="">Select Issuer</option>
+        ${Object.keys(PROGRAM_OPTIONS).map(i=>`<option ${dripWiz.issuer===i?'selected':''}>${i}</option>`).join('')}
+      </select>
+    </div>
+    <div class="f-group"><label class="f-label">Program(s)</label>
+      ${dripWiz.issuer ? chipGroup('programs', PROGRAM_OPTIONS[dripWiz.issuer]||[], 'drip') : '<p class="f-hint" style="margin:0;">Select an issuer first</p>'}
+      ${dripWiz.issuer && computeMakerCheckerFlag(dripWiz.issuer, dripWiz.programs) ? `<p class="f-hint" style="color:var(--warning-text);margin-top:6px;">Maker-checker applies — this issuer/program requires a separate approver.</p>` : ''}
+    </div>
+    <div class="f-group"><label class="f-label">Goal</label>
+      ${dripWiz.goal ? `<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><span class="badge success">${dcGoalLabel(dripWiz.goal)}</span><span style="font-size:11px;color:var(--gray-500);">${dripWiz.goal.eventCategory}</span></div>` : `<p class="f-hint" style="margin:0 0 8px;">Not set yet — a milestone-style campaign can legitimately have none.</p>`}
+      <button class="btn secondary small" style="width:100%;" onclick="dcOpenGoalDrawer()">${dripWiz.goal?'Change Goal':'Define Goal'}</button>
+    </div>
     <div class="f-group"><label class="f-label">Control Group %</label><input class="f-input" type="number" min="0" max="50" value="${dripWiz.controlPct}" oninput="dripWiz.controlPct=this.value"><p class="f-hint">Held-back baseline for uplift, set once on Entry — on by default.</p></div>
+    <div class="f-row2">
+      <div class="f-group"><label class="f-label">Start</label><input class="f-input" type="datetime-local" value="${dripWiz.startDate}" onchange="dripWiz.startDate=this.value"></div>
+      <div class="f-group"><label class="f-label">End</label><input class="f-input" type="datetime-local" value="${dripWiz.endDate}" onchange="dripWiz.endDate=this.value"></div>
+    </div>
+    <p class="f-hint" style="margin-top:-10px;">Leave Start blank to activate immediately once approved. A future Start holds it as Scheduled until then.</p>
+    <p class="f-hint" style="background:var(--gray-50);padding:8px 10px;border-radius:6px;margin-top:12px;">🛡 DNC and opt-outs are checked automatically before every send in this campaign — not something you configure per step, same as Nudges.</p>
     <hr style="border:none;border-top:1px solid var(--gray-200);margin:18px 0;">`;
 
   if(dripWiz.root===null){
     railHtml += `<p class="f-hint">Click <b>+ Add Entry</b> on the canvas to choose how customers enter this campaign.</p>`;
   } else {
     const open = dcTreeHasOpenBranches(dripWiz.root);
-    const blocked = !dripWiz.name || open;
-    railHtml += `<p class="f-hint">Click any <b>+</b> on the canvas to add the next step. Every branch needs to end in a Goal-Based Exit or Exit before this campaign is ready to save.</p>
-      ${open?`<p class="f-hint" style="color:var(--warning-text);font-weight:600;">⚠ One or more branches are still open — finish every path before saving.</p>`:''}
-      <button class="btn primary" style="width:100%;margin-top:14px;" ${blocked?'disabled style="opacity:.5;"':''} onclick="saveDripCampaign()">Save Campaign</button>`;
+    railHtml += `<p class="f-hint">Click any <b>+</b> on the canvas to add the next step. Every branch needs to end in a Goal-Based Exit or Exit before this campaign is ready to submit for approval — saving as a draft has no such requirement.</p>
+      ${open?`<p class="f-hint" style="color:var(--warning-text);font-weight:600;">⚠ Open branches remaining — fine to save as a draft, blocks submission.</p>`:''}`;
   }
+  // Save as Draft is always available once there's a name — you should
+  // never be blocked from saving in-progress work. Submitting for
+  // approval is the point completeness actually gets enforced.
+  const canSubmit = dripWiz.name && dripWiz.issuer && dripWiz.root!==null && !dcTreeHasOpenBranches(dripWiz.root);
+  railHtml += `
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="btn secondary" style="flex:1;" ${!dripWiz.name?'disabled style="opacity:.5;"':''} onclick="saveDripCampaign('draft')">Save as Draft</button>
+      <button class="btn primary" style="flex:1;" ${!canSubmit?'disabled style="opacity:.5;"':''} onclick="saveDripCampaign('submit')">Submit for Approval</button>
+    </div>`;
   document.getElementById('dcbRail').innerHTML = railHtml;
   document.getElementById('dcbCanvas').innerHTML = dripWiz.root===null
     ? `<div class="dc-add-entry-placeholder" onclick="dcSelectAddAt([])">+ Add Entry</div>`
@@ -7542,24 +7774,48 @@ function dcTreeHasOpenBranches(node){
   if(node.children.length===0) return node.type!=='GOAL_EXIT' && node.type!=='EXIT';
   return node.children.some(dcTreeHasOpenBranches);
 }
-function saveDripCampaign(){
+// mode: 'draft' (always allowed, no completeness check — in-progress
+// work should never be blocked from saving) or 'submit' (requires a
+// complete tree, moves to PENDING_REVIEW).
+function saveDripCampaign(mode){
   if(!dripWiz.name){ showToast('Campaign needs a name before it can be saved.','error'); return; }
-  if(dcTreeHasOpenBranches(dripWiz.root)){ showToast('Every branch needs to end in a Goal-Based Exit or Exit before this can be saved.','error'); return; }
-  const newId = 'DRIP-'+String(Math.max(...DRIP_CAMPAIGNS.map(c=>parseInt(c.id.split('-')[1])))+1).padStart(3,'0');
-  if(dripWiz.isEdit){
-    DRIP_CAMPAIGNS.push({ id:newId, name:dripWiz.name, goal:dripWiz.goal, controlPct:Number(dripWiz.controlPct), status:'PENDING_REVIEW',
-      versionOf:dripWiz.versionOf, root:dripWiz.root });
-    showToast(`Saved as a new version, pending approval — "${dripWiz.name}" stays live and unchanged for customers already enrolled.`);
+  if(mode==='submit'){
+    if(dripWiz.root===null){ showToast('Add at least an Entry step before submitting for approval.','error'); return; }
+    if(dcTreeHasOpenBranches(dripWiz.root)){ showToast('Every branch needs to end in a Goal-Based Exit or Exit before this can be submitted for approval.','error'); return; }
+  }
+  const status = mode==='submit' ? 'PENDING_REVIEW' : 'DRAFT';
+  const payload = { name:dripWiz.name, goal:dripWiz.goal, controlPct:Number(dripWiz.controlPct),
+    issuer:dripWiz.issuer||'', programs:dripWiz.programs?[...dripWiz.programs]:[],
+    startDate:dripWiz.startDate||'', endDate:dripWiz.endDate||'', status, root:dripWiz.root };
+
+  if(dripWiz.isDraftContinuation){
+    // Never went live — edited in place, no versioning needed.
+    Object.assign(DRIP_CAMPAIGNS.find(x=>x.id===dripWiz.id), payload);
+    showToast(mode==='submit' ? `"${dripWiz.name}" submitted for approval.` : `"${dripWiz.name}" saved as draft.`);
+    switchPage('drip-list');
+  } else if(dripWiz.isEdit){
+    DRIP_CAMPAIGNS.push({ id:dcNextId(), versionOf:dripWiz.versionOf, ...payload });
+    showToast(mode==='submit'
+      ? `Submitted as a new version, pending approval — "${dripWiz.name}" stays live and unchanged for customers already enrolled.`
+      : `New version saved as a draft — "${dripWiz.name}" stays live and unchanged in the meantime.`);
     openDripView(dripWiz.versionOf);
   } else {
-    DRIP_CAMPAIGNS.push({ id:newId, name:dripWiz.name, goal:dripWiz.goal, controlPct:Number(dripWiz.controlPct), status:'PENDING_REVIEW', root:dripWiz.root });
+    DRIP_CAMPAIGNS.push({ id:dcNextId(), ...payload });
     switchPage('drip-list');
-    showToast(`"${dripWiz.name}" saved and sent for approval.`);
+    showToast(mode==='submit' ? `"${dripWiz.name}" saved and sent for approval.` : `"${dripWiz.name}" saved as a draft.`);
   }
 }
 function dripCampaignAction(id, action){
   const c = DRIP_CAMPAIGNS.find(x=>x.id===id);
-  if(action==='pause'){ c.status = c.status==='PAUSED' ? 'ACTIVE' : 'PAUSED'; renderDripView(); showToast(c.status==='PAUSED'?`"${c.name}" paused — new entries stop, in-flight customers freeze at their current step.`:`"${c.name}" resumed.`); }
+  if(action==='pause'){
+    if(c.status==='PAUSED'){
+      // Resume re-derives the same way Approve does — a paused Scheduled
+      // campaign should come back Scheduled, not jump straight to Active.
+      c.status = c.startDate ? 'SCHEDULED' : 'ACTIVE';
+    } else { c.status = 'PAUSED'; }
+    renderDripView();
+    showToast(c.status==='PAUSED'?`"${c.name}" paused — new entries stop, in-flight customers freeze at their current step.`:`"${c.name}" resumed.`);
+  }
   if(action==='kill'){
     showModal(`
       <div class="modal-head"><div class="modal-title">Kill switch — "${c.name}"</div></div>
@@ -7571,7 +7827,10 @@ function dripCampaignAction(id, action){
     return;
   }
   if(action==='kill-confirmed'){ c.status = 'KILLED'; showToast(`"${c.name}" killed — every enrolled customer has been exited.`,'error'); }
-  if(action==='approve'){ c.status = 'ACTIVE'; showToast(`"${c.name}" approved and active.`); }
+  if(action==='approve'){
+    c.status = c.startDate ? 'SCHEDULED' : 'ACTIVE';
+    showToast(c.status==='SCHEDULED' ? `"${c.name}" approved — scheduled to start ${c.startDate.replace('T',' ')}.` : `"${c.name}" approved and active.`);
+  }
   renderDripView();
 }
 
