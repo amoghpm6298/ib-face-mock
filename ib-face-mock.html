@@ -4044,25 +4044,26 @@ function renderAnalytics(){
       const maxCount = stages[0].count || 1;
       return stages.map((f,i)=>{
         const isLast = i===stages.length-1;
-        // Not a floor — a floor means forcing a value's bar to be wider
-        // than its real proportion, which is fabricating the picture, not
-        // showing it (explicitly rejected: 0.45% forced up to a flat 1%
-        // for every tiny value alike erases the real difference between
-        // 0.83%, 0.76%, and 0.45% — they'd all render identically). Bar
-        // width is √(share) instead of a linear share — every value still
-        // maps through the same one formula, none singled out or bumped
-        // up, and √ compresses the 100%→0.45% range into something every
-        // row can actually render pixels for while staying monotonic
-        // (bigger real count always still means a bigger bar). The
-        // displayed number/percentage next to the bar is always the real,
-        // untransformed value — only the bar's pixel width is scaled.
-        const barWidth = Math.round(Math.sqrt(f.count/maxCount)*100);
+        // Linear, not scaled — bar length is the one thing a reader takes
+        // as proportional without being told otherwise, and this track has
+        // no axis/gridlines to signal a non-linear scale even if we wanted
+        // one. A tiny real share (0.45%) should render as a thin sliver,
+        // because "thin" is itself correct information — the alternative
+        // (√-scaling so it LOOKS ~7x bigger than it is) reads as accurate
+        // but isn't, which is worse than looking small. The only assist is
+        // a pixel-level min-width on the fill so rounding-to-zero doesn't
+        // erase the color outright; 2px against a track hundreds of px
+        // wide doesn't change what a viewer perceives as the proportion.
+        // Precision lives in the count/% text, which is why % is bolded
+        // here specifically — this funnel's small values are the ones
+        // that most need the number to do the work the bar can't.
+        const barWidth = Math.round((f.count/maxCount)*100);
         return `
         <div class="funnel-row">
           <div class="funnel-label">${isLast?'<span style="color:var(--success-text);font-weight:700;">✓ </span>':''}${f.label}</div>
-          <div class="funnel-bar-track" style="background:var(--error-bg);"><div class="funnel-bar-fill" style="width:${barWidth}%;${isLast?'background:var(--success-border);':''}"></div></div>
+          <div class="funnel-bar-track" style="background:var(--error-bg);"><div class="funnel-bar-fill" style="width:${barWidth}%;min-width:2px;${isLast?'background:var(--success-border);':''}"></div></div>
           <div class="funnel-count">${f.count}</div>
-          <div class="funnel-pct">${fmtFunnelPct(f.count,maxCount)}</div>
+          <div class="funnel-pct" style="font-weight:700;color:var(--neutral-800);font-size:12.5px;">${fmtFunnelPct(f.count,maxCount)}</div>
         </div>`;
       }).join('');
     };
