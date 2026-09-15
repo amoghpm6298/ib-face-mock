@@ -198,6 +198,44 @@
   .funnel-meta{margin-left:8px;font-size:11.5px;color:var(--gray-500);flex-shrink:0;white-space:nowrap;}
   .funnel-pct{width:44px;text-align:right;font-size:11.5px;color:var(--gray-500);flex-shrink:0;}
 
+  /* Drip Campaigns — read-only tree-canvas renderer. A fixed top-down
+     auto-layout, not a free-drag canvas: every shape this platform
+     actually needs (linear+goal, random-split, parallel milestones) is a
+     tree, so a full drag/zoom/pan canvas engine would be solving a
+     problem we don't have. Classic pure-CSS org-chart connector trick —
+     each child gets a top border spanning half its width (extended to
+     full width for a middle child, no width at start/end), so the
+     connector matches however wide a subtree naturally lays out. */
+  .dc-tree-wrap{overflow-x:auto;padding:24px 12px 8px;}
+  .dc-tree-root{display:flex;justify-content:center;min-width:max-content;}
+  .dc-subtree{display:flex;flex-direction:column;align-items:center;}
+  .dc-node-card{
+    width:186px;border-radius:9px;border:1.5px solid var(--gray-200);background:#fff;
+    padding:9px 11px;box-shadow:0 1px 2px rgba(0,0,0,.04);position:relative;
+  }
+  .dc-node-type{font-size:9.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:3px;}
+  .dc-node-label{font-size:12.5px;font-weight:600;color:var(--neutral-900);line-height:1.3;}
+  .dc-node-meta{font-size:11px;color:var(--gray-500);margin-top:3px;line-height:1.35;}
+  .dc-node-card.cat-entry{border-color:var(--info-text);} .dc-node-card.cat-entry .dc-node-type{color:var(--info-text);}
+  .dc-node-card.cat-send{border-color:var(--blue-cta);} .dc-node-card.cat-send .dc-node-type{color:var(--blue-cta);}
+  .dc-node-card.cat-flow{border-color:var(--gray-300);} .dc-node-card.cat-flow .dc-node-type{color:var(--gray-600);}
+  .dc-node-card.cat-split{border-color:var(--warning-border);} .dc-node-card.cat-split .dc-node-type{color:var(--warning-text);}
+  .dc-node-card.cat-goal{border-color:var(--success-border);background:var(--success-bg);} .dc-node-card.cat-goal .dc-node-type{color:var(--success-text);}
+  .dc-node-card.cat-exit{border-color:var(--gray-300);background:var(--gray-50);} .dc-node-card.cat-exit .dc-node-type{color:var(--gray-500);}
+  .dc-down-stub{width:2px;height:20px;background:var(--gray-300);}
+  .dc-children{display:flex;}
+  .dc-child{position:relative;padding:20px 14px 0;display:flex;flex-direction:column;align-items:center;}
+  .dc-child::before{content:'';position:absolute;top:0;left:0;right:0;height:20px;border-top:2px solid var(--gray-300);}
+  .dc-child:first-child::before{left:50%;}
+  .dc-child:last-child::before{right:50%;}
+  .dc-child:only-child::before{display:none;}
+  .dc-child::after{content:'';position:absolute;top:0;left:50%;width:2px;height:20px;background:var(--gray-300);}
+  .dc-branch-label{
+    position:absolute;top:-8px;left:50%;transform:translateX(-50%);
+    font-size:10px;font-weight:700;color:var(--gray-600);background:#fff;
+    padding:1px 6px;border:1px solid var(--gray-200);border-radius:20px;white-space:nowrap;z-index:1;
+  }
+
   .dropoff-callout{
     display:flex;align-items:center;gap:8px;margin-top:16px;padding:10px 14px;
     background:var(--warning-bg);border:1px solid var(--warning-border);
@@ -1349,6 +1387,42 @@
 <div class="page-view" id="page-dnc">
   <div class="page" id="dncRoot" style="padding-bottom:60px;"></div>
 </div>
+
+<!-- ============ DRIP CAMPAIGNS — LIST ============ -->
+<div class="page-view" id="page-drip-list">
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Drip Campaigns</h1>
+        <p class="page-sub">Multi-step, goal-driven sequences built from Nudges — reminders, milestones, and reinforcement journeys.</p>
+      </div>
+      <button class="btn primary" onclick="alert('Builder coming next — this pass covers the list and read-only campaign view.')">+ Create Drip Campaign</button>
+    </div>
+    <div class="filters" id="dripListFilters"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:26%">Campaign Name</th>
+            <th>Goal</th>
+            <th>Entry</th>
+            <th>Steps</th>
+            <th>Control Group</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="dripListBody"></tbody>
+      </table>
+    </div>
+    <p class="card-sub" id="dripListCount" style="margin-top:10px;"></p>
+  </div>
+</div>
+
+<!-- ============ DRIP CAMPAIGNS — VIEW (read-only tree canvas) ============ -->
+<div class="page-view" id="page-drip-view">
+  <div class="page" id="dripViewRoot" style="padding-bottom:60px;"></div>
+</div>
 </div>
 
 <!-- ============ DRAWER ============ -->
@@ -1396,6 +1470,7 @@ const ICONS = {
   sigma:'<path d="M18 5H6l6 7-6 7h12"/>',
   list:'<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/>',
   calc:'<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8"/><path d="M8 11h1M11.5 11h1M15 11h1M8 15h1M11.5 15h1M15 15h1M8 19h1M11.5 19h1M15 19h5v-4"/>',
+  droplet:'<path d="M12 3c3.5 4.5 6 8 6 11a6 6 0 1 1-12 0c0-3 2.5-6.5 6-11z"/>',
 };
 function ic(name){
   return `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;
@@ -1428,7 +1503,7 @@ const NAV = [
     {label:'Batch Creation', page:'jb-list'}, {label:'A/B Experimentation', page:'ab-list'}
   ]},
   {type:'submenu', icon:'message', label:'Communication Hub', children:[
-    {label:'Nudges', page:'nudges-list'}, {label:'Comms. Templates', page:'comms-list'}, {label:'DNC', page:'dnc'}
+    {label:'Nudges', page:'nudges-list'}, {label:'Comms. Templates', page:'comms-list'}, {label:'DNC', page:'dnc'}, {label:'Drip Campaigns', page:'drip-list', tag:'NEW'}
   ]},
   {type:'heading', label:'Operations'},
   {type:'submenu', icon:'idcard', label:'OnboardIQ', children:[
@@ -1496,6 +1571,8 @@ function switchPage(name){
   if(name==='ab-list') renderAbList();
   if(name==='comms-list') renderCommsList();
   if(name==='dnc') renderDnc();
+  if(name==='drip-list') renderDripList();
+  if(name==='drip-view') renderDripView();
 }
 
 function toggleSub(el){
@@ -6910,6 +6987,179 @@ function submitDnc(){
   dncState.tab = s.channel;
   closeModal();
   renderDnc();
+}
+
+/* ---------------- Drip Campaigns ---------------- */
+// Node palette, deliberately bounded (see journeysnudgesemi/CLAUDE.md) —
+// every shape this platform needs (linear+goal, random-split reminder,
+// parallel milestones) renders as a tree, so category drives styling only;
+// there is no free-drag canvas engine here, this is a fixed auto-layout.
+const DC_NODE_META = {
+  ENTRY_SEGMENT:   {cat:'entry', type:'Entry · Segment'},
+  ENTRY_EVENT:     {cat:'entry', type:'Entry · Event Trigger'},
+  ENTRY_SCHEDULED: {cat:'entry', type:'Entry · Scheduled'},
+  SEND:            {cat:'send',  type:'Send'},
+  PAUSE:           {cat:'flow',  type:'Pause'},
+  WAIT_UNTIL:      {cat:'flow',  type:'Wait Until'},
+  SPLIT:           {cat:'split', type:'Conditional Split'},
+  RANDOM_SPLIT:    {cat:'split', type:'Random Split'},
+  GOAL_EXIT:       {cat:'goal',  type:'Goal-Based Exit'},
+  EXIT:            {cat:'exit',  type:'Exit'},
+};
+// Terse node constructor: n(type, label, meta, children, branchLabel)
+function n(type,label,meta,children,branchLabel){
+  return {type,label,meta:meta||'',children:children||[],branchLabel:branchLabel||''};
+}
+function dcCountSends(node){
+  return (node.type==='SEND'?1:0) + node.children.reduce((s,c)=>s+dcCountSends(c),0);
+}
+
+const DRIP_CAMPAIGNS = [
+  { id:'DRIP-001', name:'Card Activation Reminder', goal:'Card Activated', controlPct:10, status:'ACTIVE',
+    root: n('ENTRY_EVENT','Card Issued','Card Events · fires on issuance',[
+      n('SEND','Welcome + Activate CTA','WhatsApp · 11:00 AM · Template: card_activate_welcome',[
+        n('SPLIT','Card Activated?','Goal check, auto-inserted after every Send',[
+          n('GOAL_EXIT','Activated','',[],'Yes'),
+          n('PAUSE','Wait 3 days','',[
+            n('SEND','Reminder 2','SMS · Relative · Template: card_activate_reminder2',[
+              n('SPLIT','Card Activated?','',[
+                n('GOAL_EXIT','Activated','',[],'Yes'),
+                n('PAUSE','Wait 4 days','',[
+                  n('SEND','Final reminder','WhatsApp · Relative · Template: card_activate_final',[
+                    n('SPLIT','Card Activated?','',[
+                      n('GOAL_EXIT','Activated','',[],'Yes'),
+                      n('EXIT','Sequence exhausted','No activation after 3 attempts',[],'No'),
+                    ]),
+                  ]),
+                ],'No'),
+              ]),
+            ]),
+          ],'No'),
+        ]),
+      ]),
+    ])},
+  { id:'DRIP-002', name:'OS to EMI — Reminder Push', goal:'Converted to EMI', controlPct:10, status:'ACTIVE',
+    root: n('ENTRY_SEGMENT','All Eligible Customers','OS > ₹5,000 · Card Events',[
+      n('RANDOM_SPLIT','Channel test','50 / 50 allocation',[
+        n('SEND','OS to EMI Offer','WhatsApp · 11:00 AM · Template: os_emi_offer_wa',[
+          n('SPLIT','Converted to EMI?','',[
+            n('GOAL_EXIT','Converted','',[],'Yes'),
+            n('PAUSE','Wait 2 days','',[
+              n('SEND','Reminder','WhatsApp · Relative · Template: os_emi_reminder_wa',[
+                n('SPLIT','Converted to EMI?','',[
+                  n('GOAL_EXIT','Converted','',[],'Yes'),
+                  n('EXIT','Sequence exhausted','',[],'No'),
+                ]),
+              ]),
+            ],'No'),
+          ]),
+        ],'50% WhatsApp'),
+        n('SEND','OS to EMI Offer','SMS · 11:00 AM · Template: os_emi_offer_sms',[
+          n('SPLIT','Converted to EMI?','',[
+            n('GOAL_EXIT','Converted','',[],'Yes'),
+            n('PAUSE','Wait 2 days','',[
+              n('SEND','Reminder','SMS · Relative · Template: os_emi_reminder_sms',[
+                n('SPLIT','Converted to EMI?','',[
+                  n('GOAL_EXIT','Converted','',[],'Yes'),
+                  n('EXIT','Sequence exhausted','',[],'No'),
+                ]),
+              ]),
+            ],'No'),
+          ]),
+        ],'50% SMS'),
+      ]),
+    ])},
+  { id:'DRIP-003', name:'Spend Milestone Rewards', goal:'None — checkpoints are independent', controlPct:0, status:'DRAFT',
+    root: n('ENTRY_EVENT','Card Activated','Card Events · anchor for every checkpoint below',[
+      n('PAUSE','Wait 30 days','',[ n('SEND','Milestone reward — Tier 1','WhatsApp · Template: milestone_m1',[ n('EXIT','Checkpoint complete','',[]) ]) ],'Month 1'),
+      n('PAUSE','Wait 90 days','',[ n('SEND','Milestone reward — Tier 2','WhatsApp · Template: milestone_m3',[ n('EXIT','Checkpoint complete','',[]) ]) ],'Month 3'),
+      n('PAUSE','Wait 180 days','',[ n('SEND','Milestone reward — Tier 3','WhatsApp · Template: milestone_m6',[ n('EXIT','Checkpoint complete','',[]) ]) ],'Month 6'),
+      n('PAUSE','Wait 365 days','',[ n('SEND','Milestone reward — Tier 4','WhatsApp · Template: milestone_m12',[ n('EXIT','Checkpoint complete','',[]) ]) ],'Month 12'),
+    ])},
+  { id:'DRIP-004', name:'Reward Points Expiry Reminder', goal:'RP Redeemed', controlPct:5, status:'PAUSED',
+    root: n('ENTRY_SCHEDULED','Monthly RP expiry scan','1st of every month · RP expiring within 30 days',[
+      n('SEND','RP expiring soon','WhatsApp · Template: rp_expiry_t30',[
+        n('WAIT_UNTIL','Redeemed?','Wait up to 20 days for a redemption event',[
+          n('GOAL_EXIT','Redeemed','',[],'Yes'),
+          n('SEND','Last chance — RP expiring in 7 days','SMS · Template: rp_expiry_t7',[
+            n('SPLIT','Redeemed?','',[
+              n('GOAL_EXIT','Redeemed','',[],'Yes'),
+              n('EXIT','RP lapsed','',[],'No'),
+            ]),
+          ],'No'),
+        ]),
+      ]),
+    ])},
+];
+const DRIP_STATUS_META = {
+  DRAFT:   {label:'Draft',            badge:'gray'},
+  PENDING_REVIEW: {label:'Pending Approval', badge:'warning'},
+  ACTIVE:  {label:'Active',           badge:'success'},
+  PAUSED:  {label:'Paused',           badge:'info'},
+  COMPLETED:{label:'Completed',       badge:'gray'},
+};
+
+function renderDripList(){
+  document.getElementById('dripListFilters').innerHTML = `
+    <select disabled title="Filtering wires up once the builder ships">
+      <option value="">Filter by status</option>
+      ${Object.entries(DRIP_STATUS_META).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
+    </select>`;
+  document.getElementById('dripListCount').textContent = `${DRIP_CAMPAIGNS.length} campaigns`;
+  document.getElementById('dripListBody').innerHTML = DRIP_CAMPAIGNS.map(c=>{
+    const sm = DRIP_STATUS_META[c.status];
+    const entryMeta = DC_NODE_META[c.root.type];
+    return `
+    <tr onclick="openDripView('${c.id}')" style="cursor:pointer;">
+      <td><b>${c.name}</b></td>
+      <td>${c.goal}</td>
+      <td>${entryMeta.type}</td>
+      <td>${dcCountSends(c.root)}</td>
+      <td>${c.controlPct?c.controlPct+'%':'—'}</td>
+      <td><span class="badge ${sm.badge}">${sm.label}</span></td>
+      <td onclick="event.stopPropagation()">
+        <div class="dropdown-wrap">
+          <div class="dropdown-trigger" onclick="alert('Duplicate / Pause / Archive — wired up once the builder ships.')">⋮</div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+function openDripView(id){ dripViewState.id = id; switchPage('drip-view'); }
+let dripViewState = { id:null };
+
+function dcRenderNode(node){
+  const meta = DC_NODE_META[node.type];
+  return `
+  <div class="dc-subtree">
+    <div class="dc-node-card cat-${meta.cat}">
+      <div class="dc-node-type">${meta.type}</div>
+      <div class="dc-node-label">${node.label}</div>
+      ${node.meta?`<div class="dc-node-meta">${node.meta}</div>`:''}
+    </div>
+    ${node.children.length?`
+    <div class="dc-down-stub"></div>
+    <div class="dc-children">
+      ${node.children.map(c=>`<div class="dc-child">${c.branchLabel?`<div class="dc-branch-label">${c.branchLabel}</div>`:''}${dcRenderNode(c)}</div>`).join('')}
+    </div>`:''}
+  </div>`;
+}
+function renderDripView(){
+  const c = DRIP_CAMPAIGNS.find(x=>x.id===dripViewState.id) || DRIP_CAMPAIGNS[0];
+  const sm = DRIP_STATUS_META[c.status];
+  document.getElementById('dripViewRoot').innerHTML = `
+    <div class="page-header">
+      <div>
+        <button class="btn secondary small" style="margin-bottom:10px;" onclick="switchPage('drip-list')">← Back to Drip Campaigns</button>
+        <h1 class="page-title">${c.name} <span class="badge ${sm.badge}" style="margin-left:8px;vertical-align:middle;">${sm.label}</span></h1>
+        <p class="page-sub">Goal: ${c.goal} · Control Group: ${c.controlPct?c.controlPct+'%':'None'} · ${dcCountSends(c.root)} sends</p>
+      </div>
+    </div>
+    <div class="card" style="padding:0;">
+      <div class="dc-tree-wrap">
+        <div class="dc-tree-root">${dcRenderNode(c.root)}</div>
+      </div>
+    </div>`;
 }
 
 /* ---------------- Init ---------------- */
