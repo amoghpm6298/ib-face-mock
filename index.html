@@ -196,6 +196,7 @@
   .funnel-bar-fill{height:100%;background:var(--blue-cta);border-radius:5px;}
   .funnel-count{width:64px;text-align:right;font-size:13px;font-weight:700;color:var(--neutral-900);flex-shrink:0;}
   .funnel-meta{margin-left:8px;font-size:11.5px;color:var(--gray-500);flex-shrink:0;white-space:nowrap;}
+  .funnel-pct{display:inline-block;min-width:32px;text-align:right;font-weight:600;}
   .funnel-pct{width:44px;text-align:right;font-size:11.5px;color:var(--gray-500);flex-shrink:0;}
 
   /* Drip Campaigns — read-only tree-canvas renderer. A fixed top-down
@@ -996,6 +997,8 @@
         <div class="viewing-as">
           <label>Date range</label>
           <select id="analyticsRange" onchange="onAnalyticsRangeChange()">
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
             <option value="7">Last 7 days</option>
             <option value="30" selected>Last 30 days</option>
             <option value="all">All time</option>
@@ -1788,21 +1791,21 @@ function renderRankedBarList(containerId, rows, labelWidth, sortByVolume, pager)
       <div class="funnel-label" style="width:${labelWidth||120}px;">${r.label}</div>
       <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((r.volume/max)*100)}%;"></div></div>
       <div class="funnel-count">${r.volume.toLocaleString('en-IN')}</div>
-      <div class="funnel-meta">${fmtRateN(r.booked,r.volume)} conv.</div>
+      <div class="funnel-meta"><span class="funnel-pct">${fmtRateN(r.booked,r.volume)}</span> conv.</div>
     </div>`).join('') : '<p class="card-sub">No data for this range.</p>';
 }
 
-// A bare percentage lies about its own confidence — "100%" off 2 resolved
-// cases reads identically to "100%" off 200. Every rate cut on this page
-// (By Program, By MCC, Amount Bucket, Auth-vs-Settled) shows the fraction
-// alongside the percentage so a reader can judge that for themselves, and
-// the fraction is flagged when the denominator is small enough that the
-// rate could swing wildly on one more data point.
+// Rate + its own low-confidence flag — no fraction shown (removed per
+// explicit feedback: showing both the rate and its raw "(n/d)" fraction
+// next to a volume-share % elsewhere on the same row read as "2 percentages"
+// and cluttered every cut on this page). A rate off a small sample is still
+// flagged, just by coloring the % itself amber instead of appending a
+// fraction span.
 function fmtRateN(numerator, denominator){
   if(!denominator) return '—';
   const rate = Math.round((numerator/denominator)*100);
   const lowN = denominator < 5;
-  return `${rate}%<span class="mono" style="font-size:11px;margin-left:5px;color:var(${lowN?'--warning-text':'--gray-400'});">(${numerator}/${denominator})</span>`;
+  return `<span style="color:var(${lowN?'--warning-text':'--neutral-900'});">${rate}%</span>`;
 }
 
 /* ---------------- Mock data ---------------- */
@@ -3438,6 +3441,7 @@ function openDrawer(id){
         <div class="id-chip" onclick="openAccountModal('${c.id}')"><span class="id-key">Account</span>${c.accountId}<span>↗</span></div>
         <div class="id-chip" onclick="openProgramModal('${c.id}')"><span class="id-key">Program</span>${c.programId}<span>↗</span></div>
         <div class="id-chip" onclick="openJourneyModal('${c.id}')"><span class="id-key">Journey</span>${c.campaign}<span>↗</span></div>
+        <div class="id-chip" onclick="openJourneyModal('${c.id}')"><span class="id-key">Batch</span>${c.journeyId}<span>↗</span></div>
       </div>
 
       <div class="drawer-meta-grid">
@@ -3475,12 +3479,13 @@ function openDrawer(id){
         <div class="nudge-row"><span>Clicked</span><b>${c.nudge.clicked}</b></div>
       </div>
 
+      ${(c.failReason || (c.auditLog||[]).length) ? `
       <p class="section-title">Audit Trail</p>
       <div>
-        <div class="audit-item"><b>System</b> — case created from nudge campaign "${c.nudge.name}"</div>
         ${c.failReason ? `<div class="audit-item"><b>System</b> — flagged: ${c.failReason}</div>` : ''}
         ${(c.auditLog||[]).map(a=>`<div class="audit-item"><b>${a.who}</b> — ${a.what} <span style="color:var(--gray-400);">(${a.when})</span></div>`).join('')}
       </div>
+      ` : ''}
     </div>
   `;
 
@@ -3834,6 +3839,19 @@ function renderAnalytics(){
       if(toDate && d>toDate) return false;
       return true;
     });
+  } else if(rangeVal==='today' || rangeVal==='yesterday'){
+    // Calendar-day bound, same "relative to the dataset's own latest
+    // timestamp" convention as every other preset here — not the real
+    // calendar date.
+    const maxDate = maxDatasetDate();
+    const dayStart = new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate());
+    if(rangeVal==='yesterday') dayStart.setDate(dayStart.getDate()-1);
+    const dayEnd = new Date(dayStart.getTime() + 24*3600*1000 - 1);
+    rangeLabel = rangeVal;
+    cases = cases.filter(c=>{
+      const d = caseEntryDate(c);
+      return d && d>=dayStart && d<=dayEnd;
+    });
   } else if(rangeVal!=='all'){
     const maxDate = maxDatasetDate();
     const cutoff = new Date(maxDate.getTime() - (+rangeVal)*24*3600*1000);
@@ -4151,11 +4169,6 @@ function renderAnalytics(){
     const gmv = gBooked.reduce((s,c)=>s+c.amount,0);
     return {label, volume:gc.length, booked:gBooked.length, gmv};
   }).filter(r=>r.volume>0);
-  const renderGroupByTable = (bodyId, rows) => {
-    document.getElementById(bodyId).innerHTML = rows.map(r=>`
-      <tr><td><b>${r.label}</b></td><td>${r.volume}</td><td>${fmtRateN(r.booked,r.volume)}</td><td>${fmtAmount(r.gmv)}</td></tr>
-    `).join('') || '<tr><td colspan="4" class="card-sub">No data for this range.</td></tr>';
-  };
   renderPieChart('creditLimitPie', groupByRows(c=>creditLimitBandFor(c.creditLimit).label, CREDIT_LIMIT_BANDS.map(b=>b.label)), r=>fmtRateN(r.booked,r.volume)+' conv.');
   renderRankedBarList('ageBandBars', groupByRows(c=>c.ageBand, AGE_BANDS), 80, false);
   renderRankedBarList('processingFeeBars', groupByRows(c=>c.processingFeeOffered+'%', PROCESSING_FEE_OPTIONS.map(f=>f+'%')), 50, false);
