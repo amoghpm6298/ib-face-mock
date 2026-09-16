@@ -4788,12 +4788,10 @@ function renderWizard(){
   const steps = wizSteps();
   const cur = steps[wiz.stepIdx];
   // Rail
-  const fbStash = window._nudgeFallbackStash;
   let railHtml = `
-    <div class="wiz-rail-back" onclick="${fbStash?'cancelFallbackCreate()':"switchPage('nudges-list')"}">${ic('external')} ${fbStash?'Discard & back to "'+(fbStash.wiz.draft.name||'untitled nudge')+'"':'Back to Nudges'}</div>
+    <div class="wiz-rail-back" onclick="switchPage('nudges-list')">${ic('external')} Back to Nudges</div>
     <div class="wiz-rail-title">${wiz.isEdit ? 'Edit Nudge' : (wiz.triggerType==='event-based' ? 'New Event-Based Nudge' : 'New Nudge')}</div>
-    <div class="wiz-rail-sub">${wiz.triggerType==='event-based' ? 'Event-Based Nudge' : 'Batch Nudge'}</div>
-    ${fbStash?`<div class="f-hint" style="background:var(--info-bg);border:1px solid var(--blue-cta);border-radius:8px;padding:8px 10px;margin:8px 0;color:var(--info-text);">Building a fallback nudge for ${CHANNEL_LABELS[fbStash.commState.channel]||fbStash.commState.channel}.</div>`:''}`;
+    <div class="wiz-rail-sub">${wiz.triggerType==='event-based' ? 'Event-Based Nudge' : 'Batch Nudge'}</div>`;
   let lastGroup = undefined;
   steps.forEach((s,i)=>{
     if(s.group !== lastGroup && s.group){ railHtml += `<div class="wiz-group-label">${s.group}</div>`; lastGroup = s.group; }
@@ -5096,20 +5094,16 @@ function openEstimateBreakdown(){
 // own dedicated form instead of reusing condRow()/the locked-attribute
 // pattern used by every other category.
 function renderDeliveryStatusTriggerStep(d, catSelect){
+  // For building a "Nudge Delivery Status" nudge from scratch (the normal
+  // Nudges list -> Create -> Event-Based path). The much more common path —
+  // "+ Add Fallback" on a specific channel inside another nudge's own
+  // Communication step — is self-contained inline there (renderFallbackSection)
+  // and never reaches this step at all, since it inherits issuer/programs/
+  // user base from that nudge directly instead of building a full nudge here.
   const sourceNudge = NUDGES.find(n=>n.id===d.fallbackSourceNudgeId);
   const channelOptions = sourceNudge ? (sourceNudge.channels||[]) : [];
   d.fallbackStatuses = d.fallbackStatuses || [];
-  // The "+ Add Fallback" shortcut (opened from a nudge's own channel
-  // Configure drawer) locks the exact (nudge, trigger block, channel) it
-  // was opened from — shown read-only here rather than re-offered as
-  // editable dropdowns, since re-picking a different nudge/channel would
-  // silently orphan the block-level precision that shortcut exists to
-  // guarantee in the first place.
-  const locked = !!d.fallbackLockedContext;
-  const watchingLabel = `${sourceNudge?sourceNudge.name:(d.fallbackSourceNudgeName||'—')}${d.fallbackSourceBlockName?' · Trigger: '+d.fallbackSourceBlockName:''}${d.fallbackSourceChannel?' · '+(CHANNEL_LABELS[d.fallbackSourceChannel]||d.fallbackSourceChannel):''}`;
-  const nudgePicker = locked
-    ? `<div class="f-group"><label class="f-label">Watching</label><input class="f-input" type="text" value="${watchingLabel}" disabled style="background:var(--gray-100);color:var(--gray-500);"></div>`
-    : `<div class="f-group f-row2">
+  const nudgePicker = `<div class="f-group f-row2">
         <div><label class="f-label">Source Nudge</label><select class="f-input" onchange="fieldUpdate('fallbackSourceNudgeId',this.value);fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
           <option value="">Select nudge</option>
           ${NUDGES.filter(n=>n.channels&&n.channels.length).map(n=>`<option value="${n.id}" ${d.fallbackSourceNudgeId===n.id?'selected':''}>${n.name}</option>`).join('')}
@@ -5588,7 +5582,7 @@ let nudgeCommModalState = null;
 function openNudgeCommConfigModal(blockIdx, channel){
   const existing = wiz.draft.commBlocks[blockIdx].configured[channel] || {};
   nudgeCommModalState = { blockIdx, channel, account: existing.account||'', templateId: existing.templateId||'', tracking: existing.tracking||false, showPreview:false, userAttribution:existing.userAttribution||false, utmParams: existing.utmParams || [],
-    fallback: existing.fallback ? {...existing.fallback} : {nudgeId:'', statuses:[]} };
+    fallback: existing.fallback ? {...existing.fallback, creatingNew:false} : {nudgeId:'', statuses:[], creatingNew:false, name:'', channel:'', account:'', templateId:'', delayType:'Immediate', delay:'', delayUnit:'minutes'} };
   renderNudgeCommConfigModal();
 }
 function renderNudgeCommConfigModal(){
@@ -5636,18 +5630,53 @@ function renderNudgeCommConfigModal(){
 function renderFallbackSection(s){
   const fb = s.fallback;
   const candidates = NUDGES.filter(n=>n.triggerType==='event-based' && n.eventCategory==='Nudge Delivery Status');
-  const selected = NUDGES.find(n=>n.id===fb.nudgeId);
   const statusOptions = deliveryStatusOptionsFor(s.channel);
+  // Everything about Y that's already implied by X — issuer, program,
+  // user base — is never re-asked here (Y's recipients are definitionally
+  // "whoever got X and hit this failure"). Only what genuinely differs
+  // per fallback gets a field: which channel Y sends on instead (has to
+  // differ from the channel that just failed), account, template, timing.
+  const inlineForm = fb.creatingNew ? (()=>{
+    const accounts = fb.channel ? [...new Set(COMMS_TEMPLATES.filter(t=>t.channelType===fb.channel).map(t=>t.accountName))] : [];
+    const templates = fb.channel ? COMMS_TEMPLATES.filter(t=>t.channelType===fb.channel && (!fb.account||t.accountName===fb.account)) : [];
+    return `
+      <div style="margin-top:10px;padding:12px;border:1px solid var(--gray-200);border-radius:8px;background:var(--gray-25);">
+        <div class="f-group"><label class="f-label">Fallback Nudge Name</label><input class="f-input" type="text" placeholder="${CHANNEL_LABELS[fb.channel]||'Channel'} fallback" value="${fb.name}" oninput="nudgeCommModalState.fallback.name=this.value"></div>
+        <div class="f-row2">
+          <div class="f-group"><label class="f-label">Send On</label><select class="f-input" onchange="nudgeCommModalState.fallback.channel=this.value;nudgeCommModalState.fallback.account='';nudgeCommModalState.fallback.templateId='';renderNudgeCommConfigModal()">
+            <option value="">Select channel</option>${COMM_CHANNELS.filter(c=>c!==s.channel).map(c=>`<option value="${c}" ${fb.channel===c?'selected':''}>${CHANNEL_LABELS[c]}</option>`).join('')}
+          </select></div>
+          <div class="f-group"><label class="f-label">Timing</label><select class="f-input" onchange="nudgeCommModalState.fallback.delayType=this.value;renderNudgeCommConfigModal()">
+            <option ${fb.delayType==='Immediate'?'selected':''}>Immediate</option><option ${fb.delayType==='Delayed'?'selected':''}>Delayed</option>
+          </select></div>
+        </div>
+        ${fb.delayType==='Delayed' ? `<div class="f-group"><label class="f-label">Send after</label><div style="display:flex;gap:8px;">
+          <input class="f-input" type="number" min="0" style="max-width:100px;" value="${fb.delay}" oninput="nudgeCommModalState.fallback.delay=this.value">
+          <select class="f-input" style="max-width:140px;" onchange="nudgeCommModalState.fallback.delayUnit=this.value">
+            <option ${fb.delayUnit==='minutes'?'selected':''}>minutes</option><option ${fb.delayUnit==='hours'?'selected':''}>hours</option><option ${fb.delayUnit==='days'?'selected':''}>days</option>
+          </select></div></div>` : ''}
+        <div class="f-group"><label class="f-label">Account</label><select class="f-input" ${!fb.channel?'disabled':''} onchange="nudgeCommModalState.fallback.account=this.value;nudgeCommModalState.fallback.templateId='';renderNudgeCommConfigModal()">
+          <option value="">${fb.channel?'Select account':'Pick a channel first'}</option>${accounts.map(a=>`<option ${fb.account===a?'selected':''}>${a}</option>`).join('')}
+        </select></div>
+        <div class="f-group"><label class="f-label">Template</label><select class="f-input" ${!fb.account?'disabled':''} onchange="nudgeCommModalState.fallback.templateId=this.value;renderNudgeCommConfigModal()">
+          <option value="">${fb.account?'Select template':'Pick an account first'}</option>${templates.map(t=>`<option value="${t.id}" ${fb.templateId===t.id?'selected':''}>${t.name}</option>`).join('')}
+        </select>
+        ${fb.channel && fb.account && !templates.length ? `<div class="f-hint">No ${CHANNEL_LABELS[fb.channel]} templates exist yet for this account — create one in Comms. Templates first.</div>` : ''}
+        </div>
+      </div>`;
+  })() : '';
+  const showStatuses = fb.nudgeId || (fb.creatingNew && fb.channel && fb.account && fb.templateId);
   return `
     <div class="f-group" style="margin-top:16px;border-top:1px solid var(--gray-200);padding-top:16px;">
       <label class="f-label">Fallback Nudge <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
-      <p class="f-hint" style="margin-top:-2px;">Fire a separate nudge when ${CHANNEL_LABELS[s.channel]} delivery for this trigger comes back with one of the statuses below.</p>
-      <select class="f-input" onchange="if(this.value==='__create_new__'){openNudgeCreateFallback();}else{nudgeCommModalState.fallback.nudgeId=this.value;renderNudgeCommConfigModal();}">
+      <p class="f-hint" style="margin-top:-2px;">Fire a separate nudge when ${CHANNEL_LABELS[s.channel]} delivery for this trigger comes back with one of the statuses below — same issuer, program, and user base as this nudge, no need to re-pick those.</p>
+      <select class="f-input" onchange="fallbackModeChange(this.value)">
         <option value="">No fallback</option>
-        ${candidates.map(n=>`<option value="${n.id}" ${fb.nudgeId===n.id?'selected':''}>${n.name}</option>`).join('')}
-        <option value="__create_new__">+ Create new fallback nudge…</option>
+        ${candidates.map(n=>`<option value="${n.id}" ${!fb.creatingNew && fb.nudgeId===n.id?'selected':''}>${n.name}</option>`).join('')}
+        <option value="__create_new__" ${fb.creatingNew?'selected':''}>+ Create new fallback nudge…</option>
       </select>
-      ${selected ? `
+      ${inlineForm}
+      ${showStatuses ? `
         <div style="margin-top:10px;">
           <label class="f-label">Trigger on any of</label>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
@@ -5656,42 +5685,16 @@ function renderFallbackSection(s){
         </div>` : ''}
     </div>`;
 }
+function fallbackModeChange(val){
+  const fb = nudgeCommModalState.fallback;
+  if(val==='__create_new__'){ fb.creatingNew = true; fb.nudgeId = ''; }
+  else { fb.creatingNew = false; fb.nudgeId = val; }
+  renderNudgeCommConfigModal();
+}
 function fallbackStatusToggle(val){
   const arr = nudgeCommModalState.fallback.statuses;
   const i = arr.indexOf(val);
   if(i>-1) arr.splice(i,1); else arr.push(val);
-  renderNudgeCommConfigModal();
-}
-// Jumping into a full event-based nudge wizard to author Y would normally
-// discard whatever's in the global `wiz` (X's in-progress draft) — stash it
-// (plus the exact Configure-drawer state, since Account/Template might not
-// be saved into commBlocks yet) and restore both once Y is either
-// submitted or abandoned, rather than losing X's edits.
-function openNudgeCreateFallback(){
-  const s = nudgeCommModalState;
-  const blockName = wiz.draft.commBlocks[s.blockIdx].name || `Trigger ${s.blockIdx+1}`;
-  const sourceNudgeId = wiz.draft.id;
-  const sourceNudgeName = wiz.draft.name;
-  window._nudgeFallbackStash = { wiz, commState: {...s} };
-  wiz = { triggerType:'event-based', stepIdx:0, isEdit:false,
-    draft:{ id:null, name:'', description:'', nudgeType:'CROSS_SELL_UP_SELL', scopeType:'Issuer', issuerScope:false, issuer:'', programs:[], isMakerCheckerEnabled:false,
-      startDate:'', endDate:'', journey:'', batch:'', isMilestone:false, offerType:'', offer:'',
-      variant:null, location:'topShelf', displayOrder:null, dismissible:true, heading:'Activate your Card', subtext:'To start shopping and collect rewards', channels:[],
-      eventCategory:'Nudge Delivery Status', eventType:'', eventJourney:'', delayType:'Immediate', delay:'', delayUnit:'minutes', cancellationEnabled:false,
-      cooldown:'', cooldownUnit:'hours', quietHours:'Queue to next slot', displayEnabled:false, conditions:[{entity:'',attribute:'',operator:'',value:''}],
-      userBaseMode:'All Customers', smartTag:'',
-      fallbackSourceNudgeId: sourceNudgeId, fallbackSourceNudgeName: sourceNudgeName,
-      fallbackSourceBlockName: blockName, fallbackSourceChannel: s.channel, fallbackLockedContext:true, fallbackStatuses:[...s.fallback.statuses] } };
-  switchPage('nudges-create');
-  renderWizard();
-}
-function cancelFallbackCreate(){
-  const stash = window._nudgeFallbackStash;
-  window._nudgeFallbackStash = null;
-  wiz = stash.wiz;
-  nudgeCommModalState = stash.commState;
-  switchPage('nudges-create');
-  renderWizard();
   renderNudgeCommConfigModal();
 }
 function renderUtmTrackingTable(s){
@@ -5736,7 +5739,37 @@ function selectedTemplateLinkFor(s){
 function submitNudgeCommConfig(){
   const s = nudgeCommModalState;
   const template = COMMS_TEMPLATES.find(t=>t.id===s.templateId);
-  wiz.draft.commBlocks[s.blockIdx].configured[s.channel] = { account: s.account, templateId: s.templateId, templateName: template?.name||'', tracking: s.tracking, userAttribution:s.userAttribution, utmParams:s.utmParams, fallback: s.fallback };
+  let fallbackToSave = { nudgeId: s.fallback.nudgeId, statuses: [...s.fallback.statuses] };
+  // Y is created here, not via a separate wizard — everything that's
+  // already implied by X (issuer, programs, user base) is inherited
+  // straight off wiz.draft rather than re-collected, matching every other
+  // event-based nudge's shape (commBlocks[0].configured, delayType/delay).
+  if(s.fallback.creatingNew && s.fallback.channel && s.fallback.account && s.fallback.templateId){
+    const fbTemplate = COMMS_TEMPLATES.find(t=>t.id===s.fallback.templateId);
+    const blockName = wiz.draft.commBlocks[s.blockIdx].name || `Trigger ${s.blockIdx+1}`;
+    const y = {
+      id: 'EV-'+(41000+Math.floor(Math.random()*9000)),
+      triggerType:'event-based', nudgeType:'CROSS_SELL_UP_SELL',
+      name: s.fallback.name || `${CHANNEL_LABELS[s.fallback.channel]} fallback for ${blockName}`,
+      description: `Auto-fallback nudge — fires when ${CHANNEL_LABELS[s.channel]} delivery fails for "${wiz.draft.name || 'this nudge'}" (${blockName}).`,
+      status:'ACTIVE', issuer: wiz.draft.issuer||'', programs: wiz.draft.programs?[...wiz.draft.programs]:[],
+      scopeType: wiz.draft.scopeType||'Issuer',
+      scopeName: wiz.draft.scopeType==='Issuer' ? `${wiz.draft.issuer} (All Programs)` : `${(wiz.draft.issuer||'').split(' ')[0]} — ${(wiz.draft.programs||[]).join(', ')}`,
+      labels:['Event-Based'], channels:[s.fallback.channel],
+      eventCategory:'Nudge Delivery Status', eventType:'',
+      fallbackSourceNudgeId: wiz.draft.id, fallbackSourceNudgeName: wiz.draft.name,
+      fallbackSourceBlockName: blockName, fallbackSourceChannel: s.channel, fallbackStatuses:[...s.fallback.statuses],
+      delayType: s.fallback.delayType, delay: s.fallback.delay, delayUnit: s.fallback.delayUnit,
+      userBaseMode: wiz.draft.userBaseMode||'All Customers', smartTag: wiz.draft.smartTag||'',
+      commBlocks:[{name:'', sendDate:'', repeatable:'without repeat', everyN:'7',
+        configured:{ [s.fallback.channel]: { account:s.fallback.account, templateId:s.fallback.templateId, templateName:fbTemplate?.name||'', tracking:false, userAttribution:false, utmParams:[] } }}],
+      createdBy:'Ananya Iyer', createdOn:'Today', startDate:'Today', endDate:'Ongoing',
+    };
+    NUDGES.unshift(y);
+    fallbackToSave = { nudgeId: y.id, statuses:[...s.fallback.statuses] };
+    showToast(`"${y.name}" created and attached as the fallback nudge.`);
+  }
+  wiz.draft.commBlocks[s.blockIdx].configured[s.channel] = { account: s.account, templateId: s.templateId, templateName: template?.name||'', tracking: s.tracking, userAttribution:s.userAttribution, utmParams:s.utmParams, fallback: fallbackToSave };
   chipToggleChannel(s.channel);
   closeSideDrawer();
   renderWizStep(wizSteps()[wiz.stepIdx].id);
@@ -5892,21 +5925,6 @@ function submitNudge(){
     if(!d.startDate) d.startDate = 'Today';
     if(!d.endDate) d.endDate = wiz.triggerType==='event-based' ? 'Ongoing' : '—';
     NUDGES.unshift(d);
-  }
-  // Built via the "+ Create new fallback nudge" shortcut — restore X's
-  // stashed draft and re-open its Configure drawer with the new nudge
-  // wired into fallback.nudgeId, rather than stranding the user on Y's
-  // view page with no way back to X's unsaved edit.
-  if(window._nudgeFallbackStash && d.eventCategory==='Nudge Delivery Status'){
-    const stash = window._nudgeFallbackStash;
-    window._nudgeFallbackStash = null;
-    wiz = stash.wiz;
-    nudgeCommModalState = {...stash.commState, fallback:{ nudgeId:d.id, statuses:d.fallbackStatuses||[] }};
-    switchPage('nudges-create');
-    renderWizard();
-    renderNudgeCommConfigModal();
-    showToast(`"${d.name}" created — hit Save below to attach it as the fallback.`);
-    return;
   }
   switchPage('nudges-list');
   openNudgeView(d.id);
