@@ -206,13 +206,28 @@
      each child gets a top border spanning half its width (extended to
      full width for a middle child, no width at start/end), so the
      connector matches however wide a subtree naturally lays out. */
-  .dc-tree-wrap{overflow-x:auto;padding:24px 12px 8px;}
+  .dc-tree-wrap{overflow-x:auto;padding:24px 12px 8px;position:relative;}
+  .dc-zoom-controls{
+    position:sticky;top:10px;left:10px;display:inline-flex;gap:4px;align-items:center;z-index:5;
+    background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:4px;box-shadow:var(--shadow-sm);margin-bottom:10px;
+  }
+  .dc-zoom-btn{
+    width:24px;height:24px;border-radius:5px;border:none;background:var(--gray-50);color:var(--neutral-800);
+    font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .dc-zoom-btn:hover{background:var(--info-bg);color:var(--blue-cta);}
+  .dc-zoom-pct{font-size:11px;color:var(--gray-500);width:36px;text-align:center;}
   .dc-tree-root{display:flex;justify-content:center;min-width:max-content;}
   .dc-subtree{display:flex;flex-direction:column;align-items:center;}
   .dc-node-card{
     width:186px;border-radius:9px;border:1.5px solid var(--gray-200);background:#fff;
     padding:9px 11px;box-shadow:0 1px 2px rgba(0,0,0,.04);position:relative;
   }
+  /* Only the builder's cards are actually clickable-to-edit — the
+     read-only campaign view reuses this same card class, so the hover
+     affordance is scoped to .editable specifically, not applied
+     globally, to avoid implying a read-only card can be clicked. */
+  .dc-node-card.editable:hover{border-color:var(--blue-cta);box-shadow:0 2px 6px rgba(10,102,239,.12);}
   .dc-node-type{font-size:9.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:3px;}
   .dc-node-label{font-size:12.5px;font-weight:600;color:var(--neutral-900);line-height:1.3;}
   .dc-node-meta{font-size:11px;color:var(--gray-500);margin-top:3px;line-height:1.35;}
@@ -7215,7 +7230,20 @@ function renderDripList(){
   }).join('');
 }
 function openDripView(id){ dripViewState.id = id; switchPage('drip-view'); }
-let dripViewState = { id:null };
+let dripViewState = { id:null, zoom:1 };
+// Shared by both the builder canvas and the read-only campaign view —
+// a moderately-branching campaign (4-5 sends, 3 levels deep) already
+// overflows the viewport significantly with no way to see the whole
+// tree at once, just horizontal scroll. Zoom out is a real fix for
+// reviewing your own finished work, not just a nice-to-have.
+function dcZoomControlsHtml(currentZoom, zoomVarExpr, rerenderFn){
+  return `<div class="dc-zoom-controls">
+    <button class="dc-zoom-btn" onclick="${zoomVarExpr}=Math.max(0.4,+(${zoomVarExpr}-0.1).toFixed(2));${rerenderFn}()" title="Zoom out">−</button>
+    <span class="dc-zoom-pct">${Math.round(currentZoom*100)}%</span>
+    <button class="dc-zoom-btn" onclick="${zoomVarExpr}=Math.min(1.2,+(${zoomVarExpr}+0.1).toFixed(2));${rerenderFn}()" title="Zoom in">+</button>
+    <button class="dc-zoom-btn" style="width:auto;padding:0 8px;font-size:10.5px;" onclick="${zoomVarExpr}=1;${rerenderFn}()" title="Reset zoom">Reset</button>
+  </div>`;
+}
 
 function dcRenderNode(node){
   const meta = DC_NODE_META[node.type];
@@ -7256,7 +7284,8 @@ function renderDripView(){
     </div>
     <div class="card" style="padding:0;">
       <div class="dc-tree-wrap">
-        <div class="dc-tree-root">${c.root?dcRenderNode(c.root):'<div class="placeholder">No steps yet — still a draft.</div>'}</div>
+        ${c.root?dcZoomControlsHtml(dripViewState.zoom, 'dripViewState.zoom', 'renderDripView'):''}
+        <div class="dc-tree-root" style="transform:scale(${dripViewState.zoom});transform-origin:top center;">${c.root?dcRenderNode(c.root):'<div class="placeholder">No steps yet — still a draft.</div>'}</div>
       </div>
     </div>`;
 }
@@ -7282,7 +7311,7 @@ function dcEmptyGoalCheck(question){
 }
 function openDripCreate(){
   dripWiz = { id:null, isEdit:false, isDraftContinuation:false, versionOf:null, name:'', goal:null, controlPct:10,
-    issuer:'', programs:[], startDate:'', endDate:'', entryEventCategory:null, step:'setup', root:null, addingAt:null, addingType:null, pendingConfig:{} };
+    issuer:'', programs:[], startDate:'', endDate:'', entryEventCategory:null, step:'setup', root:null, addingAt:null, addingType:null, editingPath:null, pendingConfig:{} };
   switchPage('drip-create');
 }
 // Continuing a not-yet-live Draft — edited in place, no versioning. A
@@ -7294,7 +7323,7 @@ function openDripEditDraft(id){
   dripWiz = { id:c.id, isEdit:false, isDraftContinuation:true, versionOf:null, name:c.name, goal:c.goal?{...c.goal}:null,
     controlPct:c.controlPct, issuer:c.issuer||'', programs:c.programs?[...c.programs]:[], startDate:c.startDate||'', endDate:c.endDate||'',
     entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null, step:'build',
-    root: c.root?JSON.parse(JSON.stringify(c.root)):null, addingAt:null, addingType:null, pendingConfig:{} };
+    root: c.root?JSON.parse(JSON.stringify(c.root)):null, addingAt:null, addingType:null, editingPath:null, pendingConfig:{} };
   switchPage('drip-create');
 }
 function dcNextId(){ return 'DRIP-'+String(Math.max(...DRIP_CAMPAIGNS.map(c=>parseInt(c.id.split('-')[1])))+1).padStart(3,'0'); }
@@ -7352,7 +7381,7 @@ function openDripEdit(id){
   dripWiz = { id:null, isEdit:true, isDraftContinuation:false, versionOf:c.id, name:c.name, goal:c.goal?{...c.goal}:null,
     controlPct:c.controlPct, issuer:c.issuer||'', programs:c.programs?[...c.programs]:[], startDate:'', endDate:'',
     entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null, step:'build',
-    root: JSON.parse(JSON.stringify(c.root)), addingAt:null, addingType:null, pendingConfig:{} };
+    root: JSON.parse(JSON.stringify(c.root)), addingAt:null, addingType:null, editingPath:null, pendingConfig:{} };
   switchPage('drip-create');
 }
 // Path = array of child indices from root; null path means "root itself".
@@ -7500,21 +7529,23 @@ function dcAddFormValid(t){
   return true;
 }
 function dcRenderAddDrawer(){
+  const isEditing = dripWiz.editingPath!==null;
   const isEntry = dripWiz.root===null;
   const types = isEntry ? DC_ENTRY_TYPES : DC_STEP_TYPES;
   const t = dripWiz.addingType;
+  const cancelFn = isEditing ? 'dcCancelEdit' : 'dcCancelAdd';
   openSideDrawer(`
     <div class="sd-head">
-      <div class="sd-title">${isEntry?'Add Entry':'Add Next Step'}</div>
-      <button class="drawer-close" onclick="dcCancelAdd()">×</button>
+      <div class="sd-title">${isEditing?'Edit Step':(isEntry?'Add Entry':'Add Next Step')}</div>
+      <button class="drawer-close" onclick="${cancelFn}()">×</button>
     </div>
     <div class="sd-body">
-      ${dcTypePickerHtml(types)}
+      ${isEditing?'':dcTypePickerHtml(types)}
       ${t?dcDrawerFormFor(t):''}
     </div>
     <div class="sd-foot">
-      <button class="btn secondary" onclick="dcCancelAdd()">Cancel</button>
-      <button class="btn primary" ${!(t&&dcAddFormValid(t))?'disabled style="opacity:.5;"':''} onclick="dcConfirmAddNode()">${isEntry?'Add Entry':'Add Step'}</button>
+      <button class="btn secondary" onclick="${cancelFn}()">Cancel</button>
+      <button class="btn primary" ${!(t&&dcAddFormValid(t))?'disabled style="opacity:.5;"':''} onclick="${isEditing?'dcConfirmEditNode':'dcConfirmAddNode'}()">${isEditing?'Save Changes':(isEntry?'Add Entry':'Add Step')}</button>
     </div>`, 620);
 }
 // Short readable summary of a condition array for a node's meta line —
@@ -7601,6 +7632,12 @@ function dcConfirmAddNode(){
   else if(t==='GOAL_EXIT') node = n('GOAL_EXIT', p.reason, '');
   else if(t==='EXIT') node = n('EXIT', p.reason, '');
 
+  // Stored so a later edit can round-trip cleanly from real structured
+  // fields instead of trying to reverse-parse a display string like
+  // "WhatsApp · IBL-Karix-Txns · 11:00 · Template: ..." back into
+  // channel/account/templateId, which would be fragile and lossy.
+  node._config = JSON.parse(JSON.stringify(p));
+
   if(dripWiz.root===null){ dripWiz.root = node; }
   else {
     const target = dcGetAt(dripWiz.addingAt);
@@ -7618,6 +7655,66 @@ function dcConfirmAddNode(){
     }
   }
   dripWiz.addingAt = null; dripWiz.addingType = null;
+  closeSideDrawer();
+  renderDripBuilder();
+}
+// Recomputes only label+meta for an existing node's new config — never
+// touches children, unlike dcConfirmAddNode's per-type construction
+// (which also builds auto-children for brand new nodes). Editing must
+// never regenerate a subtree; whatever's already built under a node
+// stays exactly as it was.
+function dcRecomputeLabelMeta(type, p){
+  if(type==='ENTRY_SEGMENT'){
+    const condSummary = dcCondSummary(p.conditions);
+    return { label:p.cohortDesc, meta: condSummary ? `${p.entity} · ${condSummary}` : `${p.entity} · no conditions — static snapshot` };
+  }
+  if(type==='ENTRY_EVENT'){
+    dripWiz.entryEventCategory = p.eventCategory;
+    const condSummary = dcCondSummary(p.conditions);
+    return { label:p.eventType||'Event Trigger', meta: condSummary ? `${p.eventCategory} · ${condSummary}` : p.eventCategory };
+  }
+  if(type==='ENTRY_SCHEDULED') return { label:'Scheduled entry', meta:dcRecurrenceLabel(p) };
+  if(type==='SEND'){
+    const tmpl = COMMS_TEMPLATES.find(x=>x.id===p.templateId);
+    const timingLabel = p.timing==='Absolute' ? p.absTime : `${p.relativeDuration} ${p.relativeUnit} after ${p.relativeAnchor}`;
+    return { label:p.name, meta:`${CHANNEL_CONFIG_LABELS[p.channel]} · ${p.account} · ${timingLabel}${tmpl?' · Template: '+tmpl.name:''}` };
+  }
+  if(type==='CHANNEL_FAILOVER') return { label:`${CHANNEL_CONFIG_LABELS[p.primaryChannel]} → ${CHANNEL_CONFIG_LABELS[p.fallbackChannel]}`, meta:'Retries on fallback if primary delivery fails' };
+  if(type==='PAUSE') return { label:`Wait ${p.duration} ${p.unit}`, meta:'' };
+  if(type==='WAIT_UNTIL'){
+    const condSummary = dcCondSummary(p.conditions);
+    return { label:p.eventType||'Wait Until', meta:`Timeout after ${p.duration} ${p.unit} · ${p.eventCategory}${condSummary?' · '+condSummary:''}` };
+  }
+  if(type==='SPLIT'){
+    const goalQ = (dcGoalLabel(dripWiz.goal)||'Goal')+'?';
+    const question = p.basis==='Goal reached' ? goalQ : (p.customSource==='Previous step outcome' ? `Previous step: ${p.outcome}?` : (dcCondSummary(p.customConditions)||'Custom condition')+'?');
+    return { label:question, meta:p.basis==='Goal reached'?'Goal check':'Custom condition split' };
+  }
+  if(type==='RANDOM_SPLIT') return { label:p.name, meta:p.branches.map(b=>`${b.label} ${b.pct}%`).join(' / ')+' allocation' };
+  if(type==='GOAL_EXIT'||type==='EXIT') return { label:p.reason, meta:'' };
+  return { label:'', meta:'' };
+}
+function dcOpenEditNode(path){
+  const node = dcGetAt(path);
+  if(!node || node.type==='EMPTY') return;
+  dripWiz.editingPath = path;
+  dripWiz.addingType = node.type;
+  dripWiz.pendingConfig = node._config ? JSON.parse(JSON.stringify(node._config)) : {};
+  dcRenderAddDrawer();
+}
+function dcCancelEdit(){ dripWiz.editingPath = null; dripWiz.addingType = null; closeSideDrawer(); }
+function dcConfirmEditNode(){
+  const path = dripWiz.editingPath, t = dripWiz.addingType, p = dripWiz.pendingConfig;
+  const node = dcGetAt(path);
+  const {label, meta} = dcRecomputeLabelMeta(t, p);
+  node.label = label; node.meta = meta; node._config = JSON.parse(JSON.stringify(p));
+  // Random Split's branches are real tree children (whatever's been
+  // built under each arm must survive) — only relabel in place, and
+  // only when the branch count didn't change during the edit.
+  if(t==='RANDOM_SPLIT' && node.children.length===p.branches.length){
+    p.branches.forEach((b,i)=>{ node.children[i].branchLabel = `${b.label} (${b.pct}%)`; });
+  }
+  dripWiz.editingPath = null; dripWiz.addingType = null;
   closeSideDrawer();
   renderDripBuilder();
 }
@@ -7651,7 +7748,7 @@ function dcRenderNodeEditable(node, path){
   const isSelected = dripWiz.addingAt && JSON.stringify(dripWiz.addingAt)===JSON.stringify(path);
   return `
   <div class="dc-subtree">
-    <div class="dc-node-card cat-${meta.cat} ${isSelected?'selected-target':''}">
+    <div class="dc-node-card editable cat-${meta.cat} ${isSelected?'selected-target':''}" onclick="dcOpenEditNode(${JSON.stringify(path)})" title="Click to edit this step" style="cursor:pointer;">
       ${path.length>0?`<div class="dc-node-remove" onclick="event.stopPropagation();dcRemoveNode(${JSON.stringify(path)})" title="Remove">✕</div>`:''}
       <div class="dc-node-type">${meta.type}</div>
       <div class="dc-node-label">${node.label}</div>
@@ -7738,7 +7835,8 @@ function dcDrawerFormFor(type){
       <select class="f-input" onchange="dcConfigField('templateId',this.value)">
         <option value="">Select template</option>${templates.map(x=>`<option value="${x.id}" ${p.templateId===x.id?'selected':''}>${x.name}</option>`).join('')}
       </select>
-      ${!templates.length?`<div class="f-hint">No ${CHANNEL_CONFIG_LABELS[p.channel]} templates exist yet${p.account?' for this account':''} — create one in Comms. Templates first.</div>`:''}
+      ${!templates.length?`<div class="f-hint">No ${CHANNEL_CONFIG_LABELS[p.channel]} templates exist yet${p.account?' for this account':''}.
+        <a href="#" onclick="event.preventDefault();dcGoCreateTemplate('${p.channel}')">Save this campaign as a draft and create one in Comms. Templates →</a></div>`:''}
     </div>
     <p class="f-hint">A goal-check step is auto-inserted right after this Send — same "define once, check everywhere" pattern used across this campaign.</p>`;
   }
@@ -7932,7 +8030,8 @@ function renderDripBuildStep(){
   document.getElementById('dcbRail').innerHTML = railHtml;
   document.getElementById('dcbCanvas').innerHTML = dripWiz.root===null
     ? `<div class="dc-add-entry-placeholder" onclick="dcSelectAddAt([])">+ Add Entry</div>`
-    : `<div class="dc-tree-root" style="justify-content:flex-start;padding-left:24px;">${dcRenderNodeEditable(dripWiz.root, [])}</div>`;
+    : `${dcZoomControlsHtml(dripWiz._zoom||1, 'dripWiz._zoom', 'renderDripBuilder')}
+       <div class="dc-tree-root" style="justify-content:flex-start;padding-left:24px;transform:scale(${dripWiz._zoom||1});transform-origin:top left;">${dcRenderNodeEditable(dripWiz.root, [])}</div>`;
 }
 // A running outline of every Send in the tree, in order — genuinely
 // useful (a quick read of what this campaign sends without visually
@@ -7998,6 +8097,28 @@ function saveDripCampaign(mode){
     switchPage('drip-list');
     showToast(mode==='submit' ? `"${dripWiz.name}" saved and sent for approval.` : `"${dripWiz.name}" saved as a draft.`);
   }
+}
+// Gap #5 from the stress test: an empty template dropdown was a dead end
+// with no path forward except abandoning the build. This saves the
+// in-progress campaign as a draft (same mechanics as saveDripCampaign's
+// draft branch, duplicated rather than reused since it needs to navigate
+// to Comms. Templates instead of drip-list and show one combined toast,
+// not two) and sends the user to go create the missing template — they
+// resume via the Drip Campaigns list, same as any other draft.
+function dcGoCreateTemplate(channel){
+  if(!dripWiz.name){ showToast('Name your campaign first (top of Setup), then this can save as a draft before you leave.','error'); return; }
+  const payload = { name:dripWiz.name, goal:dripWiz.goal, controlPct:Number(dripWiz.controlPct),
+    issuer:dripWiz.issuer||'', programs:dripWiz.programs?[...dripWiz.programs]:[],
+    startDate:dripWiz.startDate||'', endDate:dripWiz.endDate||'', status:'DRAFT', root:dripWiz.root };
+  if(dripWiz.isDraftContinuation){
+    Object.assign(DRIP_CAMPAIGNS.find(x=>x.id===dripWiz.id), payload);
+  } else if(dripWiz.isEdit){
+    DRIP_CAMPAIGNS.push({ id:dcNextId(), versionOf:dripWiz.versionOf, ...payload });
+  } else {
+    DRIP_CAMPAIGNS.push({ id:dcNextId(), ...payload });
+  }
+  switchPage('comms-list');
+  showToast(`"${payload.name}" saved as a draft — create the ${CHANNEL_CONFIG_LABELS[channel]} template here, then reopen it from Drip Campaigns to continue.`);
 }
 function dripCampaignAction(id, action){
   const c = DRIP_CAMPAIGNS.find(x=>x.id===id);
