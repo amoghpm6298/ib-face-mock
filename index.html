@@ -897,7 +897,6 @@
               <th>Product</th>
               <th>Failure Reason</th>
               <th>Failed At Stage</th>
-              <th>Retries</th>
               <th>Since Failure</th>
               <th>Reviewed</th>
             </tr>
@@ -2248,7 +2247,17 @@ function generateCases(count){
   let multiSeed = 0;
   for(let i=0;i<count;i++){
     const bank = i%2===0 ? 'IBL' : 'YES';
-    const type = i%9===0 ? 'Multi' : (i%4===0 ? 'Outstanding' : 'Single');
+    // Outstanding gated on i%5, not i%4 — 4 is a multiple of bank's own
+    // modulus (2), so i%4===0 always implied i%2===0, meaning Outstanding
+    // could structurally only ever land on IBL. Yes Bank Outstanding was
+    // never actually rare in this dataset, it was mathematically
+    // impossible — 0 generated cases, the entire Yes Bank OS-to-EMI story
+    // running on a single hand-authored CASES entry. Same collision class
+    // as the Multi/outcomeCycle and reachIdx bugs above — a shared factor
+    // between two independent gates that share the same loop counter. 5 is
+    // coprime with both 2 (bank) and 9 (Multi), so this one doesn't repeat
+    // the mistake.
+    const type = i%9===0 ? 'Multi' : (i%5===0 ? 'Outstanding' : 'Single');
     const outcome = type==='Multi' ? (multiSeed%11===0 ? 'PARTIAL' : pick(outcomeCycle, multiSeed)) : pick(outcomeCycle, i);
     if(type==='Multi') multiSeed++;
     // Hashed, not a plain pick(arr,i) — FIRST.length=30 and LAST.length=20
@@ -2670,7 +2679,6 @@ function intHash(n){
   n = n ^ (n >>> 15);
   return n >>> 0;
 }
-function pseudoRetries(id){ return hashCode(id) % 4; }
 
 function formatStamp(date){
   const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -2910,7 +2918,6 @@ function renderExceptions(){
   document.getElementById('exceptionsBody').innerHTML = pageRows.map(c=>{
     const tm = TYPE_META[c.type];
     const hrs = timeInStage(c);
-    const retries = pseudoRetries(c.id);
     const isReviewed = reviewedExceptionIds.has(c.id);
     return `<tr onclick="openDrawer('${c.id}')" style="${isReviewed?'opacity:.5;':''}">
       <td class="mono">${c.id}</td>
@@ -2918,7 +2925,6 @@ function renderExceptions(){
       <td><span class="badge ${tm.badge}">${tm.label}</span></td>
       <td><span class="badge error">${c.failReason||'Unspecified'}</span></td>
       <td>${failedAtStage(c)}</td>
-      <td>${retries}</td>
       <td>${hrs}h ${hrs>=24?'<span class="age-flag">SLA</span>':''}</td>
       <td><label class="chk-wrap" onclick="event.stopPropagation();"><input type="checkbox" ${isReviewed?'checked':''} onchange="toggleExceptionReviewed('${c.id}')"></label></td>
     </tr>`;
@@ -3081,7 +3087,7 @@ function renderRecon(){
       </div>
       <div class="card">
         <p class="card-title">Eligible-Accounts Targeting File</p>
-        <p class="card-sub">A pre-filter Yes Bank sends so nudges only target likely-eligible accounts — not part of booking, and not authoritative eligibility. The API still decides eligibility at the moment of conversion.</p>
+        <p class="card-sub">A pre-filter Yes Bank sends so nudges only target likely-eligible accounts — not part of booking, and not authoritative eligibility. The API still decides eligibility at the moment of conversion. Illustrative — a representative sample, not filtered by the page's Date Range or Product controls (same convention as the Allocation File table above).</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Batch ID</th><th>Received At</th><th>Accounts Received</th><th>Used By Campaigns</th><th>Status</th></tr></thead>
