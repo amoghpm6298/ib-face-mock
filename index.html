@@ -771,6 +771,8 @@
         <div class="viewing-as">
           <label>Date range</label>
           <select id="conversionsRange" onchange="onConversionsRangeChange()">
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
             <option value="all" selected>All time</option>
@@ -2569,6 +2571,18 @@ function scopedCases(){
       if(fromDate && d<fromDate) return false;
       if(toDate && d>toDate) return false;
       return true;
+    });
+  } else if(conversionsRange==='today' || conversionsRange==='yesterday'){
+    // Calendar-day bound, same "relative to the dataset's own latest
+    // timestamp" convention as every other preset here (and Analytics'
+    // matching Today/Yesterday presets) — not the real calendar date.
+    const maxDate = maxDatasetDate();
+    const dayStart = new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate());
+    if(conversionsRange==='yesterday') dayStart.setDate(dayStart.getDate()-1);
+    const dayEnd = new Date(dayStart.getTime() + 24*3600*1000 - 1);
+    cases = cases.filter(c=>{
+      const d = caseEntryDate(c);
+      return d && d>=dayStart && d<=dayEnd;
     });
   } else if(conversionsRange!=='all'){
     const maxDate = maxDatasetDate();
