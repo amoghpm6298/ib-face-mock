@@ -679,6 +679,8 @@
   .cond-and{font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:6px 0;}
   .cond-remove{width:26px;height:26px;border-radius:6px;color:var(--gray-400);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
   .cond-remove:hover{background:var(--error-bg);color:var(--error-text);}
+  .msel-trigger{width:100%;font-family:inherit;font-size:13.5px;color:var(--neutral-800);
+    border:1px solid var(--gray-300);border-radius:8px;padding:9px 11px;box-shadow:var(--shadow-sm);}
   .add-link{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--blue-cta);cursor:pointer;margin-top:2px;}
   .add-link:hover{text-decoration:underline;}
 
@@ -5651,7 +5653,7 @@ function multiSelectDropdownHtml(id, label, options, selected, onToggle, rerende
   const summary = selected.length ? (selected.length<=2 ? selected.join(', ') : `${selected.length} selected`) : `Select ${label.toLowerCase()}`;
   return `<div class="f-group" style="position:relative;">
     <label class="f-label">${label}</label>
-    <div class="f-input" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;" onclick="${toggleOpenExpr}">
+    <div class="msel-trigger" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;" onclick="${toggleOpenExpr}">
       <span style="${selected.length?'':'color:var(--gray-400);'}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${selected.join(', ')}">${summary}</span>
       <span style="color:var(--gray-400);flex-shrink:0;">${isOpen?'▴':'▾'}</span>
     </div>
@@ -5735,13 +5737,13 @@ function renderFallbackSection(s){
     })() : '';
     return `
       <div style="margin-top:10px;padding-top:10px;${idx>0?'border-top:1px dashed var(--gray-200);':''}">
-        <div style="display:flex;gap:8px;align-items:flex-start;">
-          <select class="f-input" onchange="fallbackModeChange(${idx},this.value)">
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select class="f-input" style="flex:1;" onchange="fallbackModeChange(${idx},this.value)">
             <option value="">No fallback</option>
             ${candidates.map(n=>`<option value="${n.id}" ${!fb.creatingNew && fb.nudgeId===n.id?'selected':''}>${n.name}</option>`).join('')}
             <option value="__create_new__" ${fb.creatingNew?'selected':''}>+ Create new fallback nudge…</option>
           </select>
-          <button class="btn danger small" onclick="removeFallbackEntry(${idx})" title="Remove this fallback">✕</button>
+          <div class="cond-remove" onclick="removeFallbackEntry(${idx})" title="Remove this fallback">✕</div>
         </div>
         ${fb.nudgeId ? `<div style="margin-top:10px;">${statusSelectHtml}</div>` : ''}
         ${inlineForm}
