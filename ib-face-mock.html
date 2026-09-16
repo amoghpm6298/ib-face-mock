@@ -5121,10 +5121,16 @@ function renderDeliveryStatusTriggerStep(d, catSelect){
     <p class="wiz-sub">Which event fires this nudge, and under what conditions.</p>
     ${catSelect}
     ${nudgePicker}
-    <div class="f-group"><label class="f-label">Delivery Status (any of)</label>
-      ${d.fallbackSourceChannel ? chipGroup('fallbackStatuses', statusOptions, 'wiz') : `<p class="f-hint" style="margin:0;">${locked?'Loading channel…':'Pick a nudge and channel first.'}</p>`}
-    </div>
+    ${d.fallbackSourceChannel
+      ? multiSelectDropdownHtml('delivery-status-trigger', 'Delivery Status (any of)', statusOptions, d.fallbackStatuses, (o)=>`toggleWizFallbackStatus('${o}')`, "renderWizStep('EVENT_TRIGGER')")
+      : `<div class="f-group"><label class="f-label">Delivery Status (any of)</label><p class="f-hint" style="margin:0;">Pick a nudge and channel first.</p></div>`}
     ${wizFooter()}`;
+}
+function toggleWizFallbackStatus(val){
+  const arr = wiz.draft.fallbackStatuses;
+  const i = arr.indexOf(val);
+  if(i>-1) arr.splice(i,1); else arr.push(val);
+  renderWizStep('EVENT_TRIGGER');
 }
 function renderWizStep(stepId){
   const d = wiz.draft;
@@ -5580,6 +5586,7 @@ function chipToggleChannel(ch){ const arr = wiz.draft.channels = wiz.draft.chann
 const UTM_DEFAULT_PARAMS = ['utm_channel','utm_source','utm_campaign','utm_medium'];
 let nudgeCommModalState = null;
 function openNudgeCommConfigModal(blockIdx, channel){
+  openMultiSelectId = null;
   const existing = wiz.draft.commBlocks[blockIdx].configured[channel] || {};
   nudgeCommModalState = { blockIdx, channel, account: existing.account||'', templateId: existing.templateId||'', tracking: existing.tracking||false, showPreview:false, userAttribution:existing.userAttribution||false, utmParams: existing.utmParams || [],
     fallbacks: (existing.fallbacks||[]).map(f=>({...newFallbackEntry(), nudgeId:f.nudgeId, statuses:[...f.statuses]})) };
@@ -5622,6 +5629,51 @@ function renderNudgeCommConfigModal(){
       <button class="btn primary" ${!(s.account&&s.templateId)?'disabled style="opacity:.5;"':''} onclick="submitNudgeCommConfig()">Save</button>
     </div>`, 700);
 }
+// Real multi-select dropdown — closed by default (shows a summary line,
+// like any other field in this form), opens into a checkbox list on
+// click, closes via its own "Done" button. Native <select multiple> was
+// tried first and rejected — no visible checkboxes, no selection summary,
+// and Cmd/Ctrl-click is not a discoverable interaction for a form field
+// that otherwise looks like a plain dropdown.
+let openMultiSelectId = null;
+// `onToggle` is a function called at template-build time (not runtime) —
+// (optionValue) => 'someOnchangeJsExpression' — so each checkbox's onchange
+// can bake in whatever context (e.g. a list index) the caller needs,
+// without this component having to know about it. `rerenderCall`
+// (default 'renderNudgeCommConfigModal()') is the JS expression that
+// redraws whichever container is calling this — the drawer and the
+// general Event Trigger wizard step need different ones, so it's a
+// parameter rather than hardcoded, unlike the first version of this.
+function multiSelectDropdownHtml(id, label, options, selected, onToggle, rerenderCall){
+  rerenderCall = rerenderCall || 'renderNudgeCommConfigModal()';
+  const isOpen = openMultiSelectId === id;
+  const toggleOpenExpr = `openMultiSelectId=openMultiSelectId==='${id}'?null:'${id}';${rerenderCall}`;
+  const summary = selected.length ? (selected.length<=2 ? selected.join(', ') : `${selected.length} selected`) : `Select ${label.toLowerCase()}`;
+  return `<div class="f-group" style="position:relative;">
+    <label class="f-label">${label}</label>
+    <div class="f-input" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;" onclick="${toggleOpenExpr}">
+      <span style="${selected.length?'':'color:var(--gray-400);'}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${selected.join(', ')}">${summary}</span>
+      <span style="color:var(--gray-400);flex-shrink:0;">${isOpen?'▴':'▾'}</span>
+    </div>
+    ${isOpen ? `
+      <div style="position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.15);max-height:240px;overflow-y:auto;">
+        ${options.map(o=>`
+          <label style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:12.5px;" onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background='transparent'">
+            <input type="checkbox" ${selected.includes(o)?'checked':''} onchange="${onToggle(o)}">
+            <span>${o}</span>
+          </label>`).join('')}
+        <div style="position:sticky;bottom:0;padding:8px 10px;border-top:1px solid var(--gray-100);background:#fff;">
+          <button type="button" class="btn secondary small" style="width:100%;" onclick="${toggleOpenExpr}">Done</button>
+        </div>
+      </div>` : ''}
+  </div>`;
+}
+function toggleFallbackStatus(idx, val){
+  const arr = nudgeCommModalState.fallbacks[idx].statuses;
+  const i = arr.indexOf(val);
+  if(i>-1) arr.splice(i,1); else arr.push(val);
+  renderNudgeCommConfigModal();
+}
 // Scoped to this exact (trigger block, channel) — the fallback nudge fires
 // specifically when THIS channel's delivery for THIS trigger comes back
 // with one of the picked statuses, not "the nudge" as a whole. Lets two
@@ -5645,12 +5697,7 @@ function renderFallbackSection(s){
   const channelOfEntry = (fb) => fb.creatingNew ? fb.channel : (NUDGES.find(n=>n.id===fb.nudgeId)||{}).channels?.[0];
   const entriesHtml = s.fallbacks.map((fb,idx)=>{
     const statusOptions = deliveryStatusOptionsFor(s.channel);
-    const statusSelectHtml = `<div class="f-group"><label class="f-label">Trigger on any of</label>
-      <select class="f-input" multiple size="5" onchange="nudgeCommModalState.fallbacks[${idx}].statuses=Array.from(this.selectedOptions).map(o=>o.value);renderNudgeCommConfigModal()">
-        ${statusOptions.map(o=>`<option value="${o}" ${fb.statuses.includes(o)?'selected':''}>${o}</option>`).join('')}
-      </select>
-      <div class="f-hint">Cmd/Ctrl-click to select more than one.</div>
-    </div>`;
+    const statusSelectHtml = multiSelectDropdownHtml(`fb-status-${idx}`, 'Trigger on any of', statusOptions, fb.statuses, (o)=>`toggleFallbackStatus(${idx},'${o}')`);
     // Exclude the failing channel plus whatever every OTHER entry in this
     // list already claimed — keeps each entry on a genuinely different
     // channel without forbidding this entry from keeping its own current pick.
@@ -5827,6 +5874,27 @@ function renderWizPreview(){
 }
 
 /* ---------------- Review + View shared section renderer ---------------- */
+// One row per (block, channel) that has at least one fallback attached —
+// shown on both the wizard's Review step and the read-only View page,
+// since both share reviewSections(). Block name only shown when there's
+// more than one trigger, same "don't repeat info the reader can already
+// see" judgment as everything else in this section.
+function fallbackReviewRows(commBlocks){
+  const rows = [];
+  (commBlocks||[]).forEach((b,bi)=>{
+    Object.keys(b.configured||{}).forEach(ch=>{
+      const fbs = (b.configured[ch]||{}).fallbacks || [];
+      if(!fbs.length) return;
+      const label = (commBlocks.length>1 ? `${b.name||'Trigger '+(bi+1)} · ` : '') + (CHANNEL_LABELS[ch]||ch);
+      const val = fbs.map(f=>{
+        const n = NUDGES.find(x=>x.id===f.nudgeId);
+        return `${n?n.name:f.nudgeId} (${f.statuses.length?f.statuses.join(', '):'no statuses set'})`;
+      }).join('; ');
+      rows.push([`Fallback — ${label}`, val]);
+    });
+  });
+  return rows;
+}
 function reviewSections(){
   const d = wiz.draft;
   const sections = [];
@@ -5900,6 +5968,7 @@ function reviewSections(){
       ]});
       sections.push({title:'Communication', stepId:'COMMUNICATION', rows: [
         ...(d.commBlocks||[]).map((b,i)=>[`Trigger ${i+1}`, `${b.name||'Untitled'} · ${Object.keys(b.configured||{}).filter(k=>b.configured[k]).join(', ')||'no channels configured'}`]),
+        ...fallbackReviewRows(d.commBlocks),
         ...dncRows(),
       ]});
     } else {
@@ -5908,6 +5977,7 @@ function reviewSections(){
   } else {
     sections.push({title:'Message Content', stepId:'MESSAGE_CONTENT', rows:[
       ['Communication Templates', (d.commBlocks||[]).flatMap(b=>Object.keys(b.configured||{}).filter(k=>b.configured[k])).join(', ')||'—'],
+      ...fallbackReviewRows(d.commBlocks),
     ]});
     sections.push({title:'Frequency Limits', stepId:'FREQUENCY_LIMITS', rows:[
       ['Cooldown Policy', `${d.cooldown||'—'} ${d.cooldownUnit||''}`],
