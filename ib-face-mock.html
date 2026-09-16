@@ -3493,11 +3493,10 @@ function openDrawer(id){
         <div class="nudge-row"><span>Clicked</span><b>${c.nudge.clicked}</b></div>
       </div>
 
-      ${(c.failReason || (c.auditLog||[]).length) ? `
+      ${(c.auditLog||[]).length ? `
       <p class="section-title">Audit Trail</p>
       <div>
-        ${c.failReason ? `<div class="audit-item"><b>System</b> — flagged: ${c.failReason}</div>` : ''}
-        ${(c.auditLog||[]).map(a=>`<div class="audit-item"><b>${a.who}</b> — ${a.what} <span style="color:var(--gray-400);">(${a.when})</span></div>`).join('')}
+        ${c.auditLog.map(a=>`<div class="audit-item"><b>${a.who}</b> — ${a.what} <span style="color:var(--gray-400);">(${a.when})</span></div>`).join('')}
       </div>
       ` : ''}
     </div>
