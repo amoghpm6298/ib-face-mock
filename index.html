@@ -3536,8 +3536,22 @@ function closeModal(){
 // modal). widthPx defaults to 720; pass a narrower one for tighter content.
 function openSideDrawer(html, widthPx){
   const el = document.getElementById('sideDrawer');
+  // Every re-render of an already-open drawer (any checkbox toggle, field
+  // change, etc.) goes through this same innerHTML replace — which
+  // silently recreates .sd-body and resets its scroll to 0 every single
+  // time. For a short form that's invisible; for anything long enough to
+  // scroll (this drawer, once Fallback Nudges grew it), it meant every
+  // interaction below the fold yanked the view back to the top — reported
+  // as "not smooth" and, at the extreme, as content "disappearing"
+  // (it didn't disappear, the view just kept snapping away from it).
+  // Preserving scrollTop across the replace fixes every drawer that uses
+  // this function, not just this one screen.
+  const prevScrollEl = el.querySelector('.sd-body');
+  const prevScrollTop = prevScrollEl ? prevScrollEl.scrollTop : 0;
   el.style.width = (widthPx||720)+'px';
   el.innerHTML = html;
+  const newScrollEl = el.querySelector('.sd-body');
+  if(newScrollEl) newScrollEl.scrollTop = prevScrollTop;
   document.getElementById('sideDrawerOverlay').classList.add('open');
   el.classList.add('open');
 }
