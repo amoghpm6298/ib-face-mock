@@ -642,7 +642,7 @@
   .f-group{margin-bottom:20px;}
   .f-label{font-size:12.5px;font-weight:600;color:var(--neutral-800);margin-bottom:6px;display:block;}
   .f-hint{font-size:11.5px;color:var(--gray-500);margin-top:4px;}
-  .f-row2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .f-row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;}
   input[type=text].f-input,input[type=number].f-input,input[type=date].f-input,textarea.f-input,select.f-input{
     width:100%;font-family:inherit;font-size:13.5px;color:var(--neutral-800);
     border:1px solid var(--gray-300);border-radius:8px;padding:9px 11px;box-shadow:var(--shadow-sm);
@@ -5170,7 +5170,16 @@ function renderDeliveryStatusTriggerStep(d, catSelect){
   const sourceNudgePicker = searchableSelectHtml('delivery-status-source-nudge', 'Source Nudge', candidateNudges, d.fallbackSourceNudgeId,
     (nid)=>`fieldUpdate('fallbackSourceNudgeId','${nid}');fieldUpdate('fallbackSourceBlockName','');fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);searchSelectState={id:null,query:''};renderWizStep('EVENT_TRIGGER')`,
     "renderWizStep('EVENT_TRIGGER')", d.issuer?'Search nudges…':'Set Issuer in Basic Details first');
-  const nudgePicker = `<div class="f-group ${showTriggerPicker?'':'f-row2'}" style="${showTriggerPicker?'display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;':''}">
+  // minmax(0,1fr), not plain 1fr — a bare `1fr` track's implicit minimum
+  // is its content's min-content width, and Source Nudge's selected-label
+  // text (e.g. a long picked nudge name, `white-space:nowrap` inside its
+  // own flex row for the dropdown-arrow layout) has no forced wrap point,
+  // so its min-content ballooned to the full text width — starving the
+  // Source Trigger/Channel columns down to a sliver instead of splitting
+  // evenly. minmax(0,1fr) explicitly overrides that implicit minimum to 0,
+  // letting each column's own overflow:hidden/text-overflow:ellipsis do
+  // its job instead of being overridden by the grid's own sizing.
+  const nudgePicker = `<div class="f-group ${showTriggerPicker?'':'f-row2'}" style="${showTriggerPicker?'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:16px;':''}">
         ${sourceNudgePicker}
         ${showTriggerPicker ? `<div><label class="f-label">Source Trigger</label><select class="f-input" onchange="fieldUpdate('fallbackSourceBlockName',this.value);fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
           <option value="">Select trigger</option>
