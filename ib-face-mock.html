@@ -5129,7 +5129,7 @@ function renderDeliveryStatusTriggerStep(d, catSelect){
           ${channelOptions.map(ch=>`<option value="${ch}" ${d.fallbackSourceChannel===ch?'selected':''}>${CHANNEL_LABELS[ch]||ch}</option>`).join('')}
         </select></div>
       </div>
-      <p class="f-hint">A nudge's individual triggers/blocks aren't independently searchable from this list yet — precise block-level targeting is available via "+ Add Fallback" on the specific channel inside that nudge's own Communication step.</p>`;
+      <p class="f-hint">For trigger-level targeting, use "+ Add Fallback" inside that nudge's Communication step.</p>`;
 
   const statusOptions = d.fallbackSourceChannel ? deliveryStatusOptionsFor(d.fallbackSourceChannel) : [];
   return `
@@ -5766,7 +5766,7 @@ function renderFallbackSection(s){
   return `
     <div class="f-group" style="margin-top:16px;border-top:1px solid var(--gray-200);padding-top:16px;">
       <label class="f-label">Fallback Nudges <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
-      <p class="f-hint" style="margin-top:-2px;">Fire other nudges when ${CHANNEL_LABELS[s.channel]} delivery for this trigger comes back with a picked status — same issuer, program, and user base as this nudge, no need to re-pick those. Add more than one to fall back across several channels.</p>
+      <p class="f-hint" style="margin-top:-2px;">Triggers another nudge based on ${CHANNEL_LABELS[s.channel]} delivery status.</p>
       ${entriesHtml}
       <div class="add-link" style="margin-top:10px;" onclick="addFallbackEntry()">${ic('message')} Add fallback nudge</div>
     </div>`;
