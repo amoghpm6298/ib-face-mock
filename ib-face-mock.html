@@ -4787,6 +4787,7 @@ let wiz = null; // { triggerType, stepIdx, draft, isEdit }
 
 function openNudgeCreate(){
   const type = nlState.tab; // pre-select trigger type from whichever list tab we're on
+  searchSelectState = {id:null, query:''};
   wiz = { triggerType:type, stepIdx:0, isEdit:false,
     draft:{ id:null, name:'', description:'', nudgeType:type==='event-based'?'CROSS_SELL_UP_SELL':null, scopeType:'Issuer', issuerScope:false, issuer:'', programs:[], isMakerCheckerEnabled:false,
       startDate:'', endDate:'', journey:'', batch:'', isMilestone:false, offerType:'', offer:'',
@@ -4799,6 +4800,7 @@ function openNudgeCreate(){
 }
 function openNudgeEdit(id){
   const n = NUDGES.find(x=>x.id===id);
+  searchSelectState = {id:null, query:''};
   wiz = { triggerType:n.triggerType, stepIdx:0, isEdit:true, draft: JSON.parse(JSON.stringify(n)) };
   if(!wiz.draft.conditions) wiz.draft.conditions=[{entity:wiz.draft.eligibilityEntity||'',attribute:'',operator:'',value:''}];
   if(!wiz.draft.channels) wiz.draft.channels=[];
@@ -5154,11 +5156,22 @@ function renderDeliveryStatusTriggerStep(d, catSelect){
   const channelOptions = selectedBlock ? selectedBlock.channels
     : (sourceBlocks.length===1 ? sourceBlocks[0].channels
     : (sourceNudge ? (sourceNudge.channels||[]) : []));
+  // A flat list of every nudge doesn't hold up at real scale (one issuer
+  // alone can carry dozens of Active/Scheduled nudges) — scoped to the
+  // SAME issuer as the nudge being built (cross-issuer targeting doesn't
+  // make business sense) and to ACTIVE/SCHEDULED status only (a Draft or
+  // Pending Review nudge might still be rejected or substantially
+  // changed, so it shouldn't be reference-able yet — same rule the PRD
+  // already calls for on the fallback shortcut's own picker).
+  const candidateNudges = d.issuer
+    ? NUDGES.filter(n=>n.channels && n.channels.length && n.issuer===d.issuer && ['ACTIVE','SCHEDULED'].includes(n.status))
+        .map(n=>({id:n.id, label:n.name}))
+    : [];
+  const sourceNudgePicker = searchableSelectHtml('delivery-status-source-nudge', 'Source Nudge', candidateNudges, d.fallbackSourceNudgeId,
+    (nid)=>`fieldUpdate('fallbackSourceNudgeId','${nid}');fieldUpdate('fallbackSourceBlockName','');fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);searchSelectState={id:null,query:''};renderWizStep('EVENT_TRIGGER')`,
+    "renderWizStep('EVENT_TRIGGER')", d.issuer?'Search nudges…':'Set Issuer in Basic Details first');
   const nudgePicker = `<div class="f-group ${showTriggerPicker?'':'f-row2'}" style="${showTriggerPicker?'display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;':''}">
-        <div><label class="f-label">Source Nudge</label><select class="f-input" onchange="fieldUpdate('fallbackSourceNudgeId',this.value);fieldUpdate('fallbackSourceBlockName','');fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
-          <option value="">Select nudge</option>
-          ${NUDGES.filter(n=>n.channels&&n.channels.length).map(n=>`<option value="${n.id}" ${d.fallbackSourceNudgeId===n.id?'selected':''}>${n.name}</option>`).join('')}
-        </select></div>
+        ${sourceNudgePicker}
         ${showTriggerPicker ? `<div><label class="f-label">Source Trigger</label><select class="f-input" onchange="fieldUpdate('fallbackSourceBlockName',this.value);fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
           <option value="">Select trigger</option>
           ${sourceBlocks.map(b=>`<option value="${b.name}" ${d.fallbackSourceBlockName===b.name?'selected':''}>${b.name}</option>`).join('')}
@@ -5642,6 +5655,7 @@ const UTM_DEFAULT_PARAMS = ['utm_channel','utm_source','utm_campaign','utm_mediu
 let nudgeCommModalState = null;
 function openNudgeCommConfigModal(blockIdx, channel){
   openMultiSelectId = null;
+  searchSelectState = {id:null, query:''};
   const existing = wiz.draft.commBlocks[blockIdx].configured[channel] || {};
   nudgeCommModalState = { blockIdx, channel, account: existing.account||'', templateId: existing.templateId||'', tracking: existing.tracking||false, showPreview:false, userAttribution:existing.userAttribution||false, utmParams: existing.utmParams || [],
     fallbacks: (existing.fallbacks||[]).map(f=>({...newFallbackEntry(), nudgeId:f.nudgeId, statuses:[...f.statuses]})) };
@@ -5729,6 +5743,48 @@ function toggleFallbackStatus(idx, val){
   if(i>-1) arr.splice(i,1); else arr.push(val);
   renderNudgeCommConfigModal();
 }
+// Searchable single-select — same closed-by-default/opens-a-panel language
+// as multiSelectDropdownHtml above, but type-to-filter + pick-one-and-close
+// instead of a checkbox list. Built specifically because a flat <select>
+// over every nudge in the system doesn't hold up at real scale (a single
+// issuer alone can carry dozens of Active/Scheduled nudges) — callers are
+// expected to pre-scope `options` (by issuer, by status) before this ever
+// renders, this component only handles the "still too many to eyeball"
+// problem via search, not the "which ones are even relevant" problem.
+let searchSelectState = {id:null, query:''};
+function searchSelectOpen(id){
+  searchSelectState = searchSelectState.id===id ? {id:null,query:''} : {id, query:''};
+}
+// `onPick(optionId)` and `rerenderCall` follow the same template-build-time-
+// function / explicit-rerender-expression pattern as multiSelectDropdownHtml,
+// for the same reason — this gets called from more than one context.
+function searchableSelectHtml(id, label, options, selectedId, onPick, rerenderCall, placeholder){
+  rerenderCall = rerenderCall || 'renderNudgeCommConfigModal()';
+  const isOpen = searchSelectState.id === id;
+  const toggleOpenExpr = `searchSelectOpen('${id}');${rerenderCall}`;
+  const selected = options.find(o=>o.id===selectedId);
+  const query = (isOpen ? searchSelectState.query : '').toLowerCase();
+  const filtered = query ? options.filter(o=>o.label.toLowerCase().includes(query)) : options;
+  return `<div class="f-group" style="position:relative;">
+    ${label?`<label class="f-label">${label}</label>`:''}
+    <div class="msel-trigger" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;" onclick="${toggleOpenExpr}">
+      <span style="${selected?'':'color:var(--gray-400);'}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${selected?selected.label:(placeholder||`Select ${(label||'an option').toLowerCase()}`)}</span>
+      <span style="color:var(--gray-400);flex-shrink:0;">${isOpen?'▴':'▾'}</span>
+    </div>
+    ${isOpen ? `
+      <div style="position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.15);">
+        <div style="padding:8px;border-bottom:1px solid var(--gray-100);">
+          <input type="text" class="f-input" placeholder="Search by name…" value="${searchSelectState.query}" autofocus
+            oninput="searchSelectState.query=this.value;${rerenderCall}">
+        </div>
+        <div style="max-height:220px;overflow-y:auto;">
+          ${filtered.length ? filtered.map(o=>`
+            <div style="padding:8px 10px;cursor:pointer;font-size:12.5px;" onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background='transparent'" onclick="${onPick(o.id)}">${o.label}</div>`).join('')
+            : `<div style="padding:10px 8px;font-size:12px;color:var(--gray-400);">No matches${options.length===0?' — no eligible nudges in scope':''}</div>`}
+        </div>
+      </div>` : ''}
+  </div>`;
+}
 // Scoped to this exact (trigger block, channel) — the fallback nudge fires
 // specifically when THIS channel's delivery for THIS trigger comes back
 // with one of the picked statuses, not "the nudge" as a whole. Lets two
@@ -5745,7 +5801,13 @@ function newFallbackEntry(){
 // channel any other entry in this same list has already claimed, so
 // "different channels" is enforced structurally, not just suggested.
 function renderFallbackSection(s){
-  const candidates = NUDGES.filter(n=>n.triggerType==='event-based' && n.eventCategory==='Nudge Delivery Status');
+  // Scoped the same way as the general flow's Source Nudge picker: same
+  // issuer as the nudge being configured (wiz.draft.issuer — the parent
+  // whose channel just failed), ACTIVE/SCHEDULED status only. All fallback
+  // nudges are, by construction, event-based nudges on the Nudge Delivery
+  // Status category — never standard nudges — since that's the only
+  // category this authoring path (or the general flow) ever produces one on.
+  const candidates = NUDGES.filter(n=>n.triggerType==='event-based' && n.eventCategory==='Nudge Delivery Status' && n.issuer===wiz.draft.issuer && ['ACTIVE','SCHEDULED'].includes(n.status));
   // Which channel each entry currently occupies — only meaningful for
   // inline (creatingNew) entries; an entry pointing at an existing nudge
   // uses whatever channel that nudge already sends on.
@@ -5788,15 +5850,23 @@ function renderFallbackSection(s){
           </div>
         </div>`;
     })() : '';
+    // Same combined "pick existing or create new" interaction the user
+    // already confirmed is correct — just made searchable+scoped instead
+    // of a flat <select>. The synthetic __create_new__ entry keeps it one
+    // control, not a second control next to it.
+    const pickerOptions = [
+      ...candidates.map(n=>({id:n.id, label:n.name})),
+      {id:'__create_new__', label:'+ Create new fallback nudge…'},
+    ];
+    const nudgePickerHtml = searchableSelectHtml(`fb-nudge-${idx}`, '', pickerOptions,
+      fb.creatingNew ? '__create_new__' : (fb.nudgeId || null),
+      (val)=>`fallbackModeChange(${idx},'${val}');searchSelectState={id:null,query:''};renderNudgeCommConfigModal()`,
+      'renderNudgeCommConfigModal()', 'Select a nudge to fire');
     return `
       <div style="margin-top:10px;padding-top:10px;${idx>0?'border-top:1px dashed var(--gray-200);':''}">
-        <div style="display:flex;gap:6px;align-items:center;">
-          <select class="f-input" style="flex:1;" onchange="fallbackModeChange(${idx},this.value)">
-            <option value="" ${!fb.nudgeId && !fb.creatingNew ? 'selected':''} disabled>Select a nudge to fire</option>
-            ${candidates.map(n=>`<option value="${n.id}" ${!fb.creatingNew && fb.nudgeId===n.id?'selected':''}>${n.name}</option>`).join('')}
-            <option value="__create_new__" ${fb.creatingNew?'selected':''}>+ Create new fallback nudge…</option>
-          </select>
-          <div class="cond-remove" onclick="removeFallbackEntry(${idx})" title="Remove this fallback">✕</div>
+        <div style="display:flex;gap:6px;align-items:flex-start;">
+          <div style="flex:1;">${nudgePickerHtml}</div>
+          <div class="cond-remove" style="margin-top:9px;" onclick="removeFallbackEntry(${idx})" title="Remove this fallback">✕</div>
         </div>
         ${fb.nudgeId ? `<div style="margin-top:10px;">${statusSelectHtml}</div>` : ''}
         ${inlineForm}
