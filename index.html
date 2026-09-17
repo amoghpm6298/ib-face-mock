@@ -4723,7 +4723,7 @@ function renderNudgesList(){
     <tr class="acc-panel ${open?'open':''}" style="${open?'display:table-row':'display:none'}"><td colspan="7">
       <div class="acc-grid">
         <div><div class="meta-label">Nudge ID</div><div class="meta-value mono">${n.id}</div></div>
-        <div><div class="meta-label">Labels</div><div class="meta-value">${n.labels.length?n.labels.join(', '):'—'}</div></div>
+        <div><div class="meta-label">Labels</div><div class="meta-value">${(n.labels||[]).length?n.labels.join(', '):'—'}</div></div>
         <div><div class="meta-label">Created By</div><div class="meta-value">${n.createdBy}</div></div>
         <div><div class="meta-label">Created On</div><div class="meta-value">${n.createdOn}</div></div>
       </div>
@@ -4773,7 +4773,7 @@ function openNudgeCreate(){
       variant:null, location:'topShelf', displayOrder:null, dismissible:true, heading:'Activate your Card', subtext:'To start shopping and collect rewards', channels:[],
       eventCategory:'Journey Events', eventType:'', eventJourney:'', delayType:'Immediate', delay:'', delayUnit:'minutes', cancellationEnabled:false,
       cooldown:'', cooldownUnit:'hours', quietHours:'Queue to next slot', displayEnabled:false, conditions:[{entity:'',attribute:'',operator:'',value:''}],
-      userBaseMode:'All Customers', smartTag:'' } };
+      userBaseMode:'All Customers', smartTag:'', labels:[] } };
   switchPage('nudges-create');
   renderWizard();
 }
@@ -5117,19 +5117,38 @@ function renderDeliveryStatusTriggerStep(d, catSelect){
   // and never reaches this step at all, since it inherits issuer/programs/
   // user base from that nudge directly instead of building a full nudge here.
   const sourceNudge = NUDGES.find(n=>n.id===d.fallbackSourceNudgeId);
-  const channelOptions = sourceNudge ? (sourceNudge.channels||[]) : [];
-  d.fallbackStatuses = d.fallbackStatuses || [];
-  const nudgePicker = `<div class="f-group f-row2">
-        <div><label class="f-label">Source Nudge</label><select class="f-input" onchange="fieldUpdate('fallbackSourceNudgeId',this.value);fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
+  // Real trigger blocks on the source nudge, from its own already-saved
+  // commBlocks — only nudges built/saved through the live wizard carry this
+  // (the hand-authored example NUDGES entries predate commBlocks and have
+  // none, same class of gap as Drip's static campaigns lacking _config —
+  // degrades gracefully to channel-only targeting below, doesn't crash).
+  const sourceBlocks = sourceNudge && sourceNudge.commBlocks
+    ? sourceNudge.commBlocks.map((b,i)=>({name: b.name || `Trigger ${i+1}`, channels: Object.keys(b.configured||{}).filter(ch=>b.configured[ch])})).filter(b=>b.channels.length)
+    : [];
+  // Only show the Trigger picker when there's a real choice — one nudge
+  // with two+ distinct triggers configured. A nudge with exactly one real
+  // trigger has nothing to disambiguate; same "don't show a dropdown for a
+  // single option" precedent already used elsewhere in this file.
+  const showTriggerPicker = sourceBlocks.length > 1;
+  const selectedBlock = sourceBlocks.find(b=>b.name===d.fallbackSourceBlockName);
+  const channelOptions = selectedBlock ? selectedBlock.channels
+    : (sourceBlocks.length===1 ? sourceBlocks[0].channels
+    : (sourceNudge ? (sourceNudge.channels||[]) : []));
+  const nudgePicker = `<div class="f-group ${showTriggerPicker?'':'f-row2'}" style="${showTriggerPicker?'display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;':''}">
+        <div><label class="f-label">Source Nudge</label><select class="f-input" onchange="fieldUpdate('fallbackSourceNudgeId',this.value);fieldUpdate('fallbackSourceBlockName','');fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
           <option value="">Select nudge</option>
           ${NUDGES.filter(n=>n.channels&&n.channels.length).map(n=>`<option value="${n.id}" ${d.fallbackSourceNudgeId===n.id?'selected':''}>${n.name}</option>`).join('')}
         </select></div>
-        <div><label class="f-label">Channel</label><select class="f-input" ${!sourceNudge?'disabled':''} onchange="fieldUpdate('fallbackSourceChannel',this.value);fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
-          <option value="">${sourceNudge?'Select channel':'Pick a nudge first'}</option>
+        ${showTriggerPicker ? `<div><label class="f-label">Source Trigger</label><select class="f-input" onchange="fieldUpdate('fallbackSourceBlockName',this.value);fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
+          <option value="">Select trigger</option>
+          ${sourceBlocks.map(b=>`<option value="${b.name}" ${d.fallbackSourceBlockName===b.name?'selected':''}>${b.name}</option>`).join('')}
+        </select></div>` : ''}
+        <div><label class="f-label">Channel</label><select class="f-input" ${!sourceNudge || (showTriggerPicker && !selectedBlock)?'disabled':''} onchange="fieldUpdate('fallbackSourceChannel',this.value);fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
+          <option value="">${!sourceNudge?'Pick a nudge first':(showTriggerPicker && !selectedBlock)?'Pick a trigger first':'Select channel'}</option>
           ${channelOptions.map(ch=>`<option value="${ch}" ${d.fallbackSourceChannel===ch?'selected':''}>${CHANNEL_LABELS[ch]||ch}</option>`).join('')}
         </select></div>
       </div>
-      <p class="f-hint">For trigger-level targeting, use "+ Add Fallback" inside that nudge's Communication step.</p>`;
+      ${sourceNudge && !sourceBlocks.length ? `<p class="f-hint">No trigger-level detail available for this nudge — channel-level targeting only.</p>` : ''}`;
 
   const statusOptions = d.fallbackSourceChannel ? deliveryStatusOptionsFor(d.fallbackSourceChannel) : [];
   return `
@@ -5933,7 +5952,20 @@ function reviewSections(){
       ['Issuer', d.issuer||'—'],
       ...(d.scopeType==='Program' ? [['Program', (d.programs||[]).join(', ')||'—']] : []),
     ]});
-    sections.push({title:'Event Trigger', stepId:'EVENT_TRIGGER', rows:[
+    // Nudge Delivery Status doesn't use Event Type / Trigger Conditions at
+    // all (its real condition is Source Nudge + Source Trigger + Source
+    // Channel + picked statuses) — showing the generic rows here would
+    // just print "Event Type: —" / "Trigger Conditions: —", meaningless
+    // for this category. Same Review/View parity rule as every other
+    // nudge-wizard field: whatever's real on the Event Trigger step has to
+    // show up here too.
+    sections.push(d.eventCategory==='Nudge Delivery Status' ? {title:'Event Trigger', stepId:'EVENT_TRIGGER', rows:[
+      ['Event Category', d.eventCategory||'—'],
+      ['Source Nudge', d.fallbackSourceNudgeName || (NUDGES.find(n=>n.id===d.fallbackSourceNudgeId)||{}).name || '—'],
+      ...(d.fallbackSourceBlockName ? [['Source Trigger', d.fallbackSourceBlockName]] : []),
+      ['Source Channel', CHANNEL_LABELS[d.fallbackSourceChannel]||d.fallbackSourceChannel||'—'],
+      ['Delivery Status (any of)', (d.fallbackStatuses||[]).join(', ')||'—'],
+    ]} : {title:'Event Trigger', stepId:'EVENT_TRIGGER', rows:[
       ['Event Category', d.eventCategory||'—'],
       ['Event Type', d.eventType||'—'],
       // Journey/Batch is only genuinely an Event Trigger concept for Journey
@@ -6028,6 +6060,17 @@ function submitNudge(){
   const d = wiz.draft;
   const isMakerChecker = !!d.isMakerCheckerEnabled && wiz.triggerType!=='event-based';
   const status = wiz.triggerType==='event-based' ? 'ACTIVE' : (isMakerChecker ? 'PENDING_REVIEW' : 'SCHEDULED');
+  // triggerType lives on `wiz`, not `wiz.draft` — but the saved NUDGES entry
+  // needs it on itself, since openNudgeView()/openNudgeEdit() read
+  // n.triggerType straight off the stored object to reconstruct `wiz` next
+  // time it's opened. Every live-created nudge was silently missing this
+  // until now (only the 24 hand-authored NUDGES examples set it
+  // explicitly) — reviewSections() then picked the wrong branch entirely
+  // on reopen (undefined !== 'event-based', so an event-based nudge
+  // silently rendered as if it were standard), with no error thrown.
+  // Self-healing on edit too, so re-saving an already-broken legacy entry
+  // fixes it going forward.
+  d.triggerType = wiz.triggerType;
   if(wiz.isEdit){
     Object.assign(d, {status});
     const idx = NUDGES.findIndex(n=>n.id===d.id);
