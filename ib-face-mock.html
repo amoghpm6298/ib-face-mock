@@ -4549,6 +4549,26 @@ function computeMakerCheckerFlag(issuer, programs){
 }
 
 const NUDGES = [
+  // Demo entry, added 2026-09-17 so "Source Trigger" targeting (Nudge
+  // Delivery Status event source) can be tried against a real nudge with
+  // two genuinely distinct triggers — the 24 other hand-authored entries
+  // below predate `commBlocks` and have none, so none of them can show the
+  // Source Trigger picker at all. Bracketed name so it's easy to spot in
+  // the Source Nudge dropdown.
+  { id:'ND-88999', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'[Demo — Two Triggers, select me] EMI Nudge', description:'Demo nudge with two distinct triggers (Welcome Trigger: WhatsApp only; Reminder Trigger: WhatsApp + SMS) — pick this as Source Nudge on a Nudge Delivery Status nudge to see the Source Trigger picker.',
+    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
+    startDate:'01 Sep 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Demo'],
+    createdBy:'Ananya Iyer', createdOn:'17 Sep 2026', variant:'BANNER', eligibilityEntity:'Transaction EMI',
+    channels:['WHATSAPP','SMS'],
+    commBlocks:[
+      { name:'Welcome Trigger', sendDate:'', repeatable:'without repeat', everyN:'7',
+        configured:{ WHATSAPP:{ account:'IBL-Karix-Txns', templateId:'CT-3310', templateName:'Auth-to-EMI Consent WhatsApp', tracking:false, userAttribution:false, utmParams:[] } } },
+      { name:'Reminder Trigger', sendDate:'', repeatable:'without repeat', everyN:'7',
+        configured:{
+          WHATSAPP:{ account:'IBL-Karix-Txns', templateId:'CT-3311', templateName:'Auth-to-EMI Reminder WhatsApp', tracking:false, userAttribution:false, utmParams:[] },
+          SMS:{ account:'IBL-Karix-Txns', templateId:'CT-3301', templateName:'EMI Conversion SMS', tracking:false, userAttribution:false, utmParams:[] },
+        } },
+    ] },
   { id:'ND-88214', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'EMI Cross-Sell — Festive Push', description:'Nudge eligible cardholders toward converting recent authorizations to EMI during the festive window.',
     scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
     startDate:'01 Aug 2026', endDate:'30 Sep 2026', status:'ACTIVE', labels:['EMI','Festive','Cross-Sell'],
