@@ -5753,7 +5753,7 @@ function renderFallbackSection(s){
       <div style="margin-top:10px;padding-top:10px;${idx>0?'border-top:1px dashed var(--gray-200);':''}">
         <div style="display:flex;gap:6px;align-items:center;">
           <select class="f-input" style="flex:1;" onchange="fallbackModeChange(${idx},this.value)">
-            <option value="">No fallback</option>
+            <option value="" ${!fb.nudgeId && !fb.creatingNew ? 'selected':''} disabled>Select a nudge to fire</option>
             ${candidates.map(n=>`<option value="${n.id}" ${!fb.creatingNew && fb.nudgeId===n.id?'selected':''}>${n.name}</option>`).join('')}
             <option value="__create_new__" ${fb.creatingNew?'selected':''}>+ Create new fallback nudge…</option>
           </select>
