@@ -6364,6 +6364,7 @@ function renderNudgeView(){
   // Analytics is shown consistently for ANY nudge with configured channels
   // that's Active or Expired, independent of type or trigger mechanism.
   const showTabs = (d.channels||[]).length && ['ACTIVE','EXPIRED'].includes(d.status);
+  const isEventBased = wiz.triggerType==='event-based';
   const events = AUDIT_EVENTS[d.status] || ['NUDGE_CREATED'];
 
   document.getElementById('nudgeViewRoot').innerHTML = `
@@ -6402,8 +6403,11 @@ function renderNudgeView(){
         </div>` : ''}
 
         ${(!showTabs || nvState.tab==='details') ? renderReviewBody(true) : (
+          (isEventBased ? renderNudgeExecutionKpis(d) : '') +
           renderAssociatedNudgeFunnel(d) +
-          renderNudgeAnalytics(nvState.selectedNudgeId && nvState.selectedNudgeId!==d.id ? (NUDGES.find(n=>n.id===nvState.selectedNudgeId)||d) : d, d)
+          (isEventBased ? '<div class="section-heading">Engagement</div>' : '') +
+          renderNudgeAnalytics(nvState.selectedNudgeId && nvState.selectedNudgeId!==d.id ? (NUDGES.find(n=>n.id===nvState.selectedNudgeId)||d) : d, d) +
+          (isEventBased ? renderNudgeExecutionDetail(d) : '')
         )}
 
         <div class="card" style="margin-top:8px;">
@@ -6429,6 +6433,7 @@ function renderNudgeView(){
   `;
   // render phone preview into the detail-page slot using the same renderer as the wizard
   wizPreviewInto('viewPhoneWrap');
+  if(isEventBased && showTabs && nvState.tab==='analytics') renderNudgeExecutionCharts(d);
 }
 function wizPreviewInto(targetId){
   const d = wiz.draft;
@@ -6567,6 +6572,167 @@ function renderNudgeAnalytics(d, baseNudge){
         </div>`;
       }).join('')}
     </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Event-based nudge execution analytics — a generic template meant to
+// generalize across every current and future Event Category (Journey/Offer/
+// Transaction/EMI/Nudge Delivery Status). What varies per category is only
+// which attributes show in a condition drawer elsewhere in this file, never
+// this funnel's shape, since every event source funnels through the same
+// Quibbler pipeline: Received -> Matched Conditions -> Guardrail-Suppressed
+// -> Dispatched -> Delivered. Business-outcome/conversion correlation is
+// deliberately NOT included here — flagged as difficult to correlate
+// generically across event types, left for a future pass.
+// Dispatched/Delivered are not independently seeded — they're summed
+// straight off the existing mockAnalyticsChannelData() per configured
+// channel, so this funnel can never silently disagree with the Engagement
+// cards right below it (same discipline as the Associated Nudge funnel).
+function mockNudgeExecutionData(d){
+  const channels = d.channels && d.channels.length ? d.channels : ['SMS'];
+  let dispatched = 0, delivered = 0;
+  channels.forEach(ch=>{
+    const data = mockAnalyticsChannelData(d.id, ch);
+    dispatched += data.values.Sent||0;
+    delivered += data.values.Delivered||0;
+  });
+  const seed = hashCode(d.id);
+  const suppressionRate = 0.15 + (seed%20)/100; // 15-34%
+  const matched = Math.round(dispatched/(1-suppressionRate)) || dispatched;
+  const suppressed = Math.max(0, matched - dispatched);
+  const matchRate = 0.55 + (seed%30)/100; // 55-84% of received events satisfy conditions
+  const received = Math.round(matched/matchRate) || matched;
+  // Real vocabulary, straight from the Metabase "Cancellation Reasons
+  // Breakdown" panel this template is generalizing from.
+  const cooldown = Math.round(suppressed*0.55);
+  const cancelEvent = Math.round(suppressed*0.44);
+  const suppression = {
+    COOLDOWN_PERIOD_ACTIVE: cooldown,
+    CANCEL_EVENT_RECEIVED: cancelEvent,
+    NUDGE_DEACTIVATED: Math.max(0, suppressed - cooldown - cancelEvent),
+  };
+  const uniqueRatio = 0.60 + (seed%25)/100; // 60-84% — some customers get touched more than once
+  const uniqueCustomers = Math.max(delivered?1:0, Math.round(delivered*uniqueRatio));
+  const avgTouches = uniqueCustomers ? delivered/uniqueCustomers : 0;
+
+  const days = 21;
+  const dailySeries = [], successRateSeries = [], latencySeries = [];
+  const today = new Date(2026,8,18);
+  for(let i=days-1;i>=0;i--){
+    const date = new Date(today); date.setDate(date.getDate()-i);
+    const dseed = hashCode(d.id+'|'+date.toISOString().slice(0,10));
+    const dayMatched = Math.max(0, Math.round((matched/days)*(0.5+(dseed%100)/100)));
+    const daySuppressed = Math.round(dayMatched*suppressionRate);
+    const dayDispatched = dayMatched-daySuppressed;
+    dailySeries.push({date, count:dayMatched});
+    successRateSeries.push({date, rate: dayMatched ? (dayDispatched/dayMatched)*100 : 0});
+    latencySeries.push({date, latency: 2+(dseed%15)}); // 2-16s
+  }
+  return {received, matched, suppressed, suppression, dispatched, delivered, uniqueCustomers, avgTouches, dailySeries, successRateSeries, latencySeries};
+}
+// Headline row — kept as its own function/section so it renders first,
+// above the Associated Nudge funnel and Engagement cards, matching this
+// file's established "page position communicates priority" rule (business
+// numbers lead, operational/technical detail sits lower on the page).
+function renderNudgeExecutionKpis(d){
+  return `<div class="section-heading first">Business KPIs</div>
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;" id="nudgeExecKpiGrid"></div>`;
+}
+// Trend + funnel + health — operational detail, rendered after Engagement.
+function renderNudgeExecutionDetail(d){
+  return `
+    <div class="card" style="margin-bottom:20px;">
+      <p class="card-title">Executions Over Time</p>
+      <p class="card-sub">Times this nudge's conditions matched and an execution was created, per day</p>
+      <div class="trend-chart" id="nudgeExecTrend"></div>
+    </div>
+
+    <div class="section-heading">Execution Funnel</div>
+    <div class="card" style="margin-bottom:20px;">
+      <p class="card-title">Received &rarr; Delivered</p>
+      <p class="card-sub">Every event this nudge listens to, from first receipt through to a delivered message</p>
+      <div id="nudgeExecFunnelBody"></div>
+    </div>
+    <div class="card" style="margin-bottom:20px;">
+      <p class="card-title">Guardrail-Suppressed — By Reason</p>
+      <p class="card-sub">Why matched executions never made it to Dispatched</p>
+      <div id="nudgeExecSuppressionBody"></div>
+    </div>
+
+    <div class="section-heading">Health</div>
+    <div class="card" style="margin-bottom:20px;">
+      <p class="card-title">Success Rate Trend</p>
+      <p class="card-sub">Share of matched executions that made it to Dispatched, per day</p>
+      <div class="trend-chart" id="nudgeSuccessRateTrend" style="height:70px;"></div>
+    </div>
+    <div class="card" style="margin-bottom:20px;">
+      <p class="card-title">Time-to-Dispatch Latency</p>
+      <p class="card-sub">Average seconds from event received to dispatch, per day</p>
+      <div class="trend-chart" id="nudgeLatencyTrend" style="height:70px;"></div>
+    </div>`;
+}
+function renderNudgeExecutionCharts(d){
+  const data = mockNudgeExecutionData(d);
+  const MONTH_ABBR5 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  document.getElementById('nudgeExecKpiGrid').innerHTML = [
+    {label:'Unique Customers Reached', value: data.uniqueCustomers.toLocaleString('en-IN')},
+    {label:'Total Executions', value: data.matched.toLocaleString('en-IN')},
+    {label:'Avg. Touches per Customer', value: data.avgTouches.toFixed(1)},
+  ].map(k=>`<div class="kpi-card"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
+
+  const execMax = Math.max(...data.dailySeries.map(s=>s.count), 1);
+  document.getElementById('nudgeExecTrend').innerHTML = trendYAxisHtml(execMax) + data.dailySeries.map(s=>`
+    <div class="trend-bar-col">
+      <div class="trend-tooltip">${s.count.toLocaleString('en-IN')} executions · ${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
+      <div class="trend-bar" style="height:${Math.max(4,Math.round((s.count/execMax)*130))}px;"></div>
+      <div class="trend-label">${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
+    </div>`).join('');
+
+  const steps = [
+    {label:'Events Received', count:data.received},
+    {label:'Matched Conditions', count:data.matched},
+    {label:'Dispatched', count:data.dispatched},
+    {label:'Delivered', count:data.delivered},
+  ];
+  const fmax = steps[0].count||1;
+  document.getElementById('nudgeExecFunnelBody').innerHTML = steps.map(s=>`
+    <div class="funnel-row">
+      <div class="funnel-label" style="width:170px;">${s.label}</div>
+      <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.max(2,Math.round((s.count/fmax)*100))}%;"></div></div>
+      <div class="funnel-count">${s.count.toLocaleString('en-IN')}</div>
+      <div class="funnel-pct">${fmax?Math.round((s.count/fmax)*100):0}%</div>
+    </div>`).join('');
+
+  // Suppression breakdown — same funnel-row visual language as the funnel
+  // above it, not the shared renderRankedBarList() helper: that component
+  // hardcodes a "conv." rate label (a conversion-rate concept, not
+  // applicable here), so it's hand-rolled here to say what it actually is.
+  const suppressionRows = Object.entries(data.suppression).map(([reason,count])=>({label:reason, count}));
+  const smax = Math.max(...suppressionRows.map(r=>r.count),1);
+  document.getElementById('nudgeExecSuppressionBody').innerHTML = suppressionRows.map(r=>`
+    <div class="funnel-row">
+      <div class="funnel-label" style="width:220px;">${r.label}</div>
+      <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.max(2,Math.round((r.count/smax)*100))}%;"></div></div>
+      <div class="funnel-count">${r.count.toLocaleString('en-IN')}</div>
+      <div class="funnel-pct">${data.suppressed?Math.round((r.count/data.suppressed)*100):0}%</div>
+    </div>`).join('');
+
+  const rateMax = 100;
+  document.getElementById('nudgeSuccessRateTrend').innerHTML = trendYAxisHtml(rateMax, 45, 16, '%') + data.successRateSeries.map(s=>`
+    <div class="trend-bar-col">
+      <div class="trend-tooltip">${s.rate.toFixed(1)}% dispatched · ${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
+      <div class="trend-bar" style="width:8px;background:var(--purple-text);height:${Math.max(3,Math.round((s.rate/rateMax)*45))}px;"></div>
+      <div class="trend-label">${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
+    </div>`).join('');
+
+  const latMax = Math.max(...data.latencySeries.map(s=>s.latency), 1);
+  document.getElementById('nudgeLatencyTrend').innerHTML = trendYAxisHtml(latMax, 45, 16, 's') + data.latencySeries.map(s=>`
+    <div class="trend-bar-col">
+      <div class="trend-tooltip">${s.latency.toFixed(1)}s · ${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
+      <div class="trend-bar" style="width:8px;height:${Math.max(3,Math.round((s.latency/latMax)*45))}px;"></div>
+      <div class="trend-label">${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
+    </div>`).join('');
 }
 
 /* =========================================================================
