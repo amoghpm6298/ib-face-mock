@@ -6405,7 +6405,7 @@ function renderNudgeView(){
         ${(!showTabs || nvState.tab==='details') ? renderReviewBody(true) : (
           (isEventBased ? renderNudgeExecutionKpis(d) : '') +
           renderAssociatedNudgeFunnel(d) +
-          (isEventBased ? '<div class="section-heading">What Are People Doing With It?</div>' : '') +
+          (isEventBased ? '<div class="section-heading">Engagement</div>' : '') +
           renderNudgeAnalytics(nvState.selectedNudgeId && nvState.selectedNudgeId!==d.id ? (NUDGES.find(n=>n.id===nvState.selectedNudgeId)||d) : d, d) +
           (isEventBased ? renderNudgeExecutionDetail(d) : '')
         )}
@@ -6634,15 +6634,16 @@ function mockNudgeExecutionData(d){
 // above the Associated Nudge funnel and Engagement cards, matching this
 // file's established "page position communicates priority" rule (business
 // numbers lead, operational/technical detail sits lower on the page).
-// Headings are framed as the question a reader actually has, not just a
-// content label ("Business KPIs" -> "How much is this reaching..."), same
-// fix already applied to EMI Analytics on 2026-09-11 for the identical
-// "feels disjointed, no story" complaint — reused here, not reinvented.
+// Section headings are short labels ("Headline & Reach", "Funnel &
+// Drop-off", "Technical Health") matching EMI Analytics' actual own
+// convention exactly — not full questions. The story comes from the
+// callout sentences below (reach sentence, drop-off callout), same
+// mechanism EMI Analytics uses on 2026-09-11 for the identical "feels
+// disjointed, no story" complaint — reused here, not reinvented.
 // Executions Over Time sits inside this same section (not a separate
-// floating card) since it's still answering the same question: how much,
-// and is it growing.
+// floating card) since it's still part of the same headline-reach story.
 function renderNudgeExecutionKpis(d){
-  return `<div class="section-heading first">How Much Is This Reaching, and Is It Growing?</div>
+  return `<div class="section-heading first">Headline &amp; Reach</div>
     <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px;" id="nudgeExecKpiGrid"></div>
     <div id="nudgeExecKpiCallout" style="margin-bottom:20px;"></div>
     <div class="card" style="margin-bottom:20px;">
@@ -6654,7 +6655,7 @@ function renderNudgeExecutionKpis(d){
 // Funnel + health — operational detail, rendered after Engagement.
 function renderNudgeExecutionDetail(d){
   return `
-    <div class="section-heading">Where Does It Break, and Why?</div>
+    <div class="section-heading">Funnel &amp; Drop-off</div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Received &rarr; Delivered</p>
       <p class="card-sub">Every event this nudge listens to, from first receipt through to a delivered message</p>
@@ -6667,7 +6668,7 @@ function renderNudgeExecutionDetail(d){
       <div id="nudgeExecSuppressionBody"></div>
     </div>
 
-    <div class="section-heading">Is It Running Reliably?</div>
+    <div class="section-heading">Technical Health</div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Success Rate Trend</p>
       <p class="card-sub">Share of matched executions that made it to Dispatched, per day</p>
@@ -6683,15 +6684,20 @@ function renderNudgeExecutionCharts(d){
   const data = mockNudgeExecutionData(d);
   const MONTH_ABBR5 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+  // Delivery Rate, not Avg. Touches per Customer — always real regardless
+  // of whether "Enable Tracking" (commBlocks[...].configured[ch].tracking)
+  // is on for this nudge's channels, unlike a click-based metric (CTR),
+  // which would misrepresent nudges that never opted into UTM tracking.
+  const deliveryRate = data.dispatched ? Math.round((data.delivered/data.dispatched)*100) : 0;
   document.getElementById('nudgeExecKpiGrid').innerHTML = [
     {label:'Unique Customers Reached', value: data.uniqueCustomers.toLocaleString('en-IN')},
     {label:'Total Executions', value: data.matched.toLocaleString('en-IN')},
-    {label:'Avg. Touches per Customer', value: data.avgTouches.toFixed(1)},
+    {label:'Delivery Rate', value: deliveryRate+'%'},
   ].map(k=>`<div class="kpi-card"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
   // Connects the three tiles above into one sentence, instead of leaving a
   // reader to mentally divide Executions by Unique Customers themselves.
   document.getElementById('nudgeExecKpiCallout').innerHTML =
-    `<p class="card-sub" style="margin:0;">${data.matched.toLocaleString('en-IN')} executions reached ${data.uniqueCustomers.toLocaleString('en-IN')} unique customers — about ${data.avgTouches.toFixed(1)} touches each.</p>`;
+    `<p class="card-sub" style="margin:0;">${data.matched.toLocaleString('en-IN')} executions reached ${data.uniqueCustomers.toLocaleString('en-IN')} unique customers, delivered at a ${deliveryRate}% rate.</p>`;
 
   const execMax = Math.max(...data.dailySeries.map(s=>s.count), 1);
   document.getElementById('nudgeExecTrend').innerHTML = trendYAxisHtml(execMax) + data.dailySeries.map(s=>`
