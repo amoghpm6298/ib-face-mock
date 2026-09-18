@@ -6405,7 +6405,7 @@ function renderNudgeView(){
         ${(!showTabs || nvState.tab==='details') ? renderReviewBody(true) : (
           (isEventBased ? renderNudgeExecutionKpis(d) : '') +
           renderAssociatedNudgeFunnel(d) +
-          (isEventBased ? '<div class="section-heading">Engagement</div>' : '') +
+          (isEventBased ? '<div class="section-heading">What Are People Doing With It?</div>' : '') +
           renderNudgeAnalytics(nvState.selectedNudgeId && nvState.selectedNudgeId!==d.id ? (NUDGES.find(n=>n.id===nvState.selectedNudgeId)||d) : d, d) +
           (isEventBased ? renderNudgeExecutionDetail(d) : '')
         )}
@@ -6634,24 +6634,32 @@ function mockNudgeExecutionData(d){
 // above the Associated Nudge funnel and Engagement cards, matching this
 // file's established "page position communicates priority" rule (business
 // numbers lead, operational/technical detail sits lower on the page).
+// Headings are framed as the question a reader actually has, not just a
+// content label ("Business KPIs" -> "How much is this reaching..."), same
+// fix already applied to EMI Analytics on 2026-09-11 for the identical
+// "feels disjointed, no story" complaint — reused here, not reinvented.
+// Executions Over Time sits inside this same section (not a separate
+// floating card) since it's still answering the same question: how much,
+// and is it growing.
 function renderNudgeExecutionKpis(d){
-  return `<div class="section-heading first">Business KPIs</div>
-    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;" id="nudgeExecKpiGrid"></div>`;
-}
-// Trend + funnel + health — operational detail, rendered after Engagement.
-function renderNudgeExecutionDetail(d){
-  return `
+  return `<div class="section-heading first">How Much Is This Reaching, and Is It Growing?</div>
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px;" id="nudgeExecKpiGrid"></div>
+    <div id="nudgeExecKpiCallout" style="margin-bottom:20px;"></div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Executions Over Time</p>
       <p class="card-sub">Times this nudge's conditions matched and an execution was created, per day</p>
       <div class="trend-chart" id="nudgeExecTrend"></div>
-    </div>
-
-    <div class="section-heading">Execution Funnel</div>
+    </div>`;
+}
+// Funnel + health — operational detail, rendered after Engagement.
+function renderNudgeExecutionDetail(d){
+  return `
+    <div class="section-heading">Where Does It Break, and Why?</div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Received &rarr; Delivered</p>
       <p class="card-sub">Every event this nudge listens to, from first receipt through to a delivered message</p>
       <div id="nudgeExecFunnelBody"></div>
+      <div id="nudgeExecDropoffCallout"></div>
     </div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Guardrail-Suppressed — By Reason</p>
@@ -6659,7 +6667,7 @@ function renderNudgeExecutionDetail(d){
       <div id="nudgeExecSuppressionBody"></div>
     </div>
 
-    <div class="section-heading">Health</div>
+    <div class="section-heading">Is It Running Reliably?</div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Success Rate Trend</p>
       <p class="card-sub">Share of matched executions that made it to Dispatched, per day</p>
@@ -6680,6 +6688,10 @@ function renderNudgeExecutionCharts(d){
     {label:'Total Executions', value: data.matched.toLocaleString('en-IN')},
     {label:'Avg. Touches per Customer', value: data.avgTouches.toFixed(1)},
   ].map(k=>`<div class="kpi-card"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
+  // Connects the three tiles above into one sentence, instead of leaving a
+  // reader to mentally divide Executions by Unique Customers themselves.
+  document.getElementById('nudgeExecKpiCallout').innerHTML =
+    `<p class="card-sub" style="margin:0;">${data.matched.toLocaleString('en-IN')} executions reached ${data.uniqueCustomers.toLocaleString('en-IN')} unique customers — about ${data.avgTouches.toFixed(1)} touches each.</p>`;
 
   const execMax = Math.max(...data.dailySeries.map(s=>s.count), 1);
   document.getElementById('nudgeExecTrend').innerHTML = trendYAxisHtml(execMax) + data.dailySeries.map(s=>`
@@ -6703,6 +6715,19 @@ function renderNudgeExecutionCharts(d){
       <div class="funnel-count">${s.count.toLocaleString('en-IN')}</div>
       <div class="funnel-pct">${fmax?Math.round((s.count/fmax)*100):0}%</div>
     </div>`).join('');
+
+  // Drop-off callout — same single-biggest-step-loss pattern/text/CSS class
+  // already established for EMI Analytics' Conversion Funnel, reused here
+  // rather than reinvented, so the funnel states its own finding instead of
+  // leaving a reader to spot the steepest bar themselves.
+  let biggestDrop = null;
+  for(let i=0;i<steps.length-1;i++){
+    if(steps[i].count<=0) continue;
+    const dropPct = Math.round(((steps[i].count-steps[i+1].count)/steps[i].count)*100);
+    if(dropPct>0 && (!biggestDrop || dropPct>biggestDrop.dropPct)) biggestDrop = {from:steps[i].label, to:steps[i+1].label, dropPct};
+  }
+  document.getElementById('nudgeExecDropoffCallout').innerHTML = biggestDrop
+    ? `<div class="dropoff-callout">⚠ Biggest drop-off: ${biggestDrop.from} → ${biggestDrop.to} (−${biggestDrop.dropPct}%)</div>` : '';
 
   // Suppression breakdown — same funnel-row visual language as the funnel
   // above it, not the shared renderRankedBarList() helper: that component
