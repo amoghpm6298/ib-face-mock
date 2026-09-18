@@ -4892,6 +4892,12 @@ const PROGRAM_OPTIONS = { 'IndusInd Bank (IBL)':['Platinum Aura','Signature Rewa
 const LABEL_OPTIONS = ['EMI','Festive','Cross-Sell','Journey','Milestone','Risk','Activation','Event-Based'];
 const JOURNEY_OPTIONS = ['Txn-to-EMI','Multi-Txn-to-EMI','OS-to-EMI','Onboarding','Card Activation'];
 const BATCH_OPTIONS = ['Aug Festive Batch','Sep Reactivation Batch','Q3 Consolidation Batch'];
+// Which flow a customer completed a triggering action through — PWA (the
+// standalone in-PWA experience) or one of the real journey types this file
+// already models. Reuses JOURNEY_OPTIONS rather than inventing a second,
+// disconnected journey-name list — see the Source attribute on Transaction/
+// EMI Request in ELIGIBILITY_META below.
+const EVENT_SOURCE_OPTIONS = ['PWA', ...JOURNEY_OPTIONS];
 
 // Real per-entity attribute metadata — eligibilityTotalList in smartNudgesConstants.ts.
 // Each attribute carries the real INPUT_TYPE, which drives both the operator
@@ -4934,10 +4940,26 @@ const ELIGIBILITY_META = {
     'Transaction Amount':{type:'number'},
     'Transaction Type':  {type:'select', options:['PURCHASE','REFUND','CASH_ADVANCE']},
     'MCC':                {type:'list'},
+    // Which flow the customer completed the triggering action through —
+    // PWA vs a specific Journey. Optional, not mandatory (unlike Transaction
+    // Status/Product Type) — a campaign not scoped by Source just applies
+    // regardless of origin, no ambiguity forces a choice the way Auth-vs-
+    // Settled does for the Transaction entity itself. Real backend
+    // dependency, not yet built: Ironbank's event payload doesn't carry
+    // this today (confirmed only "PWA or Journey" as a coarse flag is
+    // realistic without further work; a *specific* journey identity, which
+    // is what this field's options list assumes, needs Nimbus to pass
+    // journey context through to Ironbank during booking first — flagged
+    // as an open dependency, not a decided backend commitment).
+    'Source':             {type:'select', options:EVENT_SOURCE_OPTIONS},
   },
   'EMI Request': {
     'New Status':   {type:'select', options:['Pending','Successful','Failed','Expired','Cancelled']},
     'Product Type': {type:'select', options:['Single-Txn','Multi-Txn','Outstanding']},
+    // Same Source concept as Transaction's own — an EMI request's
+    // resolution is itself downstream of whichever flow the customer
+    // completed the booking action through.
+    'Source':       {type:'select', options:EVENT_SOURCE_OPTIONS},
   },
 };
 const OPERATORS_BY_TYPE = {
