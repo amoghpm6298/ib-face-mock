@@ -4940,6 +4940,12 @@ const ELIGIBILITY_META = {
     'Transaction Amount':{type:'number'},
     'Transaction Type':  {type:'select', options:['PURCHASE','REFUND','CASH_ADVANCE']},
     'MCC':                {type:'list'},
+    // Was documented in the PRD's own attribute list (Section 6.2/6.5) but
+    // missing here — found during a direct audit ("is this already in
+    // prototype na?"). Same Allowed/Denied list pattern as MCC, since a
+    // campaign manager would plausibly want to include/exclude specific
+    // named merchants the same way.
+    'Merchant Name':      {type:'list'},
     // Which flow the customer completed the triggering action through —
     // PWA vs a specific Journey. Optional, not mandatory (unlike Transaction
     // Status/Product Type) — a campaign not scoped by Source just applies
