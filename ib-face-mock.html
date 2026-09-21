@@ -6783,12 +6783,22 @@ function renderNudgeExecutionCharts(d){
   document.getElementById('nudgeExecKpiCallout').innerHTML =
     `<p class="card-sub" style="margin:0;">${data.matched.toLocaleString('en-IN')} executions reached ${data.uniqueCustomers.toLocaleString('en-IN')} unique customers, delivered at a ${deliveryRate}% rate.</p>`;
 
+  // Date labels overlap once the date-range filter allows more than ~15
+  // bars in a fixed-width chart (.trend-bar-col is flex:1/min-width:0, so
+  // it shrinks below its own label's width rather than wrapping or
+  // truncating — every extra bar the filter enables just crams the axis
+  // further). Every bar still renders and is still hoverable for its exact
+  // date; only the always-visible label thins out, roughly ≤10 shown
+  // regardless of range length. Applied to all 3 trend charts on this page.
+  const labelStep = Math.max(1, Math.ceil(data.dailySeries.length/10));
+  const dayLabel = (s,i) => i%labelStep===0 ? `${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}` : '';
+
   const execMax = Math.max(...data.dailySeries.map(s=>s.count), 1);
-  document.getElementById('nudgeExecTrend').innerHTML = trendYAxisHtml(execMax) + data.dailySeries.map(s=>`
+  document.getElementById('nudgeExecTrend').innerHTML = trendYAxisHtml(execMax) + data.dailySeries.map((s,i)=>`
     <div class="trend-bar-col">
       <div class="trend-tooltip">${s.count.toLocaleString('en-IN')} executions · ${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
       <div class="trend-bar" style="height:${Math.max(4,Math.round((s.count/execMax)*130))}px;"></div>
-      <div class="trend-label">${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
+      <div class="trend-label">${dayLabel(s,i)}</div>
     </div>`).join('');
 
   const steps = [
@@ -6834,19 +6844,19 @@ function renderNudgeExecutionCharts(d){
     </div>`).join('');
 
   const rateMax = 100;
-  document.getElementById('nudgeSuccessRateTrend').innerHTML = trendYAxisHtml(rateMax, 45, 16, '%') + data.successRateSeries.map(s=>`
+  document.getElementById('nudgeSuccessRateTrend').innerHTML = trendYAxisHtml(rateMax, 45, 16, '%') + data.successRateSeries.map((s,i)=>`
     <div class="trend-bar-col">
       <div class="trend-tooltip">${s.rate.toFixed(1)}% dispatched · ${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
       <div class="trend-bar" style="width:8px;background:var(--purple-text);height:${Math.max(3,Math.round((s.rate/rateMax)*45))}px;"></div>
-      <div class="trend-label">${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
+      <div class="trend-label">${dayLabel(s,i)}</div>
     </div>`).join('');
 
   const latMax = Math.max(...data.latencySeries.map(s=>s.latency), 1);
-  document.getElementById('nudgeLatencyTrend').innerHTML = trendYAxisHtml(latMax, 45, 16, 's') + data.latencySeries.map(s=>`
+  document.getElementById('nudgeLatencyTrend').innerHTML = trendYAxisHtml(latMax, 45, 16, 's') + data.latencySeries.map((s,i)=>`
     <div class="trend-bar-col">
       <div class="trend-tooltip">${s.latency.toFixed(1)}s · ${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
       <div class="trend-bar" style="width:8px;height:${Math.max(3,Math.round((s.latency/latMax)*45))}px;"></div>
-      <div class="trend-label">${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}</div>
+      <div class="trend-label">${dayLabel(s,i)}</div>
     </div>`).join('');
 }
 
