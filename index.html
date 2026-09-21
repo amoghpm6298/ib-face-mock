@@ -6426,7 +6426,6 @@ function renderNudgeView(){
 
         ${(!showTabs || nvState.tab==='details') ? renderReviewBody(true) : (
           (isEventBased ? renderNudgeExecutionKpis(d) : '') +
-          renderAssociatedNudgeFunnel(d) +
           (isEventBased ? '<div class="section-heading">Engagement</div><p class="card-sub" style="margin:-8px 0 12px;">Reflects this nudge\'s full history — not scoped to the date range selected above.</p>' : '') +
           renderNudgeAnalytics(d) +
           (isEventBased ? renderNudgeExecutionDetail(d) : '')
@@ -6585,6 +6584,13 @@ function nudgeChannelCardsHtml(nudge){
 // open. The whole point of a fallback's engagement numbers is comparing
 // them against the primary's; a switcher that only ever shows one at a
 // time actively works against that.
+// Story order: Primary's own numbers first (what actually happened),
+// then the Associated Nudge recovery funnel right where it belongs — as
+// the explanation for what you're about to see next — then each
+// fallback's own detailed engagement. Previously the funnel sat before
+// everything, including the primary's own numbers, which told the
+// "did the fallback help" story before establishing the baseline it's
+// explaining.
 function renderNudgeAnalytics(baseNudge){
   const assoc = findAssociatedNudges(baseNudge.id);
   const rows = [
@@ -6593,7 +6599,8 @@ function renderNudgeAnalytics(baseNudge){
   ];
   return `<div style="padding:4px 0 2px;">
     ${rows.map((r,i)=>`
-      ${i>0 ? '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">' : ''}
+      ${i===1 && assoc.length ? renderAssociatedNudgeFunnel(baseNudge) : ''}
+      ${i>1 ? '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">' : ''}
       <div id="engagement-${r.nudge.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:12px;scroll-margin-top:16px;">
         <span class="badge ${r.badge}">${r.roleLabel}</span>
         <span style="font-size:14.5px;font-weight:600;">${r.nudge.name}</span>
