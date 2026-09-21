@@ -6599,8 +6599,9 @@ function renderNudgeAnalytics(baseNudge){
   ];
   return `<div style="padding:4px 0 2px;">
     ${rows.map((r,i)=>`
-      ${i===1 && assoc.length ? renderAssociatedNudgeFunnel(baseNudge) : ''}
-      ${i>1 ? '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">' : ''}
+      ${i===1 && assoc.length
+        ? '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">' + renderAssociatedNudgeFunnel(baseNudge) + '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">'
+        : (i>0 ? '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">' : '')}
       <div id="engagement-${r.nudge.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:12px;scroll-margin-top:16px;">
         <span class="badge ${r.badge}">${r.roleLabel}</span>
         <span style="font-size:14.5px;font-weight:600;">${r.nudge.name}</span>
