@@ -6309,6 +6309,18 @@ function renderAssociatedNudgeFunnel(d){
     {label:'Associated Nudge Delivered', count: totalAssocDelivered},
   ];
   const max = steps[0].count || 1;
+  // Same fix already established for EMI Analytics' Conversion Funnel:
+  // bars stay strictly linear (sqrt/log-scaling was tried there and
+  // rejected — it makes a tiny real share look bigger than it is, which
+  // is worse than looking small) with a pixel-floor so a near-zero value
+  // never fully vanishes, and the percentage — not the bar — carries the
+  // precision for small shares via tiered rounding.
+  const fmtFunnelPct = (n,mx) => {
+    const pct = (n/mx)*100;
+    if(pct<=0) return '0%';
+    if(pct<10) return pct.toFixed(pct<1?2:1)+'%';
+    return Math.round(pct)+'%';
+  };
   return `
     <div class="card" style="margin-bottom:16px;">
       <p class="card-title">Associated Nudges — Recovery Funnel</p>
@@ -6317,8 +6329,9 @@ function renderAssociatedNudgeFunnel(d){
         ${steps.map(s=>`
           <div class="funnel-row">
             <div class="funnel-label" style="width:170px;">${s.label}</div>
-            <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((s.count/max)*100)}%;"></div></div>
+            <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${Math.round((s.count/max)*100)}%;min-width:2px;"></div></div>
             <div class="funnel-count">${s.count.toLocaleString('en-IN')}</div>
+            <div class="funnel-pct" style="font-weight:700;color:var(--neutral-800);font-size:12.5px;">${fmtFunnelPct(s.count,max)}</div>
           </div>`).join('')}
       </div>
       <div class="table-wrap">
