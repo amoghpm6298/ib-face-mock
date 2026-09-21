@@ -6402,14 +6402,17 @@ function renderNudgeView(){
           <div class="tab ${nvState.tab==='analytics'?'active':''}" onclick="nvState.tab='analytics';renderNudgeView()">Analytics</div>
         </div>` : ''}
 
+        ${(isEventBased && showTabs && nvState.tab==='analytics') ? nudgeExecDateFilterHtml() : ''}
+
         ${(!showTabs || nvState.tab==='details') ? renderReviewBody(true) : (
           (isEventBased ? renderNudgeExecutionKpis(d) : '') +
           renderAssociatedNudgeFunnel(d) +
-          (isEventBased ? '<div class="section-heading">Engagement</div>' : '') +
+          (isEventBased ? '<div class="section-heading">Engagement</div><p class="card-sub" style="margin:-8px 0 12px;">Reflects this nudge\'s full history — not scoped to the date range selected above.</p>' : '') +
           renderNudgeAnalytics(nvState.selectedNudgeId && nvState.selectedNudgeId!==d.id ? (NUDGES.find(n=>n.id===nvState.selectedNudgeId)||d) : d, d) +
           (isEventBased ? renderNudgeExecutionDetail(d) : '')
         )}
 
+        ${(!showTabs || nvState.tab==='details') ? `
         <div class="card" style="margin-top:8px;">
           <p class="card-title">Status Log</p>
           ${events.map((e,i)=>`
@@ -6418,7 +6421,7 @@ function renderNudgeView(){
               <div><b style="font-size:12.5px;">${i===events.length-1 && d.status==='CHANGES_REQUESTED' && d.comments ? d.comments[d.comments.length-1].by : d.createdBy}</b> <span style="font-size:12.5px;color:var(--gray-600);">${AUDIT_LABELS[e]}</span>
               <div style="font-size:11.5px;color:var(--gray-500);">${d.createdOn}</div></div>
             </div>`).join('')}
-        </div>
+        </div>` : ''}
       </div>
       <div style="width:280px;flex-shrink:0;">
         <div class="wiz-preview-label" style="margin-bottom:10px;">Live Preview</div>
@@ -6588,47 +6591,126 @@ function renderNudgeAnalytics(d, baseNudge){
 // straight off the existing mockAnalyticsChannelData() per configured
 // channel, so this funnel can never silently disagree with the Engagement
 // cards right below it (same discipline as the Associated Nudge funnel).
-function mockNudgeExecutionData(d){
+// "Now" for this page's mock data — its own fixed reference (not
+// maxDatasetDate(), which is CASES/EMI-specific), matching this file's
+// established dated-mock-data convention.
+function nudgeExecNow(){ return new Date(2026,8,21); }
+
+// 60 days of granular daily records — every metric (received/matched/
+// dispatched/delivered/suppression/latency) computed PER DAY, so any
+// date-range filter is always an exact sum over these rows, never a
+// separately-seeded "total" that could drift from what the trend chart
+// shows for the same range (the exact class of bug this file has hit and
+// fixed more than once elsewhere — aggregate and detail must share one
+// source of truth, not two independent computations reconciled by luck).
+function mockNudgeExecutionDaily(d){
   const channels = d.channels && d.channels.length ? d.channels : ['SMS'];
-  let dispatched = 0, delivered = 0;
+  let totalDispatched = 0, totalDelivered = 0;
   channels.forEach(ch=>{
-    const data = mockAnalyticsChannelData(d.id, ch);
-    dispatched += data.values.Sent||0;
-    delivered += data.values.Delivered||0;
+    const chData = mockAnalyticsChannelData(d.id, ch);
+    totalDispatched += chData.values.Sent||0;
+    totalDelivered += chData.values.Delivered||0;
   });
+  const deliveryRate = totalDispatched ? totalDelivered/totalDispatched : 0.9;
   const seed = hashCode(d.id);
   const suppressionRate = 0.15 + (seed%20)/100; // 15-34%
-  const matched = Math.round(dispatched/(1-suppressionRate)) || dispatched;
-  const suppressed = Math.max(0, matched - dispatched);
   const matchRate = 0.55 + (seed%30)/100; // 55-84% of received events satisfy conditions
-  const received = Math.round(matched/matchRate) || matched;
-  // Real vocabulary, straight from the Metabase "Cancellation Reasons
-  // Breakdown" panel this template is generalizing from.
-  const cooldown = Math.round(suppressed*0.55);
-  const cancelEvent = Math.round(suppressed*0.44);
-  const suppression = {
-    COOLDOWN_PERIOD_ACTIVE: cooldown,
-    CANCEL_EVENT_RECEIVED: cancelEvent,
-    NUDGE_DEACTIVATED: Math.max(0, suppressed - cooldown - cancelEvent),
-  };
+  const totalMatched = Math.round(totalDispatched/(1-suppressionRate)) || totalDispatched;
+
+  const days = 60;
+  const now = nudgeExecNow();
+  const daily = [];
+  for(let i=days-1;i>=0;i--){
+    const date = new Date(now); date.setDate(date.getDate()-i);
+    const dseed = hashCode(d.id+'|'+date.toISOString().slice(0,10));
+    const matched = Math.max(0, Math.round((totalMatched/days)*(0.5+(dseed%100)/100)));
+    const suppressed = Math.round(matched*suppressionRate);
+    const dispatched = matched-suppressed;
+    const delivered = Math.round(dispatched*deliveryRate);
+    const received = Math.round(matched/matchRate) || matched;
+    // Real vocabulary, straight from the Metabase "Cancellation Reasons
+    // Breakdown" panel this template is generalizing from.
+    const cooldown = Math.round(suppressed*0.55);
+    const cancelEvent = Math.round(suppressed*0.44);
+    daily.push({
+      date, received, matched, dispatched, delivered,
+      suppression:{COOLDOWN_PERIOD_ACTIVE:cooldown, CANCEL_EVENT_RECEIVED:cancelEvent, NUDGE_DEACTIVATED:Math.max(0,suppressed-cooldown-cancelEvent)},
+      latency: 2+(dseed%15), // 2-16s
+    });
+  }
+  return daily;
+}
+// Sums the granular daily rows over [from,to] into the shape the KPI/
+// funnel/suppression/health sections read. Unique Customers Reached is
+// the one field NOT summed per day — summing a daily "unique" count would
+// double-count repeat customers across days — it's derived once from the
+// range's total Delivered, same seeded ratio as before, just correctly
+// re-derived per range instead of frozen to one fixed window.
+function aggregateNudgeExecutionRange(d, daily, from, to){
+  const rows = daily.filter(r=>r.date>=from && r.date<=to);
+  const sum = key => rows.reduce((s,r)=>s+r[key],0);
+  const received=sum('received'), matched=sum('matched'), dispatched=sum('dispatched'), delivered=sum('delivered');
+  const suppression = {COOLDOWN_PERIOD_ACTIVE:0, CANCEL_EVENT_RECEIVED:0, NUDGE_DEACTIVATED:0};
+  rows.forEach(r=>Object.keys(suppression).forEach(k=>suppression[k]+=r.suppression[k]));
+  const suppressed = suppression.COOLDOWN_PERIOD_ACTIVE+suppression.CANCEL_EVENT_RECEIVED+suppression.NUDGE_DEACTIVATED;
+  const seed = hashCode(d.id);
   const uniqueRatio = 0.60 + (seed%25)/100; // 60-84% — some customers get touched more than once
   const uniqueCustomers = Math.max(delivered?1:0, Math.round(delivered*uniqueRatio));
-  const avgTouches = uniqueCustomers ? delivered/uniqueCustomers : 0;
-
-  const days = 21;
-  const dailySeries = [], successRateSeries = [], latencySeries = [];
-  const today = new Date(2026,8,18);
-  for(let i=days-1;i>=0;i--){
-    const date = new Date(today); date.setDate(date.getDate()-i);
-    const dseed = hashCode(d.id+'|'+date.toISOString().slice(0,10));
-    const dayMatched = Math.max(0, Math.round((matched/days)*(0.5+(dseed%100)/100)));
-    const daySuppressed = Math.round(dayMatched*suppressionRate);
-    const dayDispatched = dayMatched-daySuppressed;
-    dailySeries.push({date, count:dayMatched});
-    successRateSeries.push({date, rate: dayMatched ? (dayDispatched/dayMatched)*100 : 0});
-    latencySeries.push({date, latency: 2+(dseed%15)}); // 2-16s
+  const dailySeries = rows.map(r=>({date:r.date, count:r.matched}));
+  const successRateSeries = rows.map(r=>({date:r.date, rate: r.matched ? (r.dispatched/r.matched)*100 : 0}));
+  const latencySeries = rows.map(r=>({date:r.date, latency:r.latency}));
+  return {received, matched, suppressed, suppression, dispatched, delivered, uniqueCustomers, dailySeries, successRateSeries, latencySeries};
+}
+// Reads the date-range filter UI (same today/yesterday/N-days/all/custom
+// convention as EMI Analytics' analyticsRange, reused rather than
+// reinvented) and returns a [from,to] Date pair.
+function nudgeExecRangeBounds(){
+  const el = document.getElementById('nudgeAnalyticsRange');
+  const rangeVal = el ? el.value : '30';
+  const now = nudgeExecNow();
+  if(rangeVal==='custom'){
+    const fromVal = document.getElementById('nudgeAnalyticsRangeFrom').value;
+    const toVal = document.getElementById('nudgeAnalyticsRangeTo').value;
+    return { from: fromVal ? new Date(fromVal+'T00:00:00') : new Date(0), to: toVal ? new Date(toVal+'T23:59:59') : now };
   }
-  return {received, matched, suppressed, suppression, dispatched, delivered, uniqueCustomers, avgTouches, dailySeries, successRateSeries, latencySeries};
+  if(rangeVal==='today' || rangeVal==='yesterday'){
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if(rangeVal==='yesterday') dayStart.setDate(dayStart.getDate()-1);
+    return { from: dayStart, to: new Date(dayStart.getTime()+24*3600*1000-1) };
+  }
+  if(rangeVal==='all') return { from: new Date(0), to: now };
+  const cutoff = new Date(now.getTime() - (+rangeVal)*24*3600*1000);
+  return { from: cutoff, to: now };
+}
+// Filter row — same visual pattern (.viewing-as/label/select) and same
+// 6-option convention as EMI Analytics' Date Range control.
+function nudgeExecDateFilterHtml(){
+  const now = nudgeExecNow();
+  const minDate = new Date(now); minDate.setDate(minDate.getDate()-59);
+  const iso = dt => dt.toISOString().slice(0,10);
+  return `<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:12px 0 16px;">
+    <div class="viewing-as">
+      <label>Date range</label>
+      <select id="nudgeAnalyticsRange" onchange="onNudgeAnalyticsRangeChange()">
+        <option value="today">Today</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="all">All time</option>
+        <option value="custom">Custom range</option>
+      </select>
+    </div>
+    <div class="viewing-as" id="nudgeAnalyticsCustomRangeWrap" style="display:none;">
+      <label>From</label>
+      <input type="date" id="nudgeAnalyticsRangeFrom" min="${iso(minDate)}" max="${iso(now)}" onchange="renderNudgeExecutionCharts(wiz.draft)">
+      <label style="margin-left:8px;">To</label>
+      <input type="date" id="nudgeAnalyticsRangeTo" min="${iso(minDate)}" max="${iso(now)}" onchange="renderNudgeExecutionCharts(wiz.draft)">
+    </div>
+  </div>`;
+}
+function onNudgeAnalyticsRangeChange(){
+  document.getElementById('nudgeAnalyticsCustomRangeWrap').style.display = document.getElementById('nudgeAnalyticsRange').value==='custom' ? '' : 'none';
+  renderNudgeExecutionCharts(wiz.draft);
 }
 // Headline row — kept as its own function/section so it renders first,
 // above the Associated Nudge funnel and Engagement cards, matching this
@@ -6681,7 +6763,9 @@ function renderNudgeExecutionDetail(d){
     </div>`;
 }
 function renderNudgeExecutionCharts(d){
-  const data = mockNudgeExecutionData(d);
+  const {from, to} = nudgeExecRangeBounds();
+  const daily = mockNudgeExecutionDaily(d);
+  const data = aggregateNudgeExecutionRange(d, daily, from, to);
   const MONTH_ABBR5 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   // Delivery Rate, not Avg. Touches per Customer — always real regardless
