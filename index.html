@@ -6217,7 +6217,7 @@ function submitNudge(){
 }
 
 /* ---------------- View / detail page ---------------- */
-let nvState = { tab:'details', selectedNudgeId:null };
+let nvState = { tab:'details' };
 // Reverse lookup, not a read of this nudge's own stored fallback list — a
 // nudge built via the general Event Trigger flow (not the "+ Add Fallback"
 // shortcut) only ever stores the link on ITSELF (fallbackSourceNudgeId),
@@ -6305,7 +6305,7 @@ function renderAssociatedNudgeFunnel(d){
         <table>
           <thead><tr><th>Associated Nudge</th><th>Channel</th><th>Matched Statuses</th><th>Matched Count</th><th>Sent</th><th>Delivered</th><th>Status</th></tr></thead>
           <tbody>${rows.map((r,i)=>`
-            <tr onclick="nvState.selectedNudgeId='${assoc[i].id}';renderNudgeView()" style="cursor:pointer;">
+            <tr onclick="document.getElementById('engagement-${assoc[i].id}')?.scrollIntoView({behavior:'smooth',block:'start'})" style="cursor:pointer;">
               <td><b>${r.name}</b></td>
               <td>${CHANNEL_LABELS[r.channel]||r.channel||'—'}</td>
               <td style="font-size:11.5px;color:var(--gray-600);">${r.statuses.join(', ')||'—'}</td>
@@ -6321,7 +6321,7 @@ function renderAssociatedNudgeFunnel(d){
 function openNudgeView(id){
   const n = NUDGES.find(x=>x.id===id);
   wiz = { triggerType:n.triggerType, stepIdx:0, isEdit:true, draft: JSON.parse(JSON.stringify(n)) };
-  nvState = { tab:'details', selectedNudgeId:null };
+  nvState = { tab:'details' };
   switchPage('nudges-view');
   renderNudgeView();
 }
@@ -6408,7 +6408,7 @@ function renderNudgeView(){
           (isEventBased ? renderNudgeExecutionKpis(d) : '') +
           renderAssociatedNudgeFunnel(d) +
           (isEventBased ? '<div class="section-heading">Engagement</div><p class="card-sub" style="margin:-8px 0 12px;">Reflects this nudge\'s full history — not scoped to the date range selected above.</p>' : '') +
-          renderNudgeAnalytics(nvState.selectedNudgeId && nvState.selectedNudgeId!==d.id ? (NUDGES.find(n=>n.id===nvState.selectedNudgeId)||d) : d, d) +
+          renderNudgeAnalytics(d) +
           (isEventBased ? renderNudgeExecutionDetail(d) : '')
         )}
 
@@ -6519,62 +6519,69 @@ function openAnalyticsAdvLogs(nudgeId, ch){
     <div class="sd-foot"><button class="btn primary" onclick="closeSideDrawer()">Close</button></div>
   `, 550);
 }
-function renderNudgeAnalytics(d, baseNudge){
-  baseNudge = baseNudge || d;
-  const assoc = findAssociatedNudges(baseNudge.id);
-  // Trigger dropdown: Primary Send plus every associated nudge, regardless
-  // of which authoring path created it (findAssociatedNudges already
-  // reconciles both). Switching this re-renders the channel cards below
-  // for whichever nudge is picked — the funnel above stays fixed on the
-  // base nudge's aggregate.
-  const triggerOptions = [
-    {id:baseNudge.id, label:`${baseNudge.name} (Primary)`},
-    ...assoc.map(a=>({id:a.id, label:`${a.name} — ${CHANNEL_LABELS[a.fallbackSourceChannel]||a.fallbackSourceChannel||''}`})),
-  ];
-  const channels = d.channels && d.channels.length ? d.channels : ['SMS'];
+// Per-channel card for one nudge — unchanged markup/data source from
+// before, just factored out so it can render for every nudge in the
+// stack below (primary + each fallback), not just whichever one a
+// dropdown happened to have selected.
+function nudgeChannelCardsHtml(nudge){
+  const channels = nudge.channels && nudge.channels.length ? nudge.channels : ['SMS'];
   const statusKeys = Object.keys(ANALYTICS_STATUS_META);
-  return `
-    <div style="padding:4px 0 2px;">
-      <div style="display:flex;gap:20px;margin-bottom:18px;flex-wrap:wrap;">
-        <div><div class="f-label" style="margin-bottom:6px;">Trigger</div><select class="f-input" style="width:260px;" onchange="nvState.selectedNudgeId=this.value;renderNudgeView()">
-          ${triggerOptions.map(o=>`<option value="${o.id}" ${d.id===o.id?'selected':''}>${o.label}</option>`).join('')}
-        </select></div>
-        <div><div class="f-label" style="margin-bottom:6px;">Trigger Date</div><select class="f-input" style="width:200px;"><option>${d.startDate||'—'}</option></select></div>
-        <div><div class="f-label" style="margin-bottom:6px;">Repeat Trigger Date</div><select class="f-input" style="width:200px;" disabled><option>Same as trigger</option></select></div>
+  return channels.map((ch,ci)=>{
+    const m = ANALYTICS_METRICS[ch] || ANALYTICS_METRICS.SMS;
+    const data = mockAnalyticsChannelData(nudge.id, ch);
+    const sm = ANALYTICS_STATUS_META[statusKeys[(nudge.id.length+ci) % statusKeys.length]];
+    return `
+    <div class="card" style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--gray-100);display:flex;align-items:center;justify-content:center;">${ic('message')}</div>
+          <div style="font-size:16px;font-weight:600;">${CHANNEL_LABELS[ch]||ch}</div>
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:50px;box-shadow:0 0 3px rgba(201,201,201,.5);font-size:12.5px;font-weight:500;">
+            <span style="width:8px;height:8px;border-radius:50%;background:${sm.dot};display:inline-block;"></span>${sm.label}
+          </span>
+        </div>
+        <div class="rev-edit-link" style="cursor:pointer;" onclick="openAnalyticsAdvLogs('${nudge.id}','${ch}')">Advanced Logs</div>
       </div>
-      ${channels.map((ch,ci)=>{
-        const m = ANALYTICS_METRICS[ch] || ANALYTICS_METRICS.SMS;
-        const data = mockAnalyticsChannelData(d.id, ch);
-        const sm = ANALYTICS_STATUS_META[statusKeys[(d.id.length+ci) % statusKeys.length]];
-        return `
-        <div class="card" style="margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <div style="width:36px;height:36px;border-radius:8px;background:var(--gray-100);display:flex;align-items:center;justify-content:center;">${ic('message')}</div>
-              <div style="font-size:16px;font-weight:600;">${CHANNEL_LABELS[ch]||ch}</div>
-              <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:50px;box-shadow:0 0 3px rgba(201,201,201,.5);font-size:12.5px;font-weight:500;">
-                <span style="width:8px;height:8px;border-radius:50%;background:${sm.dot};display:inline-block;"></span>${sm.label}
-              </span>
-            </div>
-            <div class="rev-edit-link" style="cursor:pointer;" onclick="openAnalyticsAdvLogs('${d.id}','${ch}')">Advanced Logs</div>
-          </div>
-          <div style="display:flex;gap:28px;margin-top:16px;">
-            <div><div class="f-hint" style="margin:0;">Account</div><div style="font-size:13px;font-weight:500;">${data.account}</div></div>
-            <div><div class="f-hint" style="margin:0;">Template Name</div><div style="font-size:13px;font-weight:500;">${data.template}</div></div>
-          </div>
-          <hr style="border:none;border-top:1px solid var(--gray-200);margin:16px 0;">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
-            ${m.big.map(label=>`<div style="padding:12px 14px;border:1px solid var(--gray-200);border-radius:12px;">
-              <div class="f-hint" style="margin:0 0 6px;">${label}</div>
-              <div style="font-size:20px;font-weight:600;color:var(--neutral-900);">${(data.values[label]??0).toLocaleString()}</div>
-            </div>`).join('')}
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px 16px;margin-top:16px;">
-            ${m.small.map(label=>`<div><div class="f-hint" style="margin:0;">${label}</div><div style="font-size:13px;color:var(--gray-600);">${data.smallValues[label].toLocaleString()}</div></div>`).join('')}
-          </div>
-        </div>`;
-      }).join('')}
+      <div style="display:flex;gap:28px;margin-top:16px;">
+        <div><div class="f-hint" style="margin:0;">Account</div><div style="font-size:13px;font-weight:500;">${data.account}</div></div>
+        <div><div class="f-hint" style="margin:0;">Template Name</div><div style="font-size:13px;font-weight:500;">${data.template}</div></div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--gray-200);margin:16px 0;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+        ${m.big.map(label=>`<div style="padding:12px 14px;border:1px solid var(--gray-200);border-radius:12px;">
+          <div class="f-hint" style="margin:0 0 6px;">${label}</div>
+          <div style="font-size:20px;font-weight:600;color:var(--neutral-900);">${(data.values[label]??0).toLocaleString()}</div>
+        </div>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px 16px;margin-top:16px;">
+        ${m.small.map(label=>`<div><div class="f-hint" style="margin:0;">${label}</div><div style="font-size:13px;color:var(--gray-600);">${data.smallValues[label].toLocaleString()}</div></div>`).join('')}
+      </div>
     </div>`;
+  }).join('');
+}
+// Shows every nudge's engagement automatically — primary, then each
+// fallback stacked directly below, clearly labeled — instead of hiding
+// fallback engagement behind a "Trigger" dropdown a viewer had to think to
+// open. The whole point of a fallback's engagement numbers is comparing
+// them against the primary's; a switcher that only ever shows one at a
+// time actively works against that.
+function renderNudgeAnalytics(baseNudge){
+  const assoc = findAssociatedNudges(baseNudge.id);
+  const rows = [
+    {nudge:baseNudge, roleLabel:'Primary', badge:'purple'},
+    ...assoc.map(a=>({nudge:a, roleLabel:`Fallback — ${CHANNEL_LABELS[a.fallbackSourceChannel]||a.fallbackSourceChannel||''}`, badge:'info'})),
+  ];
+  return `<div style="padding:4px 0 2px;">
+    ${rows.map((r,i)=>`
+      ${i>0 ? '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">' : ''}
+      <div id="engagement-${r.nudge.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:12px;scroll-margin-top:16px;">
+        <span class="badge ${r.badge}">${r.roleLabel}</span>
+        <span style="font-size:14.5px;font-weight:600;">${r.nudge.name}</span>
+        <span style="font-size:12px;color:var(--gray-500);">Started ${r.nudge.startDate||'—'}</span>
+      </div>
+      ${nudgeChannelCardsHtml(r.nudge)}
+    `).join('')}
+  </div>`;
 }
 
 // ---------------------------------------------------------------------------
