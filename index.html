@@ -5023,7 +5023,10 @@ const ELIGIBILITY_META = {
     // phrasing, not the actual enum name — confirmed against real source).
     // System-generated covers refunds, tax, fees, and more, not just
     // refunds. Every Transaction Events campaign must pick one explicitly.
-    'Initiated By':      {type:'select', options:['CUSTOMER_INITIATED','SYSTEM_GENERATED']},
+    // SYSTEM_GENERATED kept disabled for now, per Amogh (2026-09-23) —
+    // "we will bring this later." Shown, not hidden, so the real option
+    // stays visible/documented rather than silently absent.
+    'Initiated By':      {type:'select', options:['CUSTOMER_INITIATED','SYSTEM_GENERATED'], disabledOptions:['SYSTEM_GENERATED']},
     // Merchant Name and Source were removed here — not simplifications,
     // each is a real backend constraint:
     // - Merchant Name isn't emitted as a structured field — it's embedded
@@ -5106,9 +5109,17 @@ function condRow(c, idx, entityOptions, containerKey){
   let valueWidget = '';
   if(showSecond){
     if(meta.type==='select'){
+      // disabledOptions (optional) — a real value that's documented and
+      // visible, but not yet selectable (e.g. Initiated By's
+      // SYSTEM_GENERATED, deferred per explicit instruction). Shown
+      // greyed-out with a "Coming soon" suffix rather than omitted, so
+      // the field's real full option set stays visible/documented.
       valueWidget = `<select onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
         <option value="">Select value</option>
-        ${meta.options.map(o=>`<option ${c.value===o?'selected':''}>${o}</option>`).join('')}
+        ${meta.options.map(o=>{
+          const isDisabled = (meta.disabledOptions||[]).includes(o);
+          return `<option ${c.value===o?'selected':''} ${isDisabled?'disabled':''}>${o}${isDisabled?' (Coming soon)':''}</option>`;
+        }).join('')}
       </select>`;
     } else if(meta.type==='bool'){
       valueWidget = `<select onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
