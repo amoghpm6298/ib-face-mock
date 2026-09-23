@@ -5095,11 +5095,14 @@ function condRow(c, idx, entityOptions, containerKey){
         ${SMART_TAG_OPTIONS.map(t=>{ const sel=(c.values||[]).includes(t); return `<div class="msel-chip" style="cursor:pointer;background:${sel?'var(--info-bg)':'var(--gray-100)'};color:${sel?'var(--info-text)':'var(--gray-600)'};" onclick="condToggleSmartTag('${containerKey}',${idx},'${t}')">${sel?'✓ ':''}${t}</div>`; }).join('')}
       </div>`;
     } else if(meta.type==='multiSelect'){
-      // Same chip-toggle pattern as Smart Tags, generalized to any fixed
-      // real enum (meta.options) instead of one hardcoded list.
-      valueWidget = `<div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${meta.options.map(o=>{ const sel=(c.values||[]).includes(o); return `<div class="msel-chip" style="cursor:pointer;background:${sel?'var(--info-bg)':'var(--gray-100)'};color:${sel?'var(--info-text)':'var(--gray-600)'};" onclick="condToggleMulti('${containerKey}',${idx},'${o}')">${sel?'✓ ':''}${o}</div>`; }).join('')}
-      </div>`;
+      // The real multi-select dropdown component (closed-by-default,
+      // summary line, opens a checkbox panel) — same one already used for
+      // Nudge Delivery Status pickers, not a bespoke always-expanded chip
+      // row. Any fixed real enum (meta.options) reuses this, not just
+      // delivery-status vocabularies.
+      valueWidget = multiSelectDropdownHtml(`${containerKey}-${idx}`, '', meta.options, c.values||[],
+        (o)=>`condToggleMulti('${containerKey}',${idx},'${o}')`,
+        `renderWizStep(wizSteps()[wiz.stepIdx].id)`);
     }
   }
 
