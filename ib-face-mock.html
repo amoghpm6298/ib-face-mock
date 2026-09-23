@@ -4525,13 +4525,15 @@ const EVENT_CATEGORIES = {
   // isNew:true treatment as Transaction/EMI Events — processor-level
   // data, not app-instrumented, not real in Quibbler today either.
   'Card Events': {fields:[], events:['Card Issued','Card Activated','Card Loaded','Card Inactive'], isNew:true},
-  // Fires off a delivery-status callback for one specific channel on one
-  // specific already-authored nudge (e.g. "WhatsApp on nudge X came back
-  // FAILED") — not an attribute-based or entity-based condition like every
-  // other category here, since the condition IS the reference to that
-  // specific (nudge, channel) pair. Gets its own dedicated EVENT_TRIGGER
-  // branch rather than reusing condRow()/the locked-attribute pattern.
-  'Nudge Delivery Status': {fields:[], events:[], isNew:true},
+  // "Nudge Delivery Status" existed here as a real, standalone Event
+  // Category (build a nudge whose trigger IS a reference to another
+  // nudge's channel delivery outcome) — removed entirely 2026-09-23, per
+  // tech-team input relayed by Amogh: a delivery-status-driven resend
+  // doesn't need to be modeled as a separate nudge at all, only tracked.
+  // See the Delivery Retry PRD (Delivery-Retry-PRD.md) — this is now a
+  // retry config directly on a channel's Communication setup
+  // (renderRetrySection, "+ Enable Retry" in the Configure drawer), not
+  // an Event Source a campaign manager picks from this list.
 };
 // Event Conditions are attribute-based per event type, not entity-based —
 // the attribute is effectively locked once the event is chosen.
@@ -4549,27 +4551,15 @@ function computeMakerCheckerFlag(issuer, programs){
 }
 
 const NUDGES = [
-  // Demo entry, added 2026-09-17 so "Source Trigger" targeting (Nudge
-  // Delivery Status event source) can be tried against a real nudge with
-  // two genuinely distinct triggers — the 24 other hand-authored entries
-  // below predate `commBlocks` and have none, so none of them can show the
-  // Source Trigger picker at all. Bracketed name so it's easy to spot in
-  // the Source Nudge dropdown.
-  { id:'ND-88999', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'[Demo — Two Triggers, select me] EMI Nudge', description:'Demo nudge with two distinct triggers (Welcome Trigger: WhatsApp only; Reminder Trigger: WhatsApp + SMS) — pick this as Source Nudge on a Nudge Delivery Status nudge to see the Source Trigger picker.',
-    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
-    startDate:'01 Sep 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Demo'],
-    createdBy:'Ananya Iyer', createdOn:'17 Sep 2026', variant:'BANNER', eligibilityEntity:'Transaction EMI',
-    channels:['WHATSAPP','SMS'],
-    commBlocks:[
-      { name:'Welcome Trigger', sendDate:'', repeatable:'without repeat', everyN:'7',
-        configured:{ WHATSAPP:{ account:'IBL-Karix-Txns', templateId:'CT-3310', templateName:'Auth-to-EMI Consent WhatsApp', tracking:false, userAttribution:false, utmParams:[] } } },
-      { name:'Reminder Trigger', sendDate:'', repeatable:'without repeat', everyN:'7',
-        configured:{
-          WHATSAPP:{ account:'IBL-Karix-Txns', templateId:'CT-3311', templateName:'Auth-to-EMI Reminder WhatsApp', tracking:false, userAttribution:false, utmParams:[] },
-          SMS:{ account:'IBL-Karix-Txns', templateId:'CT-3301', templateName:'EMI Conversion SMS', tracking:false, userAttribution:false, utmParams:[] },
-        } },
-    ] },
-  { id:'ND-88998', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'[Demo — Has Fallback Nudge] EMI Conversion — WhatsApp Push', description:'Demo nudge with a real Fallback Nudge attached to its WhatsApp trigger — open Analytics to see primary and fallback engagement shown together, automatically.',
+  // Demo entry, retry config attached directly to its WhatsApp trigger —
+  // rebuilt 2026-09-23 from "[Demo — Has Fallback Nudge]" (a real, separate
+  // NUDGES entry, EV-48001) once retry was reverted from a standalone
+  // nudge to a plain config on this same nudge's own Communication setup.
+  // EV-48001 and the "[Demo — Two Triggers, select me]" demo (ND-88999,
+  // built only to exercise the now-removed Source Trigger picker) were
+  // both removed outright — neither has a purpose left. Bracketed name so
+  // it's easy to spot in the Nudges list.
+  { id:'ND-88998', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'[Demo — Has Retry] EMI Conversion — WhatsApp Push', description:'Demo nudge with a real Retry on Failure attached to its WhatsApp trigger — open Analytics to see the retry funnel and its own engagement shown automatically.',
     scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
     startDate:'05 Sep 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Demo'],
     createdBy:'Ananya Iyer', createdOn:'17 Sep 2026', variant:'BANNER', eligibilityEntity:'Transaction EMI',
@@ -4577,18 +4567,8 @@ const NUDGES = [
     commBlocks:[
       { name:'', sendDate:'', repeatable:'without repeat', everyN:'7',
         configured:{ WHATSAPP:{ account:'IBL-Karix-Txns', templateId:'CT-3310', templateName:'Auth-to-EMI Consent WhatsApp', tracking:false, userAttribution:false, utmParams:[],
-          fallback:{ nudgeId:'EV-48001', statuses:['FAILED','FAILED_TO_CONNECT'] } } } },
+          retry:{ channel:'SMS', account:'IBL-Karix-Txns', templateId:'CT-3301', templateName:'EMI Conversion SMS', statuses:['FAILED','FAILED_TO_CONNECT'], delayType:'Immediate', delay:'', delayUnit:'minutes' } } } },
     ] },
-  { id:'EV-48001', triggerType:'event-based', nudgeType:'CROSS_SELL_UP_SELL', name:'[Demo] SMS Fallback for WhatsApp Push', description:'Fires when the WhatsApp send on "[Demo — Has Fallback Nudge] EMI Conversion — WhatsApp Push" fails to deliver.',
-    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
-    startDate:'05 Sep 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Demo','Fallback'],
-    createdBy:'Ananya Iyer', createdOn:'17 Sep 2026', channels:['SMS'],
-    eventCategory:'Nudge Delivery Status', eventType:'',
-    fallbackSourceNudgeId:'ND-88998', fallbackSourceNudgeName:'[Demo — Has Fallback Nudge] EMI Conversion — WhatsApp Push',
-    fallbackSourceBlockName:'Trigger 1', fallbackSourceChannel:'WHATSAPP', fallbackStatuses:['FAILED','FAILED_TO_CONNECT'],
-    delayType:'Immediate', delay:'', delayUnit:'minutes', userBaseMode:'All Customers', smartTag:'',
-    commBlocks:[{ name:'', sendDate:'', repeatable:'without repeat', everyN:'7',
-      configured:{ SMS:{ account:'IBL-Karix-Txns', templateId:'CT-3301', templateName:'EMI Conversion SMS', tracking:false, userAttribution:false, utmParams:[] } } }] },
   { id:'ND-88214', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'EMI Cross-Sell — Festive Push', description:'Nudge eligible cardholders toward converting recent authorizations to EMI during the festive window.',
     scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
     startDate:'01 Aug 2026', endDate:'30 Sep 2026', status:'ACTIVE', labels:['EMI','Festive','Cross-Sell'],
@@ -4807,7 +4787,6 @@ let wiz = null; // { triggerType, stepIdx, draft, isEdit }
 
 function openNudgeCreate(){
   const type = nlState.tab; // pre-select trigger type from whichever list tab we're on
-  searchSelectState = {id:null, query:''};
   wiz = { triggerType:type, stepIdx:0, isEdit:false,
     draft:{ id:null, name:'', description:'', nudgeType:type==='event-based'?'CROSS_SELL_UP_SELL':null, scopeType:'Issuer', issuerScope:false, issuer:'', programs:[], isMakerCheckerEnabled:false,
       startDate:'', endDate:'', journey:'', batch:'', isMilestone:false, offerType:'', offer:'',
@@ -4820,7 +4799,6 @@ function openNudgeCreate(){
 }
 function openNudgeEdit(id){
   const n = NUDGES.find(x=>x.id===id);
-  searchSelectState = {id:null, query:''};
   wiz = { triggerType:n.triggerType, stepIdx:0, isEdit:true, draft: JSON.parse(JSON.stringify(n)) };
   if(!wiz.draft.conditions) wiz.draft.conditions=[{entity:wiz.draft.eligibilityEntity||'',attribute:'',operator:'',value:''}];
   if(!wiz.draft.channels) wiz.draft.channels=[];
@@ -5167,8 +5145,8 @@ function condRow(c, idx, entityOptions, containerKey){
     } else if(meta.type==='multiSelect'){
       // The real multi-select dropdown component (closed-by-default,
       // summary line, opens a checkbox panel) — same one already used for
-      // Nudge Delivery Status pickers, not a bespoke always-expanded chip
-      // row. Any fixed real enum (meta.options) reuses this, not just
+      // the Retry on Failure status picker, not a bespoke always-expanded
+      // chip row. Any fixed real enum (meta.options) reuses this, not just
       // delivery-status vocabularies.
       //
       // Transaction Type cascades off the sibling 'Initiated By' row's
@@ -5320,88 +5298,6 @@ function openEstimateBreakdown(){
 }
 
 /* ---------------- Wizard: step body renderer ---------------- */
-// "Nudge Delivery Status" Event Trigger — the condition IS a reference to a
-// specific (nudge, channel) pair, not an attribute/entity, so it gets its
-// own dedicated form instead of reusing condRow()/the locked-attribute
-// pattern used by every other category.
-function renderDeliveryStatusTriggerStep(d, catSelect){
-  // For building a "Nudge Delivery Status" nudge from scratch (the normal
-  // Nudges list -> Create -> Event-Based path). The much more common path —
-  // "+ Add Fallback" on a specific channel inside another nudge's own
-  // Communication step — is self-contained inline there (renderFallbackSection)
-  // and never reaches this step at all, since it inherits issuer/programs/
-  // user base from that nudge directly instead of building a full nudge here.
-  const sourceNudge = NUDGES.find(n=>n.id===d.fallbackSourceNudgeId);
-  // Real trigger blocks on the source nudge, from its own already-saved
-  // commBlocks — only nudges built/saved through the live wizard carry this
-  // (the hand-authored example NUDGES entries predate commBlocks and have
-  // none, same class of gap as Drip's static campaigns lacking _config —
-  // degrades gracefully to channel-only targeting below, doesn't crash).
-  const sourceBlocks = sourceNudge && sourceNudge.commBlocks
-    ? sourceNudge.commBlocks.map((b,i)=>({name: b.name || `Trigger ${i+1}`, channels: Object.keys(b.configured||{}).filter(ch=>b.configured[ch])})).filter(b=>b.channels.length)
-    : [];
-  // Only show the Trigger picker when there's a real choice — one nudge
-  // with two+ distinct triggers configured. A nudge with exactly one real
-  // trigger has nothing to disambiguate; same "don't show a dropdown for a
-  // single option" precedent already used elsewhere in this file.
-  const showTriggerPicker = sourceBlocks.length > 1;
-  const selectedBlock = sourceBlocks.find(b=>b.name===d.fallbackSourceBlockName);
-  const channelOptions = selectedBlock ? selectedBlock.channels
-    : (sourceBlocks.length===1 ? sourceBlocks[0].channels
-    : (sourceNudge ? (sourceNudge.channels||[]) : []));
-  // A flat list of every nudge doesn't hold up at real scale (one issuer
-  // alone can carry dozens of Active/Scheduled nudges) — scoped to the
-  // SAME issuer as the nudge being built (cross-issuer targeting doesn't
-  // make business sense) and to ACTIVE/SCHEDULED status only (a Draft or
-  // Pending Review nudge might still be rejected or substantially
-  // changed, so it shouldn't be reference-able yet — same rule the PRD
-  // already calls for on the fallback shortcut's own picker).
-  const candidateNudges = d.issuer
-    ? NUDGES.filter(n=>n.channels && n.channels.length && n.issuer===d.issuer && ['ACTIVE','SCHEDULED'].includes(n.status))
-        .map(n=>({id:n.id, label:n.name}))
-    : [];
-  const sourceNudgePicker = searchableSelectHtml('delivery-status-source-nudge', 'Source Nudge', candidateNudges, d.fallbackSourceNudgeId,
-    (nid)=>`fieldUpdate('fallbackSourceNudgeId','${nid}');fieldUpdate('fallbackSourceBlockName','');fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);searchSelectState={id:null,query:''};renderWizStep('EVENT_TRIGGER')`,
-    "renderWizStep('EVENT_TRIGGER')", d.issuer?'Search nudges…':'Set Issuer in Basic Details first');
-  // minmax(0,1fr), not plain 1fr — a bare `1fr` track's implicit minimum
-  // is its content's min-content width, and Source Nudge's selected-label
-  // text (e.g. a long picked nudge name, `white-space:nowrap` inside its
-  // own flex row for the dropdown-arrow layout) has no forced wrap point,
-  // so its min-content ballooned to the full text width — starving the
-  // Source Trigger/Channel columns down to a sliver instead of splitting
-  // evenly. minmax(0,1fr) explicitly overrides that implicit minimum to 0,
-  // letting each column's own overflow:hidden/text-overflow:ellipsis do
-  // its job instead of being overridden by the grid's own sizing.
-  const nudgePicker = `<div class="f-group ${showTriggerPicker?'':'f-row2'}" style="${showTriggerPicker?'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:16px;':''}">
-        ${sourceNudgePicker}
-        ${showTriggerPicker ? `<div><label class="f-label">Source Trigger</label><select class="f-input" onchange="fieldUpdate('fallbackSourceBlockName',this.value);fieldUpdate('fallbackSourceChannel','');fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
-          <option value="">Select trigger</option>
-          ${sourceBlocks.map(b=>`<option value="${b.name}" ${d.fallbackSourceBlockName===b.name?'selected':''}>${b.name}</option>`).join('')}
-        </select></div>` : ''}
-        <div><label class="f-label">Channel</label><select class="f-input" ${!sourceNudge || (showTriggerPicker && !selectedBlock)?'disabled':''} onchange="fieldUpdate('fallbackSourceChannel',this.value);fieldUpdate('fallbackStatuses',[]);renderWizStep('EVENT_TRIGGER')">
-          <option value="">${!sourceNudge?'Pick a nudge first':(showTriggerPicker && !selectedBlock)?'Pick a trigger first':'Select channel'}</option>
-          ${channelOptions.map(ch=>`<option value="${ch}" ${d.fallbackSourceChannel===ch?'selected':''}>${CHANNEL_LABELS[ch]||ch}</option>`).join('')}
-        </select></div>
-      </div>
-      ${sourceNudge && !sourceBlocks.length ? `<p class="f-hint">No trigger-level detail available for this nudge — channel-level targeting only.</p>` : ''}`;
-
-  const statusOptions = d.fallbackSourceChannel ? deliveryStatusOptionsFor(d.fallbackSourceChannel) : [];
-  return `
-    <h1 class="wiz-heading">Configure Event Trigger</h1>
-    <p class="wiz-sub">Which event fires this nudge, and under what conditions.</p>
-    ${catSelect}
-    ${nudgePicker}
-    ${d.fallbackSourceChannel
-      ? multiSelectDropdownHtml('delivery-status-trigger', 'Delivery Status (any of)', statusOptions, d.fallbackStatuses, (o)=>`toggleWizFallbackStatus('${o}')`, "renderWizStep('EVENT_TRIGGER')")
-      : `<div class="f-group"><label class="f-label">Delivery Status (any of)</label><p class="f-hint" style="margin:0;">Pick a nudge and channel first.</p></div>`}
-    ${wizFooter()}`;
-}
-function toggleWizFallbackStatus(val){
-  const arr = wiz.draft.fallbackStatuses;
-  const i = arr.indexOf(val);
-  if(i>-1) arr.splice(i,1); else arr.push(val);
-  renderWizStep('EVENT_TRIGGER');
-}
 function renderWizStep(stepId){
   const d = wiz.draft;
   let html = '';
@@ -5694,10 +5590,7 @@ function renderWizStep(stepId){
         </select>
       </div>`;
 
-    if (d.eventCategory==='Nudge Delivery Status') {
-      html = renderDeliveryStatusTriggerStep(d, catSelect);
-    }
-    else if (isNewSource) {
+    if (isNewSource) {
       const entityForCat = d.eventCategory==='Transaction Events' ? 'Transaction' : 'EMI Request';
       // Only the mandatory, locked-attribute rows are pre-populated — no
       // illustrative optional examples (EMI Eligible, Transaction Amount,
@@ -5870,10 +5763,9 @@ const UTM_DEFAULT_PARAMS = ['utm_channel','utm_source','utm_campaign','utm_mediu
 let nudgeCommModalState = null;
 function openNudgeCommConfigModal(blockIdx, channel){
   openMultiSelectId = null;
-  searchSelectState = {id:null, query:''};
   const existing = wiz.draft.commBlocks[blockIdx].configured[channel] || {};
   nudgeCommModalState = { blockIdx, channel, account: existing.account||'', templateId: existing.templateId||'', tracking: existing.tracking||false, showPreview:false, userAttribution:existing.userAttribution||false, utmParams: existing.utmParams || [],
-    fallback: existing.fallback ? {...newFallbackEntry(), nudgeId:existing.fallback.nudgeId, statuses:[...existing.fallback.statuses]} : null };
+    retry: existing.retry ? {...newRetryConfig(), ...existing.retry, statuses:[...(existing.retry.statuses||[])]} : null };
   renderNudgeCommConfigModal();
 }
 function renderNudgeCommConfigModal(){
@@ -5906,12 +5798,25 @@ function renderNudgeCommConfigModal(){
         <div class="toggle ${s.tracking?'on':''}" onclick="nudgeCommModalState.tracking=!nudgeCommModalState.tracking;renderNudgeCommConfigModal()"></div></div>
         ${s.tracking ? renderUtmTrackingTable(s) : ''}
       ` : ''}
-      ${renderFallbackSection(s)}
+      ${renderRetrySection(s)}
     </div>
     <div class="sd-foot">
       <button class="btn secondary" onclick="closeSideDrawer()">Cancel</button>
-      <button class="btn primary" ${!(s.account&&s.templateId)?'disabled style="opacity:.5;"':''} onclick="submitNudgeCommConfig()">Save</button>
+      <button class="btn primary" ${!(s.account&&s.templateId)||retryVarsBlockSave(s)?'disabled style="opacity:.5;"':''} onclick="submitNudgeCommConfig()">Save</button>
     </div>`, 700);
+}
+// Backend validation rule (Delivery-Retry-PRD.md Section 6.6): a retry
+// whose template variables don't match the primary template's blocks
+// Save — same check renderRetrySection shows inline, reused here so the
+// Save button and the inline warning can never disagree about whether
+// it's actually safe to submit.
+function retryVarsBlockSave(s){
+  const r = s.retry;
+  if(!r || !r.templateId) return false;
+  const primaryTemplate = COMMS_TEMPLATES.find(t=>t.id===s.templateId);
+  const retryTemplate = COMMS_TEMPLATES.find(t=>t.id===r.templateId);
+  if(!primaryTemplate || !retryTemplate) return false;
+  return JSON.stringify(extractTemplateVars(primaryTemplate)) !== JSON.stringify(extractTemplateVars(retryTemplate));
 }
 // Real multi-select dropdown — closed by default (shows a summary line,
 // like any other field in this form), opens into a checkbox list on
@@ -5966,152 +5871,105 @@ function multiSelectDropdownHtml(id, label, options, selected, onToggle, rerende
       </div>` : ''}
   </div>`;
 }
-function toggleFallbackStatus(val){
-  const arr = nudgeCommModalState.fallback.statuses;
+function toggleRetryStatus(val){
+  const arr = nudgeCommModalState.retry.statuses;
   const i = arr.indexOf(val);
   if(i>-1) arr.splice(i,1); else arr.push(val);
   renderNudgeCommConfigModal();
 }
-// Searchable single-select — same closed-by-default/opens-a-panel language
-// as multiSelectDropdownHtml above, but type-to-filter + pick-one-and-close
-// instead of a checkbox list. Built specifically because a flat <select>
-// over every nudge in the system doesn't hold up at real scale (a single
-// issuer alone can carry dozens of Active/Scheduled nudges) — callers are
-// expected to pre-scope `options` (by issuer, by status) before this ever
-// renders, this component only handles the "still too many to eyeball"
-// problem via search, not the "which ones are even relevant" problem.
-let searchSelectState = {id:null, query:''};
-function searchSelectOpen(id){
-  searchSelectState = searchSelectState.id===id ? {id:null,query:''} : {id, query:''};
+// Pulls a template's real ${variableName} tokens out of its message/body
+// text — used to enforce the backend validation rule from the Delivery
+// Retry PRD: a retry's template must carry the exact same variable set as
+// the primary template it's standing in for (Section 6.6). Real templates
+// in this mock already write variables this way (CT-3301's
+// "${customerFirstName}", etc.) — no separate variable-metadata field
+// needed, just parse what's already there.
+function extractTemplateVars(template){
+  if(!template) return [];
+  const text = template.message || template.body || '';
+  const matches = text.match(/\$\{(\w+)\}/g) || [];
+  return [...new Set(matches.map(m=>m.slice(2,-1)))].sort();
 }
-// `onPick(optionId)` and `rerenderCall` follow the same template-build-time-
-// function / explicit-rerender-expression pattern as multiSelectDropdownHtml,
-// for the same reason — this gets called from more than one context.
-function searchableSelectHtml(id, label, options, selectedId, onPick, rerenderCall, placeholder){
-  rerenderCall = rerenderCall || 'renderNudgeCommConfigModal()';
-  const isOpen = searchSelectState.id === id;
-  const toggleOpenExpr = `searchSelectOpen('${id}');${rerenderCall}`;
-  const selected = options.find(o=>o.id===selectedId);
-  const query = (isOpen ? searchSelectState.query : '').toLowerCase();
-  const filtered = query ? options.filter(o=>o.label.toLowerCase().includes(query)) : options;
-  return `<div class="f-group" style="position:relative;">
-    ${label?`<label class="f-label">${label}</label>`:''}
-    <div class="msel-trigger" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;" onclick="${toggleOpenExpr}">
-      <span style="${selected?'':'color:var(--gray-400);'}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${selected?selected.label:(placeholder||`Select ${(label||'an option').toLowerCase()}`)}</span>
-      <span style="color:var(--gray-400);flex-shrink:0;">${isOpen?'▴':'▾'}</span>
-    </div>
-    ${isOpen ? `
-      <div style="position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.15);">
-        <div style="padding:8px;border-bottom:1px solid var(--gray-100);">
-          <input type="text" class="f-input" placeholder="Search by name…" value="${searchSelectState.query}" autofocus
-            oninput="searchSelectState.query=this.value;${rerenderCall}">
-        </div>
-        <div style="max-height:220px;overflow-y:auto;">
-          ${filtered.length ? filtered.map(o=>`
-            <div style="padding:8px 10px;cursor:pointer;font-size:12.5px;" onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background='transparent'" onclick="${onPick(o.id)}">${o.label}</div>`).join('')
-            : `<div style="padding:10px 8px;font-size:12px;color:var(--gray-400);">No matches${options.length===0?' — no eligible nudges in scope':''}</div>`}
-        </div>
-      </div>` : ''}
-  </div>`;
-}
-// Scoped to this exact (trigger block, channel) — the fallback nudge fires
+// Scoped to this exact (trigger block, channel) — the retry fires
 // specifically when THIS channel's delivery for THIS trigger comes back
 // with one of the picked statuses, not "the nudge" as a whole. Lets two
 // different blocks that happen to both use, say, WhatsApp each carry a
-// completely independent fallback.
-function newFallbackEntry(){
-  return {nudgeId:'', statuses:[], creatingNew:false, name:'', channel:'', account:'', templateId:'', delayType:'Immediate', delay:'', delayUnit:'minutes'};
+// completely independent retry.
+function newRetryConfig(){
+  return {channel:'', statuses:[], account:'', templateId:'', delayType:'Immediate', delay:'', delayUnit:'minutes'};
 }
-// At most one fallback nudge per (trigger, channel) — a single slot, not a
-// repeatable list. Reverted 2026-09-23 per Amogh ("remove multi-fallback
-// entirely... exactly one fallback nudge per trigger, channel") — the
-// repeatable-list UI (multiple entries, each excluding every other entry's
-// claimed channel) is gone; a channel that fails falls back to exactly one
-// other nudge/channel, not several at once.
-function renderFallbackSection(s){
-  // Scoped the same way as the general flow's Source Nudge picker: same
-  // issuer as the nudge being configured (wiz.draft.issuer — the parent
-  // whose channel just failed), ACTIVE/SCHEDULED status only. All fallback
-  // nudges are, by construction, event-based nudges on the Nudge Delivery
-  // Status category — never standard nudges — since that's the only
-  // category this authoring path (or the general flow) ever produces one on.
-  const candidates = NUDGES.filter(n=>n.triggerType==='event-based' && n.eventCategory==='Nudge Delivery Status' && n.issuer===wiz.draft.issuer && ['ACTIVE','SCHEDULED'].includes(n.status));
-  const fb = s.fallback;
+// Not a separate nudge at all — reverted 2026-09-23 from "Fallback
+// Nudges" (a real, standalone event-based NUDGES entry, its own approval/
+// analytics/deletion lifecycle) to a plain retry config living directly on
+// this channel's own Communication setup, per tech-team input relayed by
+// Amogh: the business need is just tracking delivery/engagement of the
+// retry attempt, not spinning up a parallel campaign. At most one retry
+// per (trigger, channel), one hop only — a retry cannot itself define a
+// further retry. See Delivery-Retry-PRD.md.
+function renderRetrySection(s){
+  const r = s.retry;
   let entryHtml = '';
-  if(fb){
+  if(r){
     const statusOptions = deliveryStatusOptionsFor(s.channel);
-    const statusSelectHtml = multiSelectDropdownHtml('fb-status', 'Trigger on any of', statusOptions, fb.statuses, (o)=>`toggleFallbackStatus('${o}')`);
-    const inlineForm = fb.creatingNew ? (()=>{
-      const accounts = fb.channel ? [...new Set(COMMS_TEMPLATES.filter(t=>t.channelType===fb.channel).map(t=>t.accountName))] : [];
-      const templates = fb.channel ? COMMS_TEMPLATES.filter(t=>t.channelType===fb.channel && (!fb.account||t.accountName===fb.account)) : [];
-      return `
-        <div style="margin-top:10px;padding:12px;border:1px solid var(--gray-200);border-radius:8px;background:var(--gray-25);">
-          <div class="f-group"><label class="f-label">Fallback Nudge Name</label><input class="f-input" type="text" placeholder="${CHANNEL_LABELS[fb.channel]||'Channel'} fallback" value="${fb.name}" oninput="nudgeCommModalState.fallback.name=this.value"></div>
-          <div class="f-row2">
-            <div class="f-group"><label class="f-label">Send On</label><select class="f-input" onchange="nudgeCommModalState.fallback.channel=this.value;nudgeCommModalState.fallback.account='';nudgeCommModalState.fallback.templateId='';renderNudgeCommConfigModal()">
-              <option value="">Select channel</option>${COMM_CHANNELS.filter(c=>c!==s.channel || c===fb.channel).map(c=>`<option value="${c}" ${fb.channel===c?'selected':''}>${CHANNEL_LABELS[c]}</option>`).join('')}
-            </select></div>
-            <div class="f-group"><label class="f-label">Timing</label><select class="f-input" onchange="nudgeCommModalState.fallback.delayType=this.value;renderNudgeCommConfigModal()">
-              <option ${fb.delayType==='Immediate'?'selected':''}>Immediate</option><option ${fb.delayType==='Delayed'?'selected':''}>Delayed</option>
-            </select></div>
-          </div>
-          ${fb.delayType==='Delayed' ? `<div class="f-group"><label class="f-label">Send after</label><div style="display:flex;gap:8px;">
-            <input class="f-input" type="number" min="0" style="max-width:100px;" value="${fb.delay}" oninput="nudgeCommModalState.fallback.delay=this.value">
-            <select class="f-input" style="max-width:140px;" onchange="nudgeCommModalState.fallback.delayUnit=this.value">
-              <option ${fb.delayUnit==='minutes'?'selected':''}>minutes</option><option ${fb.delayUnit==='hours'?'selected':''}>hours</option><option ${fb.delayUnit==='days'?'selected':''}>days</option>
-            </select></div></div>` : ''}
-          ${statusSelectHtml}
-          <div class="f-group"><label class="f-label">Account</label><select class="f-input" ${!fb.channel?'disabled':''} onchange="nudgeCommModalState.fallback.account=this.value;nudgeCommModalState.fallback.templateId='';renderNudgeCommConfigModal()">
-            <option value="">${fb.channel?'Select account':'Pick a channel first'}</option>${accounts.map(a=>`<option ${fb.account===a?'selected':''}>${a}</option>`).join('')}
-          </select></div>
-          <div class="f-group"><label class="f-label">Template</label><select class="f-input" ${!fb.account?'disabled':''} onchange="nudgeCommModalState.fallback.templateId=this.value;renderNudgeCommConfigModal()">
-            <option value="">${fb.account?'Select template':'Pick an account first'}</option>${templates.map(t=>`<option value="${t.id}" ${fb.templateId===t.id?'selected':''}>${t.name}</option>`).join('')}
-          </select>
-          ${fb.channel && fb.account && !templates.length ? `<div class="f-hint">No ${CHANNEL_LABELS[fb.channel]} templates exist yet for this account — create one in Comms. Templates first.</div>` : ''}
-          </div>
-        </div>`;
-    })() : '';
-    // Same combined "pick existing or create new" interaction, still
-    // searchable+scoped — the synthetic __create_new__ entry keeps it one
-    // control, not a second control next to it.
-    const pickerOptions = [
-      ...candidates.map(n=>({id:n.id, label:n.name})),
-      {id:'__create_new__', label:'+ Create new fallback nudge…'},
-    ];
-    const nudgePickerHtml = searchableSelectHtml('fb-nudge', '', pickerOptions,
-      fb.creatingNew ? '__create_new__' : (fb.nudgeId || null),
-      (val)=>`fallbackModeChange('${val}');searchSelectState={id:null,query:''};renderNudgeCommConfigModal()`,
-      'renderNudgeCommConfigModal()', 'Select a nudge to fire');
+    const statusSelectHtml = multiSelectDropdownHtml('retry-status', 'Trigger on any of', statusOptions, r.statuses, (o)=>`toggleRetryStatus('${o}')`);
+    const accounts = r.channel ? [...new Set(COMMS_TEMPLATES.filter(t=>t.channelType===r.channel).map(t=>t.accountName))] : [];
+    const templates = r.channel ? COMMS_TEMPLATES.filter(t=>t.channelType===r.channel && (!r.account||t.accountName===r.account)) : [];
+    // Backend validation rule (Delivery-Retry-PRD.md Section 6.6): the
+    // retry's template must carry the exact same variable set as the
+    // primary template — a mismatch means the retry send would either
+    // drop a variable the copy depends on, or leave one permanently
+    // unfilled. Checked live here (not just documented as a backend rule)
+    // so the constraint is real, not aspirational — same "validation, not
+    // just a hint" discipline as the Drip builder's Save gating.
+    const primaryTemplate = COMMS_TEMPLATES.find(t=>t.id===s.templateId);
+    const retryTemplate = COMMS_TEMPLATES.find(t=>t.id===r.templateId);
+    const primaryVars = extractTemplateVars(primaryTemplate);
+    const retryVars = extractTemplateVars(retryTemplate);
+    const varsMismatch = primaryTemplate && retryTemplate && JSON.stringify(primaryVars)!==JSON.stringify(retryVars);
     entryHtml = `
-      <div style="margin-top:10px;">
-        <div style="display:flex;gap:6px;align-items:flex-start;">
-          <div style="flex:1;">${nudgePickerHtml}</div>
-          <div class="cond-remove" style="margin-top:9px;" onclick="removeFallbackEntry()" title="Remove fallback">✕</div>
+      <div style="margin-top:10px;padding:12px;border:1px solid var(--gray-200);border-radius:8px;background:var(--gray-25);">
+        <div style="display:flex;gap:6px;align-items:flex-start;justify-content:flex-end;margin-bottom:-4px;">
+          <div class="cond-remove" onclick="disableRetry()" title="Remove retry">✕</div>
         </div>
-        ${fb.nudgeId ? `<div style="margin-top:10px;">${statusSelectHtml}</div>` : ''}
-        ${inlineForm}
+        <div class="f-row2">
+          <div class="f-group"><label class="f-label">Retry On</label><select class="f-input" onchange="nudgeCommModalState.retry.channel=this.value;nudgeCommModalState.retry.account='';nudgeCommModalState.retry.templateId='';renderNudgeCommConfigModal()">
+            <option value="">Select channel</option>${COMM_CHANNELS.filter(c=>c!==s.channel || c===r.channel).map(c=>`<option value="${c}" ${r.channel===c?'selected':''}>${CHANNEL_LABELS[c]}</option>`).join('')}
+          </select></div>
+          <div class="f-group"><label class="f-label">Timing</label><select class="f-input" onchange="nudgeCommModalState.retry.delayType=this.value;renderNudgeCommConfigModal()">
+            <option ${r.delayType==='Immediate'?'selected':''}>Immediate</option><option ${r.delayType==='Delayed'?'selected':''}>Delayed</option>
+          </select></div>
+        </div>
+        ${r.delayType==='Delayed' ? `<div class="f-group"><label class="f-label">Send after</label><div style="display:flex;gap:8px;">
+          <input class="f-input" type="number" min="0" style="max-width:100px;" value="${r.delay}" oninput="nudgeCommModalState.retry.delay=this.value">
+          <select class="f-input" style="max-width:140px;" onchange="nudgeCommModalState.retry.delayUnit=this.value">
+            <option ${r.delayUnit==='minutes'?'selected':''}>minutes</option><option ${r.delayUnit==='hours'?'selected':''}>hours</option><option ${r.delayUnit==='days'?'selected':''}>days</option>
+          </select></div></div>` : ''}
+        ${statusSelectHtml}
+        <div class="f-group"><label class="f-label">Account</label><select class="f-input" ${!r.channel?'disabled':''} onchange="nudgeCommModalState.retry.account=this.value;nudgeCommModalState.retry.templateId='';renderNudgeCommConfigModal()">
+          <option value="">${r.channel?'Select account':'Pick a channel first'}</option>${accounts.map(a=>`<option ${r.account===a?'selected':''}>${a}</option>`).join('')}
+        </select></div>
+        <div class="f-group"><label class="f-label">Template</label><select class="f-input" ${!r.account?'disabled':''} onchange="nudgeCommModalState.retry.templateId=this.value;renderNudgeCommConfigModal()">
+          <option value="">${r.account?'Select template':'Pick an account first'}</option>${templates.map(t=>`<option value="${t.id}" ${r.templateId===t.id?'selected':''}>${t.name}</option>`).join('')}
+        </select>
+        ${r.channel && r.account && !templates.length ? `<div class="f-hint">No ${CHANNEL_LABELS[r.channel]} templates exist yet for this account — create one in Comms. Templates first.</div>` : ''}
+        </div>
+        ${varsMismatch ? `<div class="f-hint" style="background:var(--error-bg);border:1px solid var(--error-border);border-radius:8px;padding:10px 14px;color:var(--error-text);">⚠ Variable mismatch — primary template uses {${primaryVars.join(', ')||'none'}}, retry template uses {${retryVars.join(', ')||'none'}}. Both templates must use the exact same variables before this can be saved.</div>` : ''}
       </div>`;
   }
   return `
     <div class="f-group" style="margin-top:16px;border-top:1px solid var(--gray-200);padding-top:16px;">
-      <label class="f-label">Fallback Nudge <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
-      <p class="f-hint" style="margin-top:-2px;">Triggers another nudge based on ${CHANNEL_LABELS[s.channel]} delivery status.</p>
+      <label class="f-label">Retry on Failure <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
+      <p class="f-hint" style="margin-top:-2px;">Resends via a different channel when ${CHANNEL_LABELS[s.channel]} delivery fails. Tracked as part of this nudge — not a separate campaign.</p>
       ${entryHtml}
-      ${!fb ? `<div class="add-link" style="margin-top:10px;" onclick="addFallbackEntry()">${ic('message')} Add fallback nudge</div>` : ''}
+      ${!r ? `<div class="add-link" style="margin-top:10px;" onclick="enableRetry()">${ic('message')} Enable retry</div>` : ''}
     </div>`;
 }
-function addFallbackEntry(){
-  nudgeCommModalState.fallback = newFallbackEntry();
+function enableRetry(){
+  nudgeCommModalState.retry = newRetryConfig();
   renderNudgeCommConfigModal();
 }
-function removeFallbackEntry(){
-  nudgeCommModalState.fallback = null;
-  renderNudgeCommConfigModal();
-}
-function fallbackModeChange(val){
-  const fb = nudgeCommModalState.fallback;
-  if(val==='__create_new__'){ fb.creatingNew = true; fb.nudgeId = ''; }
-  else { fb.creatingNew = false; fb.nudgeId = val; }
+function disableRetry(){
+  nudgeCommModalState.retry = null;
   renderNudgeCommConfigModal();
 }
 function renderUtmTrackingTable(s){
@@ -6156,48 +6014,21 @@ function selectedTemplateLinkFor(s){
 function submitNudgeCommConfig(){
   const s = nudgeCommModalState;
   const template = COMMS_TEMPLATES.find(t=>t.id===s.templateId);
-  const blockName = wiz.draft.commBlocks[s.blockIdx].name || `Trigger ${s.blockIdx+1}`;
-  // At most one fallback per (trigger, channel) — reverted from a
-  // repeatable list back to a single slot, per Amogh (2026-09-23):
-  // "remove multi-fallback entirely... exactly one fallback nudge per
-  // (trigger, channel)." Either it already points at an existing nudge,
-  // or gets created here (not via a separate wizard) — everything already
-  // implied by X (issuer, programs, user base) is inherited straight off
-  // wiz.draft rather than re-collected, matching every other event-based
-  // nudge's shape (commBlocks[0].configured, delayType/delay).
-  let createdName = null;
-  let fallbackToSave = null;
-  const fb = s.fallback;
-  if(fb){
-    if(fb.creatingNew && fb.channel && fb.account && fb.templateId){
-      const fbTemplate = COMMS_TEMPLATES.find(t=>t.id===fb.templateId);
-      const y = {
-        id: 'EV-'+(41000+Math.floor(Math.random()*9000)),
-        triggerType:'event-based', nudgeType:'CROSS_SELL_UP_SELL',
-        name: fb.name || `${CHANNEL_LABELS[fb.channel]} fallback for ${blockName}`,
-        description: `Auto-fallback nudge — fires when ${CHANNEL_LABELS[s.channel]} delivery fails for "${wiz.draft.name || 'this nudge'}" (${blockName}).`,
-        status:'ACTIVE', issuer: wiz.draft.issuer||'', programs: wiz.draft.programs?[...wiz.draft.programs]:[],
-        scopeType: wiz.draft.scopeType||'Issuer',
-        scopeName: wiz.draft.scopeType==='Issuer' ? `${wiz.draft.issuer} (All Programs)` : `${(wiz.draft.issuer||'').split(' ')[0]} — ${(wiz.draft.programs||[]).join(', ')}`,
-        labels:['Event-Based'], channels:[fb.channel],
-        eventCategory:'Nudge Delivery Status', eventType:'',
-        fallbackSourceNudgeId: wiz.draft.id, fallbackSourceNudgeName: wiz.draft.name,
-        fallbackSourceBlockName: blockName, fallbackSourceChannel: s.channel, fallbackStatuses:[...fb.statuses],
-        delayType: fb.delayType, delay: fb.delay, delayUnit: fb.delayUnit,
-        userBaseMode: wiz.draft.userBaseMode||'All Customers', smartTag: wiz.draft.smartTag||'',
-        commBlocks:[{name:'', sendDate:'', repeatable:'without repeat', everyN:'7',
-          configured:{ [fb.channel]: { account:fb.account, templateId:fb.templateId, templateName:fbTemplate?.name||'', tracking:false, userAttribution:false, utmParams:[] } }}],
-        createdBy:'Ananya Iyer', createdOn:'Today', startDate:'Today', endDate:'Ongoing',
-      };
-      NUDGES.unshift(y);
-      createdName = y.name;
-      fallbackToSave = { nudgeId: y.id, statuses:[...fb.statuses] };
-    } else if(fb.nudgeId){
-      fallbackToSave = { nudgeId: fb.nudgeId, statuses:[...fb.statuses] };
-    }
+  // Retry is a plain config on this channel's own Communication setup —
+  // not a separate NUDGES entry (reverted from "Fallback Nudges" the same
+  // day, per tech-team input via Amogh: track delivery/engagement, don't
+  // spin up a parallel campaign). Defensive guard here mirrors the Save
+  // button's own disabled state (retryVarsBlockSave) — the button already
+  // prevents reaching this function with mismatched variables, but this
+  // function shouldn't trust that as the only enforcement point.
+  if(retryVarsBlockSave(s)) return;
+  let retryToSave = null;
+  const r = s.retry;
+  if(r && r.channel && r.account && r.templateId){
+    const rTemplate = COMMS_TEMPLATES.find(t=>t.id===r.templateId);
+    retryToSave = { channel:r.channel, account:r.account, templateId:r.templateId, templateName:rTemplate?.name||'', statuses:[...r.statuses], delayType:r.delayType, delay:r.delay, delayUnit:r.delayUnit };
   }
-  if(createdName) showToast(`"${createdName}" created and attached.`);
-  wiz.draft.commBlocks[s.blockIdx].configured[s.channel] = { account: s.account, templateId: s.templateId, templateName: template?.name||'', tracking: s.tracking, userAttribution:s.userAttribution, utmParams:s.utmParams, fallback: fallbackToSave };
+  wiz.draft.commBlocks[s.blockIdx].configured[s.channel] = { account: s.account, templateId: s.templateId, templateName: template?.name||'', tracking: s.tracking, userAttribution:s.userAttribution, utmParams:s.utmParams, retry: retryToSave };
   chipToggleChannel(s.channel);
   closeSideDrawer();
   renderWizStep(wizSteps()[wiz.stepIdx].id);
@@ -6225,21 +6056,22 @@ function renderWizPreview(){
 }
 
 /* ---------------- Review + View shared section renderer ---------------- */
-// One row per (block, channel) that has at least one fallback attached —
-// shown on both the wizard's Review step and the read-only View page,
-// since both share reviewSections(). Block name only shown when there's
-// more than one trigger, same "don't repeat info the reader can already
-// see" judgment as everything else in this section.
-function fallbackReviewRows(commBlocks){
+// One row per (block, channel) that has a retry configured — shown on
+// both the wizard's Review step and the read-only View page, since both
+// share reviewSections(). Block name only shown when there's more than
+// one trigger, same "don't repeat info the reader can already see"
+// judgment as everything else in this section. No nudge lookup needed —
+// a retry isn't a separate nudge, everything worth showing lives on the
+// retry config itself.
+function retryReviewRows(commBlocks){
   const rows = [];
   (commBlocks||[]).forEach((b,bi)=>{
     Object.keys(b.configured||{}).forEach(ch=>{
-      const fb = (b.configured[ch]||{}).fallback;
-      if(!fb || !fb.nudgeId) return;
+      const r = (b.configured[ch]||{}).retry;
+      if(!r || !r.channel) return;
       const label = (commBlocks.length>1 ? `${b.name||'Trigger '+(bi+1)} · ` : '') + (CHANNEL_LABELS[ch]||ch);
-      const n = NUDGES.find(x=>x.id===fb.nudgeId);
-      const val = `${n?n.name:fb.nudgeId} (${fb.statuses.length?fb.statuses.join(', '):'no statuses set'})`;
-      rows.push([`Fallback — ${label}`, val]);
+      const val = `${CHANNEL_LABELS[r.channel]||r.channel} — ${r.templateName||'—'} (${r.statuses.length?r.statuses.join(', '):'no statuses set'})`;
+      rows.push([`Retry — ${label}`, val]);
     });
   });
   return rows;
@@ -6266,20 +6098,7 @@ function reviewSections(){
       ['Issuer', d.issuer||'—'],
       ...(d.scopeType==='Program' ? [['Program', (d.programs||[]).join(', ')||'—']] : []),
     ]});
-    // Nudge Delivery Status doesn't use Event Type / Trigger Conditions at
-    // all (its real condition is Source Nudge + Source Trigger + Source
-    // Channel + picked statuses) — showing the generic rows here would
-    // just print "Event Type: —" / "Trigger Conditions: —", meaningless
-    // for this category. Same Review/View parity rule as every other
-    // nudge-wizard field: whatever's real on the Event Trigger step has to
-    // show up here too.
-    sections.push(d.eventCategory==='Nudge Delivery Status' ? {title:'Event Trigger', stepId:'EVENT_TRIGGER', rows:[
-      ['Event Category', d.eventCategory||'—'],
-      ['Source Nudge', d.fallbackSourceNudgeName || (NUDGES.find(n=>n.id===d.fallbackSourceNudgeId)||{}).name || '—'],
-      ...(d.fallbackSourceBlockName ? [['Source Trigger', d.fallbackSourceBlockName]] : []),
-      ['Source Channel', CHANNEL_LABELS[d.fallbackSourceChannel]||d.fallbackSourceChannel||'—'],
-      ['Delivery Status (any of)', (d.fallbackStatuses||[]).join(', ')||'—'],
-    ]} : {title:'Event Trigger', stepId:'EVENT_TRIGGER', rows:[
+    sections.push({title:'Event Trigger', stepId:'EVENT_TRIGGER', rows:[
       ['Event Category', d.eventCategory||'—'],
       ['Event Type', d.eventType||'—'],
       // Journey/Batch is only genuinely an Event Trigger concept for Journey
@@ -6330,7 +6149,7 @@ function reviewSections(){
       ]});
       sections.push({title:'Communication', stepId:'COMMUNICATION', rows: [
         ...(d.commBlocks||[]).map((b,i)=>[`Trigger ${i+1}`, `${b.name||'Untitled'} · ${Object.keys(b.configured||{}).filter(k=>b.configured[k]).join(', ')||'no channels configured'}`]),
-        ...fallbackReviewRows(d.commBlocks),
+        ...retryReviewRows(d.commBlocks),
         ...dncRows(),
       ]});
     } else {
@@ -6339,7 +6158,7 @@ function reviewSections(){
   } else {
     sections.push({title:'Message Content', stepId:'MESSAGE_CONTENT', rows:[
       ['Communication Templates', (d.commBlocks||[]).flatMap(b=>Object.keys(b.configured||{}).filter(k=>b.configured[k])).join(', ')||'—'],
-      ...fallbackReviewRows(d.commBlocks),
+      ...retryReviewRows(d.commBlocks),
     ]});
     sections.push({title:'Frequency Limits', stepId:'FREQUENCY_LIMITS', rows:[
       ['Cooldown Policy', `${d.cooldown||'—'} ${d.cooldownUnit||''}`],
@@ -6405,17 +6224,6 @@ function submitNudge(){
 
 /* ---------------- View / detail page ---------------- */
 let nvState = { tab:'details' };
-// Reverse lookup, not a read of this nudge's own stored fallback list — a
-// nudge built via the general Event Trigger flow (not the "+ Add Fallback"
-// shortcut) only ever stores the link on ITSELF (fallbackSourceNudgeId),
-// never on the nudge it's pointed at. Searching every nudge for "who points
-// at me" is the only way to catch both authoring paths in one place.
-// Deliberately not called "fallback" — Nudge Delivery Status is a general
-// event source; a linked nudge is only a "fallback" from the authoring
-// shortcut's own point of view, not as a universal label.
-function findAssociatedNudges(sourceNudgeId){
-  return NUDGES.filter(n => n.eventCategory==='Nudge Delivery Status' && n.fallbackSourceNudgeId===sourceNudgeId);
-}
 // Best-effort reconciliation between this feature's real per-channel status
 // codes (FAILED_DND, FAILED_BLACKLIST, ...) and the small-metric labels
 // analyticsConstants already uses ("DND", "Blacklist", ...) — two
@@ -6430,50 +6238,46 @@ const DELIVERY_STATUS_TO_ANALYTICS_LABEL = {
   HARD_BOUNCE:'Hard Bounce', SOFT_BOUNCE:'Soft Bounce', SPAM:'Spam', SUPPRESSED:'Suppressed', REJECTED:'Not Send',
 };
 // Sums the real per-channel small-metric counts for whichever picked
-// statuses this associated nudge actually watches, on the SOURCE nudge's
-// own channel — the count of primary sends that would have matched this
-// specific fallback rule.
-function matchedStatusCount(sourceNudge, assocNudge){
-  const ch = assocNudge.fallbackSourceChannel;
-  const data = mockAnalyticsChannelData(sourceNudge.id, ch);
-  const statuses = assocNudge.fallbackStatuses || [];
-  return statuses.reduce((sum, code) => {
+// statuses a retry actually watches, on the primary channel that just
+// failed — the count of primary sends that would have triggered this
+// retry. Operates on (nudge, channel, statuses) directly now — a retry
+// isn't a separate nudge to look up, everything it needs is already on
+// the same nudge's own commBlocks.
+function matchedStatusCount(nudge, channel, statuses){
+  const data = mockAnalyticsChannelData(nudge.id, channel);
+  return (statuses||[]).reduce((sum, code) => {
     const label = DELIVERY_STATUS_TO_ANALYTICS_LABEL[code] || (code==='FAILED' ? 'Failed' : null);
     return sum + (label && data.smallValues[label]!==undefined ? data.smallValues[label] : 0);
   }, 0);
 }
-// Aggregate funnel across every associated nudge, scalable to any count —
-// a per-nudge breakdown list grows underneath it, not fixed slots for 1-2.
-function renderAssociatedNudgeFunnel(d){
-  const assoc = findAssociatedNudges(d.id);
-  if(!assoc.length) return '';
-  let totalMatched = 0, totalAssocSent = 0, totalAssocDelivered = 0;
-  const rows = assoc.map(a=>{
-    const matched = matchedStatusCount(d, a);
-    const ch = (a.channels||[])[0];
-    // Sent/Delivered are derived FROM matched, not independently seeded —
-    // a fallback can only ever reach people whose primary send actually
-    // hit one of its watched statuses, so its own volume has to stay
-    // bounded by that. Only the channel's own real delivery *rate* (Sent
-    // vs. Delivered ratio from the existing mock generator) is reused, not
-    // its absolute volume — keeps the ratio channel-realistic while
-    // keeping the funnel actually funnel-shaped (matched >= sent >= delivered).
-    let sent = 0, delivered = 0;
-    if(ch && matched>0){
-      const assocData = mockAnalyticsChannelData(a.id, ch);
-      const deliveryRate = assocData.values.Sent>0 ? assocData.values.Delivered/assocData.values.Sent : 0.9;
-      sent = Math.round(matched*0.95); // small guardrail/cooldown suppression, same as any send
-      delivered = Math.round(sent*deliveryRate);
-    }
-    totalMatched += matched; totalAssocSent += sent; totalAssocDelivered += delivered;
-    return {name:a.name, channel:ch, statuses:a.fallbackStatuses||[], matched, sent, delivered, status:NUDGE_STATUS_META[a.status]};
-  });
-  const primaryData = mockAnalyticsChannelData(d.id, d.fallbackSourceChannel || (d.channels||[])[0] || 'SMS');
+// One funnel per (channel, retry) — a retry lives on exactly one channel's
+// own Communication config, so this is never an aggregate across several
+// retries the way the old cross-nudge Associated Nudge funnel was. Reuses
+// mockAnalyticsChannelData(nudge.id, retry.channel) for the retry's own
+// Sent/Delivered — same nudge id, just the retry's channel — since a
+// retry was never a separate campaign with its own id to seed data for.
+function renderRetryFunnel(d, channel, retry){
+  const matched = matchedStatusCount(d, channel, retry.statuses);
+  // Sent/Delivered are derived FROM matched, not independently seeded — a
+  // retry can only ever reach people whose primary send actually hit one
+  // of its watched statuses, so its own volume has to stay bounded by
+  // that. Only the retry channel's own real delivery *rate* (Sent vs.
+  // Delivered ratio from the existing mock generator) is reused, not its
+  // absolute volume — keeps the ratio channel-realistic while keeping the
+  // funnel actually funnel-shaped (matched >= sent >= delivered).
+  let sent = 0, delivered = 0;
+  if(matched>0){
+    const retryData = mockAnalyticsChannelData(d.id, retry.channel);
+    const deliveryRate = retryData.values.Sent>0 ? retryData.values.Delivered/retryData.values.Sent : 0.9;
+    sent = Math.round(matched*0.95); // small guardrail/cooldown suppression, same as any send
+    delivered = Math.round(sent*deliveryRate);
+  }
+  const primaryData = mockAnalyticsChannelData(d.id, channel);
   const steps = [
-    {label:'Primary Sent', count: primaryData.values.Sent},
-    {label:'Matched a Linked Status', count: totalMatched},
-    {label:'Associated Nudge Sent', count: totalAssocSent},
-    {label:'Associated Nudge Delivered', count: totalAssocDelivered},
+    {label:`${CHANNEL_LABELS[channel]||channel} Sent`, count: primaryData.values.Sent},
+    {label:'Matched a Retry Status', count: matched},
+    {label:`${CHANNEL_LABELS[retry.channel]||retry.channel} Retry Sent`, count: sent},
+    {label:`${CHANNEL_LABELS[retry.channel]||retry.channel} Retry Delivered`, count: delivered},
   ];
   const max = steps[0].count || 1;
   // Same fix already established for EMI Analytics' Conversion Funnel:
@@ -6490,8 +6294,8 @@ function renderAssociatedNudgeFunnel(d){
   };
   return `
     <div class="card" style="margin-bottom:16px;">
-      <p class="card-title">Associated Nudges — Recovery Funnel</p>
-      <p class="f-hint" style="margin-top:-2px;">How much reach these ${assoc.length} linked nudge${assoc.length===1?'':'s'} recovered.</p>
+      <p class="card-title">Retry Funnel — ${CHANNEL_LABELS[channel]||channel} → ${CHANNEL_LABELS[retry.channel]||retry.channel}</p>
+      <p class="f-hint" style="margin-top:-2px;">How much reach this retry recovered when ${CHANNEL_LABELS[channel]||channel} delivery hit ${retry.statuses.join(', ')||'the configured statuses'}.</p>
       <div style="margin:12px 0;">
         ${steps.map(s=>`
           <div class="funnel-row">
@@ -6500,21 +6304,6 @@ function renderAssociatedNudgeFunnel(d){
             <div class="funnel-count">${s.count.toLocaleString('en-IN')}</div>
             <div class="funnel-pct" style="font-weight:700;color:var(--neutral-800);font-size:12.5px;">${fmtFunnelPct(s.count,max)}</div>
           </div>`).join('')}
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Associated Nudge</th><th>Channel</th><th>Matched Statuses</th><th>Matched Count</th><th>Sent</th><th>Delivered</th><th>Status</th></tr></thead>
-          <tbody>${rows.map((r,i)=>`
-            <tr onclick="document.getElementById('engagement-${assoc[i].id}')?.scrollIntoView({behavior:'smooth',block:'start'})" style="cursor:pointer;">
-              <td><b>${r.name}</b></td>
-              <td>${CHANNEL_LABELS[r.channel]||r.channel||'—'}</td>
-              <td style="font-size:11.5px;color:var(--gray-600);">${r.statuses.join(', ')||'—'}</td>
-              <td>${r.matched.toLocaleString('en-IN')}</td>
-              <td>${r.sent.toLocaleString('en-IN')}</td>
-              <td>${r.delivered.toLocaleString('en-IN')}</td>
-              <td>${r.status?`<span class="badge ${r.status.badge}">${r.status.label}</span>`:'—'}</td>
-            </tr>`).join('')}</tbody>
-        </table>
       </div>
     </div>`;
 }
@@ -6718,84 +6507,79 @@ function openAnalyticsAdvLogs(nudgeId, ch){
     <div class="sd-foot"><button class="btn primary" onclick="closeSideDrawer()">Close</button></div>
   `, 550);
 }
-// Per-channel card for one nudge — unchanged markup/data source from
-// before, just factored out so it can render for every nudge in the
-// stack below (primary + each fallback), not just whichever one a
-// dropdown happened to have selected.
+// Per-channel engagement card. Takes an explicit `ch` (rather than always
+// looping a nudge's own `channels`) and an optional `roleLabel` so the
+// exact same markup/data source can render both a nudge's own configured
+// channels AND a retry's channel — a retry reuses the SAME nudge id with
+// a different channel (mockAnalyticsChannelData(nudge.id, ch)), since a
+// retry was never a separate campaign with its own id to seed data for.
+function channelCardHtml(nudge, ch, ci, roleLabel){
+  const m = ANALYTICS_METRICS[ch] || ANALYTICS_METRICS.SMS;
+  const data = mockAnalyticsChannelData(nudge.id, ch);
+  const statusKeys = Object.keys(ANALYTICS_STATUS_META);
+  const sm = ANALYTICS_STATUS_META[statusKeys[(nudge.id.length+ci) % statusKeys.length]];
+  return `
+  <div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:36px;height:36px;border-radius:8px;background:var(--gray-100);display:flex;align-items:center;justify-content:center;">${ic('message')}</div>
+        <div style="font-size:16px;font-weight:600;">${roleLabel?`<span class="badge info" style="margin-right:8px;">${roleLabel}</span>`:''}${CHANNEL_LABELS[ch]||ch}</div>
+        <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:50px;box-shadow:0 0 3px rgba(201,201,201,.5);font-size:12.5px;font-weight:500;">
+          <span style="width:8px;height:8px;border-radius:50%;background:${sm.dot};display:inline-block;"></span>${sm.label}
+        </span>
+      </div>
+      <div class="rev-edit-link" style="cursor:pointer;" onclick="openAnalyticsAdvLogs('${nudge.id}','${ch}')">Advanced Logs</div>
+    </div>
+    <div style="display:flex;gap:28px;margin-top:16px;">
+      <div><div class="f-hint" style="margin:0;">Account</div><div style="font-size:13px;font-weight:500;">${data.account}</div></div>
+      <div><div class="f-hint" style="margin:0;">Template Name</div><div style="font-size:13px;font-weight:500;">${data.template}</div></div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--gray-200);margin:16px 0;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+      ${m.big.map(label=>`<div style="padding:12px 14px;border:1px solid var(--gray-200);border-radius:12px;">
+        <div class="f-hint" style="margin:0 0 6px;">${label}</div>
+        <div style="font-size:20px;font-weight:600;color:var(--neutral-900);">${(data.values[label]??0).toLocaleString()}</div>
+      </div>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px 16px;margin-top:16px;">
+      ${m.small.map(label=>`<div><div class="f-hint" style="margin:0;">${label}</div><div style="font-size:13px;color:var(--gray-600);">${data.smallValues[label].toLocaleString()}</div></div>`).join('')}
+    </div>
+  </div>`;
+}
 function nudgeChannelCardsHtml(nudge){
   const channels = nudge.channels && nudge.channels.length ? nudge.channels : ['SMS'];
-  const statusKeys = Object.keys(ANALYTICS_STATUS_META);
-  return channels.map((ch,ci)=>{
-    const m = ANALYTICS_METRICS[ch] || ANALYTICS_METRICS.SMS;
-    const data = mockAnalyticsChannelData(nudge.id, ch);
-    const sm = ANALYTICS_STATUS_META[statusKeys[(nudge.id.length+ci) % statusKeys.length]];
-    return `
-    <div class="card" style="margin-bottom:16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:36px;height:36px;border-radius:8px;background:var(--gray-100);display:flex;align-items:center;justify-content:center;">${ic('message')}</div>
-          <div style="font-size:16px;font-weight:600;">${CHANNEL_LABELS[ch]||ch}</div>
-          <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:50px;box-shadow:0 0 3px rgba(201,201,201,.5);font-size:12.5px;font-weight:500;">
-            <span style="width:8px;height:8px;border-radius:50%;background:${sm.dot};display:inline-block;"></span>${sm.label}
-          </span>
-        </div>
-        <div class="rev-edit-link" style="cursor:pointer;" onclick="openAnalyticsAdvLogs('${nudge.id}','${ch}')">Advanced Logs</div>
-      </div>
-      <div style="display:flex;gap:28px;margin-top:16px;">
-        <div><div class="f-hint" style="margin:0;">Account</div><div style="font-size:13px;font-weight:500;">${data.account}</div></div>
-        <div><div class="f-hint" style="margin:0;">Template Name</div><div style="font-size:13px;font-weight:500;">${data.template}</div></div>
-      </div>
-      <hr style="border:none;border-top:1px solid var(--gray-200);margin:16px 0;">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
-        ${m.big.map(label=>`<div style="padding:12px 14px;border:1px solid var(--gray-200);border-radius:12px;">
-          <div class="f-hint" style="margin:0 0 6px;">${label}</div>
-          <div style="font-size:20px;font-weight:600;color:var(--neutral-900);">${(data.values[label]??0).toLocaleString()}</div>
-        </div>`).join('')}
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px 16px;margin-top:16px;">
-        ${m.small.map(label=>`<div><div class="f-hint" style="margin:0;">${label}</div><div style="font-size:13px;color:var(--gray-600);">${data.smallValues[label].toLocaleString()}</div></div>`).join('')}
-      </div>
-    </div>`;
-  }).join('');
+  return channels.map((ch,ci)=>channelCardHtml(nudge, ch, ci, '')).join('');
 }
-// Shows every nudge's engagement automatically — primary, then each
-// fallback stacked directly below, clearly labeled — instead of hiding
-// fallback engagement behind a "Trigger" dropdown a viewer had to think to
-// open. The whole point of a fallback's engagement numbers is comparing
-// them against the primary's; a switcher that only ever shows one at a
-// time actively works against that.
-// Story order: Primary's own numbers first (what actually happened),
-// then the Associated Nudge recovery funnel right where it belongs — as
-// the explanation for what you're about to see next — then each
-// fallback's own detailed engagement. Previously the funnel sat before
-// everything, including the primary's own numbers, which told the
-// "did the fallback help" story before establishing the baseline it's
-// explaining.
+// Primary channel card, then — directly underneath, right where it
+// belongs, as the explanation for what follows — the retry funnel and the
+// retry channel's own engagement card, for every configured channel that
+// has one. No cross-nudge lookup, no separate "Primary"/"Fallback" rows —
+// a retry isn't a separate campaign with its own name/start date to
+// label, it's part of the same nudge's own delivery story.
 function renderNudgeAnalytics(baseNudge){
-  const assoc = findAssociatedNudges(baseNudge.id);
-  const rows = [
-    {nudge:baseNudge, roleLabel:'Primary', badge:'purple'},
-    ...assoc.map(a=>({nudge:a, roleLabel:`Fallback — ${CHANNEL_LABELS[a.fallbackSourceChannel]||a.fallbackSourceChannel||''}`, badge:'info'})),
-  ];
+  const channels = baseNudge.channels && baseNudge.channels.length ? baseNudge.channels : ['SMS'];
+  const retryByChannel = {};
+  (baseNudge.commBlocks||[]).forEach(b=>{
+    Object.keys(b.configured||{}).forEach(ch=>{
+      const r = (b.configured[ch]||{}).retry;
+      if(r && r.channel) retryByChannel[ch] = r;
+    });
+  });
   return `<div style="padding:4px 0 2px;">
-    ${rows.map((r,i)=>`
-      ${i===1 && assoc.length
-        ? '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">' + renderAssociatedNudgeFunnel(baseNudge) + '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">'
-        : (i>0 ? '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">' : '')}
-      <div id="engagement-${r.nudge.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:12px;scroll-margin-top:16px;">
-        <span class="badge ${r.badge}">${r.roleLabel}</span>
-        <span style="font-size:14.5px;font-weight:600;">${r.nudge.name}</span>
-        <span style="font-size:12px;color:var(--gray-500);">Started ${r.nudge.startDate||'—'}</span>
-      </div>
-      ${nudgeChannelCardsHtml(r.nudge)}
-    `).join('')}
+    ${channels.map((ch,ci)=>{
+      const retry = retryByChannel[ch];
+      return `
+        ${channelCardHtml(baseNudge, ch, ci, '')}
+        ${retry ? renderRetryFunnel(baseNudge, ch, retry) + channelCardHtml(baseNudge, retry.channel, ci, 'Retry') : ''}
+      `;
+    }).join('')}
   </div>`;
 }
 
 // ---------------------------------------------------------------------------
 // Event-based nudge execution analytics — a generic template meant to
 // generalize across every current and future Event Category (Journey/Offer/
-// Transaction/EMI/Nudge Delivery Status). What varies per category is only
+// Transaction/EMI/Card). What varies per category is only
 // which attributes show in a condition drawer elsewhere in this file, never
 // this funnel's shape, since every event source funnels through the same
 // Quibbler pipeline: Received -> Matched Conditions -> Guardrail-Suppressed
@@ -9022,10 +8806,10 @@ function dcDrawerFormFor(type){
       let customHtml;
       if(p.customSource==='Previous step outcome'){
         // Real, channel-specific delivery-status vocabulary (same list the
-        // Nudge Delivery Status event category uses) — falls back to the
-        // full merged list when the previous step's channel isn't known
-        // (not a Send, or a static example campaign built before _config
-        // existed) rather than showing nothing.
+        // Retry on Failure status picker uses) — falls back to the full
+        // merged list when the previous step's channel isn't known (not a
+        // Send, or a static example campaign built before _config existed)
+        // rather than showing nothing.
         const prevChannel = dcPreviousStepChannel();
         const outcomeOptions = prevChannel ? deliveryStatusOptionsFor(prevChannel) : deliveryStatusOptionsAll();
         customHtml = `<div class="f-group"><label class="f-label">Outcome${prevChannel?` (${CHANNEL_LABELS[prevChannel]||prevChannel})`:''}</label><select class="f-input" onchange="dcConfigField('outcome',this.value)">
