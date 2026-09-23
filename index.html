@@ -4919,6 +4919,21 @@ const BATCH_OPTIONS = ['Aug Festive Batch','Sep Reactivation Batch','Q3 Consolid
 // EMI Request in ELIGIBILITY_META below.
 const EVENT_SOURCE_OPTIONS = ['PWA', ...JOURNEY_OPTIONS];
 
+// Real, authoritative `TransactionType` enum (pasted by Amogh from actual
+// backend source, 2026-09-23) — every value except the 2 @Deprecated
+// Rewards ones (REWARDS_CREDIT/REWARDS_DEBIT — deprecated in favor of a
+// separate Rewards class, not worth exposing in a new condition picker).
+const TRANSACTION_SUBTYPE_OPTIONS = [
+  'ADD_FUND','ADD_FUND_REVERSAL','REVERSAL','SWEEP_IN','SWEEP_OUT',
+  'AUTHORIZATION_REVERSAL','AUTHORIZE','CASHBACK','CASHBACK_REVERSAL',
+  'CHARGEBACK','CHARGEBACK_REVERSAL','EMI_PRINCIPAL','EMI_INTEREST',
+  'EMI_FORECLOSURE_DEBIT','FEE','FEE_REVERSAL','INTEREST','INTEREST_REVERSAL',
+  'REFUND','REFUND_REVERSAL','REMITTANCE','REMITTANCE_REVERSAL','REPAYMENT',
+  'REPAYMENT_REVERSAL','SETTLEMENT_CREDIT','SETTLEMENT_CREDIT_CASH',
+  'SETTLEMENT_DEBIT','SETTLEMENT_DEBIT_CASH','EFT_WITHDRAWAL',
+  'EFT_WITHDRAWAL_REVERSAL','SURCHARGE','SURCHARGE_REVERSAL','TAX','TAX_REVERSAL',
+];
+
 // Real per-entity attribute metadata — eligibilityTotalList in smartNudgesConstants.ts.
 // Each attribute carries the real INPUT_TYPE, which drives both the operator
 // list (attributeTypeLabelMap) and the value widget (select/date/bool/list/
@@ -4959,12 +4974,30 @@ const ELIGIBILITY_META = {
   // just simplified. See Transaction-Event-Based-Nudges-PRD.md Section 6.2
   // for the full thread and reasoning behind each field below.
   'Transaction': {
-    // Real field: txnStatus. Multi-select, not clubbed into Auth/Settled —
-    // decided explicitly against grouping the real granular values (that
-    // would need Quibbler to maintain its own Auth/Settled mapping on top
-    // of whatever IB emits, a second source of truth). Confirmed values:
-    // APPROVED, PARTIAL_SETTLED, SETTLED, EXPIRED.
-    'Transaction Status':{type:'multiSelect', options:['APPROVED','PARTIAL_SETTLED','SETTLED','EXPIRED']},
+    // Final schema per Amogh, 2026-09-23 — three separate fields, not one.
+    // IMPORTANT, flagged not silently resolved: Transaction Type/Sub-Type
+    // pull from the real `TransactionType` enum — the exact field Manu S
+    // Rao's original message said "is not emitted in this event, this
+    // comes under ledger events not transaction events, we cannot support
+    // this filter for now." Built here per explicit instruction ("this is
+    // final... i will discuss again"), but backend availability is NOT
+    // confirmed and directly conflicts with that earlier statement — see
+    // PRD Open Questions. Don't treat this as resolved.
+    //
+    // Mandatory, coarse bucket — single-select.
+    'Transaction Type':    {type:'select', options:['Auth','Settled Transaction']},
+    // Optional refinement — the real TransactionType enum values (minus
+    // the 2 @Deprecated Rewards ones). NOT cascaded/scoped by Transaction
+    // Type above — this condition builder has no concept of one row's
+    // options depending on another row's value (no existing attribute
+    // anywhere in this file works that way), so all real values show
+    // regardless of which Transaction Type is picked. A real UX gap, not
+    // hidden: noted in the PRD rather than silently built as if it cascades.
+    'Transaction Sub-Type':{type:'multiSelect', options:TRANSACTION_SUBTYPE_OPTIONS},
+    // Optional. Real field: txnStatus (TransactionStatus enum has 13 real
+    // values total — this is a deliberately simplified 3-value subset for
+    // this release, not the full enum).
+    'Transaction Status':  {type:'multiSelect', options:['APPROVED','SETTLED','CANCELED']},
     // Real field: emiConversionEligible (boolean). Can be null — treated
     // as False when null, per Manu S Rao.
     'EMI Eligible':      {type:'bool'},
@@ -4974,17 +5007,15 @@ const ELIGIBILITY_META = {
     // every bank, unlike the other two amount fields.
     'Transaction Amount':{type:'number'},
     'MCC':                {type:'list'},
-    // Mandatory, real field: txnSourceIndicator. USER_INITIATED vs
-    // SYSTEM_GENERATED (system-generated covers refunds, tax, fees, and
-    // more — not just refunds). Every Transaction Events campaign must
-    // pick one explicitly; same "locked attribute, editable value"
-    // mandatory pattern as Transaction Status/Product Type.
-    'Initiated By':      {type:'select', options:['USER_INITIATED','SYSTEM_GENERATED']},
-    // Transaction Type, Merchant Name, and Source were all removed here —
-    // not simplifications, each is a real backend constraint:
-    // - Transaction Type isn't emitted on Transaction Events at all — it's
-    //   a ledger-event field. Can't be supported until/unless that event
-    //   source exists.
+    // Mandatory, real field: txnSourceIndicator. Real enum values are
+    // CUSTOMER_INITIATED / SYSTEM_GENERATED — corrected from an earlier
+    // build that used "USER_INITIATED" (Ranga Vamsi's own casual Slack
+    // phrasing, not the actual enum name — confirmed against real source).
+    // System-generated covers refunds, tax, fees, and more, not just
+    // refunds. Every Transaction Events campaign must pick one explicitly.
+    'Initiated By':      {type:'select', options:['CUSTOMER_INITIATED','SYSTEM_GENERATED']},
+    // Merchant Name and Source were removed here — not simplifications,
+    // each is a real backend constraint:
     // - Merchant Name isn't emitted as a structured field — it's embedded
     //   in free-text transaction description, not filterable as-is.
     // - Source (PWA vs Journey origin) only gets registered at IB at the
@@ -5595,8 +5626,8 @@ function renderWizStep(stepId){
       // manually rebuilt the whole example one row at a time.
       if (!d.triggerConditions || !d.triggerConditions.length || d.triggerConditions[0].entity !== entityForCat) {
         d.triggerConditions = entityForCat==='Transaction' ? [
-          {entity:'Transaction', attribute:'Initiated By', operator:'Equals', value:'USER_INITIATED', mandatory:true},
-          {entity:'Transaction', attribute:'Transaction Status', operator:'Any of', values:['APPROVED'], mandatory:true},
+          {entity:'Transaction', attribute:'Initiated By', operator:'Equals', value:'CUSTOMER_INITIATED', mandatory:true},
+          {entity:'Transaction', attribute:'Transaction Type', operator:'Equals', value:'Auth', mandatory:true},
           {entity:'Transaction', attribute:'EMI Eligible', operator:'Equals', value:'True'},
           {entity:'Transaction', attribute:'Transaction Amount', operator:'Greater than or equal to', value:'5000'},
           {entity:'Transaction', attribute:'MCC', operator:'Allowed', value:''},
