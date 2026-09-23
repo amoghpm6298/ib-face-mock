@@ -4954,30 +4954,43 @@ const ELIGIBILITY_META = {
   // step) — not part of the real eligibilityTotalList, since these two
   // event sources don't exist in Quibbler today. See the Transaction
   // Event-Based Nudges PRD for the schema this is drawn from.
+  // Reconciled against real backend feasibility (Manu S Rao / Ranga Vamsi,
+  // 2026-09-23) — several attributes here were wrong or unsupported, not
+  // just simplified. See Transaction-Event-Based-Nudges-PRD.md Section 6.2
+  // for the full thread and reasoning behind each field below.
   'Transaction': {
-    'Transaction Status':{type:'select', options:['Auth','Settled']},
+    // Real field: txnStatus. Multi-select, not clubbed into Auth/Settled —
+    // decided explicitly against grouping the real granular values (that
+    // would need Quibbler to maintain its own Auth/Settled mapping on top
+    // of whatever IB emits, a second source of truth). Confirmed values:
+    // APPROVED, PARTIAL_SETTLED, SETTLED, EXPIRED.
+    'Transaction Status':{type:'multiSelect', options:['APPROVED','PARTIAL_SETTLED','SETTLED','EXPIRED']},
+    // Real field: emiConversionEligible (boolean). Can be null — treated
+    // as False when null, per Manu S Rao.
     'EMI Eligible':      {type:'bool'},
+    // Real field: billingAmount specifically — not `amount` or
+    // `authAmount`. Confirmed after checking with Arthik: billingAmount is
+    // post-currency-conversion, so the same logic works identically across
+    // every bank, unlike the other two amount fields.
     'Transaction Amount':{type:'number'},
-    'Transaction Type':  {type:'select', options:['PURCHASE','REFUND','CASH_ADVANCE']},
     'MCC':                {type:'list'},
-    // Was documented in the PRD's own attribute list (Section 6.2/6.5) but
-    // missing here — found during a direct audit ("is this already in
-    // prototype na?"). Same Allowed/Denied list pattern as MCC, since a
-    // campaign manager would plausibly want to include/exclude specific
-    // named merchants the same way.
-    'Merchant Name':      {type:'list'},
-    // Which flow the customer completed the triggering action through —
-    // PWA vs a specific Journey. Optional, not mandatory (unlike Transaction
-    // Status/Product Type) — a campaign not scoped by Source just applies
-    // regardless of origin, no ambiguity forces a choice the way Auth-vs-
-    // Settled does for the Transaction entity itself. Real backend
-    // dependency, not yet built: Ironbank's event payload doesn't carry
-    // this today (confirmed only "PWA or Journey" as a coarse flag is
-    // realistic without further work; a *specific* journey identity, which
-    // is what this field's options list assumes, needs Nimbus to pass
-    // journey context through to Ironbank during booking first — flagged
-    // as an open dependency, not a decided backend commitment).
-    'Source':             {type:'select', options:EVENT_SOURCE_OPTIONS},
+    // Mandatory, real field: txnSourceIndicator. USER_INITIATED vs
+    // SYSTEM_GENERATED (system-generated covers refunds, tax, fees, and
+    // more — not just refunds). Every Transaction Events campaign must
+    // pick one explicitly; same "locked attribute, editable value"
+    // mandatory pattern as Transaction Status/Product Type.
+    'Initiated By':      {type:'select', options:['USER_INITIATED','SYSTEM_GENERATED']},
+    // Transaction Type, Merchant Name, and Source were all removed here —
+    // not simplifications, each is a real backend constraint:
+    // - Transaction Type isn't emitted on Transaction Events at all — it's
+    //   a ledger-event field. Can't be supported until/unless that event
+    //   source exists.
+    // - Merchant Name isn't emitted as a structured field — it's embedded
+    //   in free-text transaction description, not filterable as-is.
+    // - Source (PWA vs Journey origin) only gets registered at IB at the
+    //   moment of EMI conversion — structurally can't exist on a
+    //   Transaction Event, which fires *before* any conversion happens.
+    //   Stays on EMI Request below, where it's genuinely available.
   },
   'EMI Request': {
     'New Status':   {type:'select', options:['Pending','Successful','Failed','Expired','Cancelled']},
@@ -4992,6 +5005,11 @@ const OPERATORS_BY_TYPE = {
   select:['Equals'], bool:['Equals'], date:['Equals','Greater than','Greater than or equal to','Less than','Less than or equal to','Between','Difference in days'],
   list:['Allowed','Denied'], smartTag:['Allowed','Denied'], highestTxnEMI:['Greater than','Greater than or equal to'],
   number:['Equals','Greater than','Greater than or equal to','Less than','Less than or equal to'],
+  // A real, fixed enum where more than one value can legitimately apply at
+  // once (e.g. Transaction Status: APPROVED or PARTIAL_SETTLED or...) —
+  // one operator, since "matches any of the picked values" is the only
+  // meaningful comparison for a set like this.
+  multiSelect:['Any of'],
 };
 const SMART_TAG_OPTIONS = ['High EMI Propensity','Dormant 60d','Recent Complaint'];
 
@@ -5076,6 +5094,12 @@ function condRow(c, idx, entityOptions, containerKey){
       valueWidget = `<div style="display:flex;gap:6px;flex-wrap:wrap;">
         ${SMART_TAG_OPTIONS.map(t=>{ const sel=(c.values||[]).includes(t); return `<div class="msel-chip" style="cursor:pointer;background:${sel?'var(--info-bg)':'var(--gray-100)'};color:${sel?'var(--info-text)':'var(--gray-600)'};" onclick="condToggleSmartTag('${containerKey}',${idx},'${t}')">${sel?'✓ ':''}${t}</div>`; }).join('')}
       </div>`;
+    } else if(meta.type==='multiSelect'){
+      // Same chip-toggle pattern as Smart Tags, generalized to any fixed
+      // real enum (meta.options) instead of one hardcoded list.
+      valueWidget = `<div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${meta.options.map(o=>{ const sel=(c.values||[]).includes(o); return `<div class="msel-chip" style="cursor:pointer;background:${sel?'var(--info-bg)':'var(--gray-100)'};color:${sel?'var(--info-text)':'var(--gray-600)'};" onclick="condToggleMulti('${containerKey}',${idx},'${o}')">${sel?'✓ ':''}${o}</div>`; }).join('')}
+      </div>`;
     }
   }
 
@@ -5105,6 +5129,13 @@ function condToggleSmartTag(key, idx, tag){
   c.values = c.values || [];
   const i = c.values.indexOf(tag);
   if(i>-1) c.values.splice(i,1); else c.values.push(tag);
+  renderWizStep(wizSteps()[wiz.stepIdx].id);
+}
+function condToggleMulti(key, idx, val){
+  const c = wiz.draft[key][idx];
+  c.values = c.values || [];
+  const i = c.values.indexOf(val);
+  if(i>-1) c.values.splice(i,1); else c.values.push(val);
   renderWizStep(wizSteps()[wiz.stepIdx].id);
 }
 function wizCondRemove(key, idx){ wiz.draft[key].splice(idx,1); if(wiz.draft[key].length===0) wiz.draft[key].push({entity:'',attribute:'',operator:'',value:''}); renderWizStep(wizSteps()[wiz.stepIdx].id); }
@@ -5561,7 +5592,8 @@ function renderWizStep(stepId){
       // manually rebuilt the whole example one row at a time.
       if (!d.triggerConditions || !d.triggerConditions.length || d.triggerConditions[0].entity !== entityForCat) {
         d.triggerConditions = entityForCat==='Transaction' ? [
-          {entity:'Transaction', attribute:'Transaction Status', operator:'Equals', value:'Auth', mandatory:true},
+          {entity:'Transaction', attribute:'Initiated By', operator:'Equals', value:'USER_INITIATED', mandatory:true},
+          {entity:'Transaction', attribute:'Transaction Status', operator:'Any of', values:['APPROVED'], mandatory:true},
           {entity:'Transaction', attribute:'EMI Eligible', operator:'Equals', value:'True'},
           {entity:'Transaction', attribute:'Transaction Amount', operator:'Greater than or equal to', value:'5000'},
           {entity:'Transaction', attribute:'MCC', operator:'Allowed', value:''},
