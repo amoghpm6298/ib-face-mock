@@ -5619,32 +5619,52 @@ function renderWizStep(stepId){
     }
     else if (isNewSource) {
       const entityForCat = d.eventCategory==='Transaction Events' ? 'Transaction' : 'EMI Request';
-      // Pre-populated with the actual example from the Transaction
-      // Event-Based Nudges PRD (use cases 1 and 3) rather than one blank
-      // row — an empty condition builder made it look like the attributes
-      // (MCC, Transaction Amount, ...) weren't there at all until you
-      // manually rebuilt the whole example one row at a time.
+      // Only the mandatory, locked-attribute rows are pre-populated — no
+      // illustrative optional examples (EMI Eligible, Transaction Amount,
+      // MCC, New Status) added by default anymore, per explicit
+      // instruction (2026-09-23). A campaign manager starts with just
+      // what's structurally required and adds anything else themselves
+      // via "+ Add Condition."
       if (!d.triggerConditions || !d.triggerConditions.length || d.triggerConditions[0].entity !== entityForCat) {
         d.triggerConditions = entityForCat==='Transaction' ? [
           {entity:'Transaction', attribute:'Initiated By', operator:'Equals', value:'CUSTOMER_INITIATED', mandatory:true},
           {entity:'Transaction', attribute:'Transaction Type', operator:'Equals', value:'Auth', mandatory:true},
-          {entity:'Transaction', attribute:'EMI Eligible', operator:'Equals', value:'True'},
-          {entity:'Transaction', attribute:'Transaction Amount', operator:'Greater than or equal to', value:'5000'},
-          {entity:'Transaction', attribute:'MCC', operator:'Allowed', value:''},
+          // Conditionally mandatory, per Amogh (2026-09-23): once Transaction
+          // Type is set, Sub-Type and Status must both be narrowed too — an
+          // unqualified "Transaction Type = Auth" is genuinely ambiguous
+          // (AUTHORIZE and AUTHORIZATION_REVERSAL are opposite events).
+          // In practice this collapses to "always mandatory," not real
+          // cross-row reactive logic: Transaction Type is itself mandatory
+          // and always pre-populated with a real value from the moment a
+          // Transaction Events campaign starts, so "conditional on Type
+          // being set" and "always required" are the same thing here —
+          // this condition builder has no mechanism for one row's
+          // mandatory-ness to reactively depend on another row's live
+          // value, and building that would be new architecture, not a
+          // one-line change.
+          {entity:'Transaction', attribute:'Transaction Sub-Type', operator:'Any of', values:['AUTHORIZE'], mandatory:true},
+          {entity:'Transaction', attribute:'Transaction Status', operator:'Any of', values:['APPROVED'], mandatory:true},
         ] : [
           {entity:'EMI Request', attribute:'Product Type', operator:'Equals', value:'Single-Txn', mandatory:true},
-          {entity:'EMI Request', attribute:'New Status', operator:'Equals', value:'Successful'},
         ];
       }
+      // Both Transaction Events and EMI Events have exactly one real Event
+      // Type each (Section 6.1/6.4 of the PRD) — same "don't show a
+      // dropdown for a single option" precedent already used elsewhere in
+      // this file. Locked, not a real choice, auto-set rather than left
+      // for the user to pick from a 1-item list.
+      if(cat.events.length===1 && d.eventType!==cat.events[0]) d.eventType = cat.events[0];
       html = `
       <h1 class="wiz-heading">Configure Event Trigger</h1>
       <p class="wiz-sub">Which event fires this nudge, and under what conditions.</p>
       ${catSelect}
       <div class="f-group"><label class="f-label">Event</label>
-        <select class="f-input" onchange="fieldUpdate('eventType',this.value);renderWizStep('EVENT_TRIGGER')">
-          <option value="">Select event</option>
-          ${cat.events.map(e=>`<option ${d.eventType===e?'selected':''}>${e}</option>`).join('')}
-        </select>
+        ${cat.events.length===1
+          ? `<input class="f-input" type="text" value="${cat.events[0]}" disabled>`
+          : `<select class="f-input" onchange="fieldUpdate('eventType',this.value);renderWizStep('EVENT_TRIGGER')">
+              <option value="">Select event</option>
+              ${cat.events.map(e=>`<option ${d.eventType===e?'selected':''}>${e}</option>`).join('')}
+            </select>`}
       </div>
       <div class="f-group"><label class="f-label">Event Conditions</label>
         ${d.triggerConditions.map((c,i)=>`${i>0?'<div class="cond-and">AND</div>':''}${condRow(c,i,[entityForCat],'triggerConditions')}`).join('')}
