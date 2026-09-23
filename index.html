@@ -4933,6 +4933,16 @@ const TRANSACTION_SUBTYPE_OPTIONS = [
   'SETTLEMENT_DEBIT','SETTLEMENT_DEBIT_CASH','EFT_WITHDRAWAL',
   'EFT_WITHDRAWAL_REVERSAL','SURCHARGE','SURCHARGE_REVERSAL','TAX','TAX_REVERSAL',
 ];
+// Cascaded per Amogh (2026-09-23): "auth will have only sub-type
+// AUTHORIZE and AUTHORIZE_CANCELLED [= AUTHORIZATION_REVERSAL] na." Auth
+// only ever has 2 real sub-types; everything else in the enum belongs to
+// the Settled Transaction bucket. Used by condRow() to scope the
+// Sub-Type picker's options to whichever Transaction Type is currently
+// selected in the same condition set, looked up at render time — no new
+// cross-row architecture needed, condRow already has the full sibling
+// array via wiz.draft[containerKey].
+const AUTH_SUBTYPE_OPTIONS = ['AUTHORIZE','AUTHORIZATION_REVERSAL'];
+const SETTLED_SUBTYPE_OPTIONS = TRANSACTION_SUBTYPE_OPTIONS.filter(o=>!AUTH_SUBTYPE_OPTIONS.includes(o));
 
 // Real per-entity attribute metadata — eligibilityTotalList in smartNudgesConstants.ts.
 // Each attribute carries the real INPUT_TYPE, which drives both the operator
@@ -5131,7 +5141,20 @@ function condRow(c, idx, entityOptions, containerKey){
       // Nudge Delivery Status pickers, not a bespoke always-expanded chip
       // row. Any fixed real enum (meta.options) reuses this, not just
       // delivery-status vocabularies.
-      valueWidget = multiSelectDropdownHtml(`${containerKey}-${idx}`, '', meta.options, c.values||[],
+      //
+      // Transaction Sub-Type specifically cascades off its sibling
+      // Transaction Type row — looked up directly from the full condition
+      // array (wiz.draft[containerKey], already reachable here), not a
+      // generic cross-row mechanism. Scoped narrowly to this one field
+      // pair rather than building reactive dependencies for every
+      // multiSelect attribute.
+      let msOptions = meta.options;
+      if(c.attribute==='Transaction Sub-Type'){
+        const typeRow = (wiz.draft[containerKey]||[]).find(r=>r.attribute==='Transaction Type');
+        const txnType = typeRow ? typeRow.value : '';
+        msOptions = txnType==='Auth' ? AUTH_SUBTYPE_OPTIONS : txnType==='Settled Transaction' ? SETTLED_SUBTYPE_OPTIONS : meta.options;
+      }
+      valueWidget = multiSelectDropdownHtml(`${containerKey}-${idx}`, '', msOptions, c.values||[],
         (o)=>`condToggleMulti('${containerKey}',${idx},'${o}')`,
         `renderWizStep(wizSteps()[wiz.stepIdx].id)`);
     }
@@ -5150,13 +5173,27 @@ function condRow(c, idx, entityOptions, containerKey){
     </div>`;
 }
 function wizCondUpdate(key, idx, field, val){
-  wiz.draft[key][idx][field] = val;
-  if(field==='entity'){ wiz.draft[key][idx].attribute=''; wiz.draft[key][idx].operator=''; wiz.draft[key][idx].value=''; wiz.draft[key][idx].value2=''; wiz.draft[key][idx].values=[]; }
-  if(field==='attribute'){ wiz.draft[key][idx].operator=''; wiz.draft[key][idx].value=''; wiz.draft[key][idx].value2=''; wiz.draft[key][idx].values=[]; }
-  // Only entity/attribute/operator changes need a re-render (they swap which
-  // widget shows next); free-text value/value2 typing must not re-render on
-  // every keystroke or the input loses focus.
-  if(['entity','attribute','operator'].includes(field)) renderWizStep(wizSteps()[wiz.stepIdx].id);
+  const c = wiz.draft[key][idx];
+  c[field] = val;
+  if(field==='entity'){ c.attribute=''; c.operator=''; c.value=''; c.value2=''; c.values=[]; }
+  if(field==='attribute'){ c.operator=''; c.value=''; c.value2=''; c.values=[]; }
+  // Transaction Type gates which real values are valid for its sibling
+  // Transaction Sub-Type (Auth -> AUTHORIZE/AUTHORIZATION_REVERSAL only,
+  // Settled -> everything else) — a previously-picked Sub-Type value can
+  // become invalid the moment Type changes, so clear it rather than leave
+  // a stale, now-out-of-bucket selection sitting unseen.
+  const isTransactionTypeValue = field==='value' && c.attribute==='Transaction Type';
+  if(isTransactionTypeValue){
+    const subType = wiz.draft[key].find(r=>r.attribute==='Transaction Sub-Type');
+    if(subType) subType.values = [];
+  }
+  // Only entity/attribute/operator changes normally need a re-render (they
+  // swap which widget shows next); free-text value/value2 typing must not
+  // re-render on every keystroke or the input loses focus. Transaction
+  // Type's own value is a <select>, not free text, so re-rendering it
+  // (needed to refresh Sub-Type's now-different option list every time,
+  // not just when there was something to clear) is safe.
+  if(['entity','attribute','operator'].includes(field) || isTransactionTypeValue) renderWizStep(wizSteps()[wiz.stepIdx].id);
 }
 function condToggleSmartTag(key, idx, tag){
   const c = wiz.draft[key][idx];
