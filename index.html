@@ -4939,6 +4939,16 @@ const TRANSACTION_SUBTYPE_OPTIONS = [
 // a parent (auth, settled) is not required." One flat mandatory
 // multi-select over every real value instead — see ELIGIBILITY_META's
 // 'Transaction Type' entry below.
+//
+// Re-introduced as a cascade, later the same day, this time gated off
+// 'Initiated By' rather than a parent bucket on Transaction Type itself —
+// per Amogh: "lets enable system_initiated as well -- it will hv all
+// types except authorize, authorization_reversal." A customer-initiated
+// transaction can only ever be an authorize or its reversal; every other
+// real TransactionType value is system-generated (refunds, fees, tax,
+// settlement postings, etc.).
+const CUSTOMER_INITIATED_TXN_TYPES = ['AUTHORIZE','AUTHORIZATION_REVERSAL'];
+const SYSTEM_GENERATED_TXN_TYPES = TRANSACTION_SUBTYPE_OPTIONS.filter(o=>!CUSTOMER_INITIATED_TXN_TYPES.includes(o));
 
 // Real per-entity attribute metadata — eligibilityTotalList in smartNudgesConstants.ts.
 // Each attribute carries the real INPUT_TYPE, which drives both the operator
@@ -5003,9 +5013,12 @@ const ELIGIBILITY_META = {
     // removed along with it — genuinely dead now, not deferred.
     'Transaction Type':{type:'multiSelect', options:TRANSACTION_SUBTYPE_OPTIONS},
     // Optional. Real field: txnStatus (TransactionStatus enum has 13 real
-    // values total — this is a deliberately simplified 3-value subset for
-    // this release, not the full enum).
-    'Transaction Status':  {type:'multiSelect', options:['APPROVED','SETTLED','CANCELED']},
+    // values total — this is a deliberately simplified subset for this
+    // release, not the full enum). Expanded 2026-09-23 (same day, later
+    // round) from 3 to 5 values, per Amogh — EXPIRED and PARTIALLY_SETTLED
+    // added since both are real, common outcomes a campaign would
+    // plausibly want to filter on.
+    'Transaction Status':  {type:'multiSelect', options:['APPROVED','SETTLED','PARTIALLY_SETTLED','EXPIRED','CANCELED']},
     // Real field: emiConversionEligible (boolean). Can be null — treated
     // as False when null, per Manu S Rao.
     'EMI Eligible':      {type:'bool'},
@@ -5021,10 +5034,13 @@ const ELIGIBILITY_META = {
     // phrasing, not the actual enum name — confirmed against real source).
     // System-generated covers refunds, tax, fees, and more, not just
     // refunds. Every Transaction Events campaign must pick one explicitly.
-    // SYSTEM_GENERATED kept disabled for now, per Amogh (2026-09-23) —
-    // "we will bring this later." Shown, not hidden, so the real option
-    // stays visible/documented rather than silently absent.
-    'Initiated By':      {type:'select', options:['CUSTOMER_INITIATED','SYSTEM_GENERATED'], disabledOptions:['SYSTEM_GENERATED']},
+    // SYSTEM_GENERATED re-enabled 2026-09-23 (same day, later round), per
+    // Amogh — "lets enable system_initiated as well." Now cascades the
+    // sibling Transaction Type row's available options (see condRow's
+    // multiSelect branch and wizCondUpdate's Initiated-By special case):
+    // CUSTOMER_INITIATED -> {AUTHORIZE, AUTHORIZATION_REVERSAL} only;
+    // SYSTEM_GENERATED -> every other real TransactionType value.
+    'Initiated By':      {type:'select', options:['CUSTOMER_INITIATED','SYSTEM_GENERATED']},
     // Merchant Name and Source were removed here — not simplifications,
     // each is a real backend constraint:
     // - Merchant Name isn't emitted as a structured field — it's embedded
@@ -5150,21 +5166,47 @@ function condRow(c, idx, entityOptions, containerKey){
       // Nudge Delivery Status pickers, not a bespoke always-expanded chip
       // row. Any fixed real enum (meta.options) reuses this, not just
       // delivery-status vocabularies.
-      valueWidget = multiSelectDropdownHtml(`${containerKey}-${idx}`, '', meta.options, c.values||[],
+      //
+      // Transaction Type cascades off the sibling 'Initiated By' row's
+      // value (2026-09-23, same day, later round) — condRow already has
+      // full access to every sibling row via wiz.draft[containerKey], so
+      // this is a render-time lookup, not new cross-row architecture (the
+      // same lesson learned building the earlier Sub-Type cascade this
+      // same day). CUSTOMER_INITIATED narrows to the 2 real customer-
+      // facing values; SYSTEM_GENERATED (or nothing picked yet) gets
+      // every other real value.
+      let msOptions = meta.options;
+      if(c.attribute==='Transaction Type'){
+        const siblingRows = (wiz.draft[containerKey]||[]);
+        const initiatedByRow = siblingRows.find(r=>r.attribute==='Initiated By');
+        msOptions = initiatedByRow && initiatedByRow.value==='CUSTOMER_INITIATED'
+          ? CUSTOMER_INITIATED_TXN_TYPES : SYSTEM_GENERATED_TXN_TYPES;
+      }
+      valueWidget = multiSelectDropdownHtml(`${containerKey}-${idx}`, '', msOptions, c.values||[],
         (o)=>`condToggleMulti('${containerKey}',${idx},'${o}')`,
         `renderWizStep(wizSteps()[wiz.stepIdx].id)`);
     }
   }
 
+  // min-width:0 on every flex column — without it, a plain <select>'s
+  // native min-content width (driven by its longest option string) wins
+  // over flex-shrink, so a row with one long option (e.g. a disabled
+  // "(Coming soon)" suffix) silently overflows and wraps onto its own
+  // line while every other row in the same list stays on one line. This
+  // is what made row alignment look inconsistent — some rows wrapped,
+  // most didn't, depending on option text length alone. min-width:0 is
+  // the standard fix: forces every column to actually respect its
+  // flex-basis regardless of content, so no row can force a different
+  // layout shape than its siblings.
   return `
     <div class="cond-row" style="display:flex;flex-wrap:wrap;grid-template-columns:none;">
-      ${showEntity ? `<div style="flex:1 1 140px;">${entitySelect}</div>` : ''}
-      <div style="flex:1 1 140px;">${attrSelect}</div>
-      ${showSecond ? `<div style="flex:1 1 140px;"><select onchange="wizCondUpdate('${containerKey}',${idx},'operator',this.value)">
+      ${showEntity ? `<div style="flex:1 1 140px;min-width:0;">${entitySelect}</div>` : ''}
+      <div style="flex:1 1 140px;min-width:0;">${attrSelect}</div>
+      ${showSecond ? `<div style="flex:1 1 140px;min-width:0;"><select onchange="wizCondUpdate('${containerKey}',${idx},'operator',this.value)">
         <option value="">Operator</option>
         ${ops.map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}
       </select></div>` : ''}
-      ${showSecond ? `<div style="flex:1 1 140px;display:flex;gap:8px;">${valueWidget}</div>` : ''}
+      ${showSecond ? `<div style="flex:1 1 140px;min-width:0;display:flex;gap:8px;">${valueWidget}</div>` : ''}
       ${c.mandatory ? `<div style="width:24px;flex-shrink:0;"></div>` : `<div class="cond-remove" onclick="wizCondRemove('${containerKey}',${idx})" style="align-self:center;">✕</div>`}
     </div>`;
 }
@@ -5173,10 +5215,22 @@ function wizCondUpdate(key, idx, field, val){
   c[field] = val;
   if(field==='entity'){ c.attribute=''; c.operator=''; c.value=''; c.value2=''; c.values=[]; }
   if(field==='attribute'){ c.operator=''; c.value=''; c.value2=''; c.values=[]; }
+  // Initiated By gates Transaction Type's available options (2026-09-23,
+  // same day, later round) — when it changes, clear the sibling
+  // Transaction Type row's stale selection (a value valid under the old
+  // bucket may not exist in the new one) rather than leaving an invisible
+  // mismatch between what's checked and what the dropdown now offers.
+  // Safe to re-render here (unlike free-text value typing elsewhere in
+  // this function) since Initiated By's own widget is a <select>, not an
+  // input the user is actively typing into.
+  if(field==='value' && c.attribute==='Initiated By'){
+    const txnTypeRow = (wiz.draft[key]||[]).find(r=>r.attribute==='Transaction Type');
+    if(txnTypeRow) txnTypeRow.values = [];
+  }
   // Only entity/attribute/operator changes need a re-render (they swap which
   // widget shows next); free-text value/value2 typing must not re-render on
   // every keystroke or the input loses focus.
-  if(['entity','attribute','operator'].includes(field)) renderWizStep(wizSteps()[wiz.stepIdx].id);
+  if(['entity','attribute','operator'].includes(field) || (field==='value' && c.attribute==='Initiated By')) renderWizStep(wizSteps()[wiz.stepIdx].id);
 }
 function condToggleSmartTag(key, idx, tag){
   const c = wiz.draft[key][idx];
