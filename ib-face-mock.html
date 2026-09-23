@@ -4943,12 +4943,16 @@ const TRANSACTION_SUBTYPE_OPTIONS = [
 // Re-introduced as a cascade, later the same day, this time gated off
 // 'Initiated By' rather than a parent bucket on Transaction Type itself —
 // per Amogh: "lets enable system_initiated as well -- it will hv all
-// types except authorize, authorization_reversal." A customer-initiated
-// transaction can only ever be an authorize or its reversal; every other
-// real TransactionType value is system-generated (refunds, fees, tax,
-// settlement postings, etc.).
-const CUSTOMER_INITIATED_TXN_TYPES = ['AUTHORIZE','AUTHORIZATION_REVERSAL'];
-const SYSTEM_GENERATED_TXN_TYPES = TRANSACTION_SUBTYPE_OPTIONS.filter(o=>!CUSTOMER_INITIATED_TXN_TYPES.includes(o));
+// types except authorize, authorization_reversal." Corrected immediately
+// after (same round): "customer initiated should have ALL including
+// authorize and authorize reversal" — CUSTOMER_INITIATED is NOT narrowed
+// to just those 2 values, it gets the full real enum. Only
+// SYSTEM_GENERATED is narrowed, excluding AUTHORIZE/AUTHORIZATION_REVERSAL
+// specifically (those 2 are always customer-initiated actions; every
+// other real TransactionType value — refunds, fees, tax, settlement
+// postings, etc. — can be system-generated).
+const CUSTOMER_INITIATED_TXN_TYPES = TRANSACTION_SUBTYPE_OPTIONS;
+const SYSTEM_GENERATED_TXN_TYPES = TRANSACTION_SUBTYPE_OPTIONS.filter(o=>!['AUTHORIZE','AUTHORIZATION_REVERSAL'].includes(o));
 
 // Real per-entity attribute metadata — eligibilityTotalList in smartNudgesConstants.ts.
 // Each attribute carries the real INPUT_TYPE, which drives both the operator
@@ -5085,7 +5089,7 @@ function condRow(c, idx, entityOptions, containerKey){
   // section heading doesn't already say once. `c.entity` still drives the
   // ELIGIBILITY_META lookup underneath, it's just not rendered as a column.
   const showEntity = entityOptions.length > 1;
-  const entitySelect = showEntity ? `<select onchange="wizCondUpdate('${containerKey}',${idx},'entity',this.value)">
+  const entitySelect = showEntity ? `<select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'entity',this.value)">
         <option value="">Entity Type</option>
         ${entityOptions.map(e=>`<option value="${e}" ${c.entity===e?'selected':''}>${e}</option>`).join('')}
       </select>` : '';
@@ -5094,7 +5098,7 @@ function condRow(c, idx, entityOptions, containerKey){
   // pattern the Journey/Offer Event Trigger already uses.
   const attrSelect = c.mandatory
     ? `<input class="f-input" type="text" value="${c.attribute}" disabled>`
-    : `<select onchange="wizCondUpdate('${containerKey}',${idx},'attribute',this.value)">
+    : `<select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'attribute',this.value)">
         <option value="">Attribute</option>
         ${attrOptions.map(a=>`<option value="${a}" ${c.attribute===a?'selected':''}>${a}</option>`).join('')}
       </select>`;
@@ -5106,7 +5110,7 @@ function condRow(c, idx, entityOptions, containerKey){
     <div class="cond-row">
       ${entitySelect}
       ${attrSelect}
-      <select onchange="wizCondUpdate('${containerKey}',${idx},'operator',this.value)">
+      <select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'operator',this.value)">
         <option value="">Operator</option>
         ${['Equals','Not Equals','Greater than','Greater than or equal to','Less than','Less than or equal to','Between'].map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}
       </select>
@@ -5128,7 +5132,7 @@ function condRow(c, idx, entityOptions, containerKey){
       // SYSTEM_GENERATED, deferred per explicit instruction). Shown
       // greyed-out with a "Coming soon" suffix rather than omitted, so
       // the field's real full option set stays visible/documented.
-      valueWidget = `<select onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
+      valueWidget = `<select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
         <option value="">Select value</option>
         ${meta.options.map(o=>{
           const isDisabled = (meta.disabledOptions||[]).includes(o);
@@ -5136,7 +5140,7 @@ function condRow(c, idx, entityOptions, containerKey){
         }).join('')}
       </select>`;
     } else if(meta.type==='bool'){
-      valueWidget = `<select onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
+      valueWidget = `<select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
         <option value="">Select value</option>
         <option ${c.value==='True'?'selected':''}>True</option>
         <option ${c.value==='False'?'selected':''}>False</option>
@@ -5172,9 +5176,11 @@ function condRow(c, idx, entityOptions, containerKey){
       // full access to every sibling row via wiz.draft[containerKey], so
       // this is a render-time lookup, not new cross-row architecture (the
       // same lesson learned building the earlier Sub-Type cascade this
-      // same day). CUSTOMER_INITIATED narrows to the 2 real customer-
-      // facing values; SYSTEM_GENERATED (or nothing picked yet) gets
-      // every other real value.
+      // same day). CUSTOMER_INITIATED gets every real value (corrected
+      // per Amogh — "should have ALL including authorize and authorize
+      // reversal"); SYSTEM_GENERATED (or nothing picked yet) excludes
+      // just AUTHORIZE/AUTHORIZATION_REVERSAL, since those 2 are always
+      // customer-initiated actions.
       let msOptions = meta.options;
       if(c.attribute==='Transaction Type'){
         const siblingRows = (wiz.draft[containerKey]||[]);
@@ -5202,7 +5208,7 @@ function condRow(c, idx, entityOptions, containerKey){
     <div class="cond-row" style="display:flex;flex-wrap:wrap;grid-template-columns:none;">
       ${showEntity ? `<div style="flex:1 1 140px;min-width:0;">${entitySelect}</div>` : ''}
       <div style="flex:1 1 140px;min-width:0;">${attrSelect}</div>
-      ${showSecond ? `<div style="flex:1 1 140px;min-width:0;"><select onchange="wizCondUpdate('${containerKey}',${idx},'operator',this.value)">
+      ${showSecond ? `<div style="flex:1 1 140px;min-width:0;"><select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'operator',this.value)">
         <option value="">Operator</option>
         ${ops.map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}
       </select></div>` : ''}
@@ -5631,11 +5637,11 @@ function renderWizStep(stepId){
           ${d.deliveryConds.map((c,i)=>`
             ${i>0?'<div class="cond-and">OR</div>':''}
             <div class="cond-row" style="grid-template-columns:1fr 1fr 1fr auto;">
-              <select onchange="wizCondUpdate('deliveryConds',${i},'attribute',this.value);renderWizStep('DELIVERY')"><option value="">Attribute</option>
+              <select class="f-input" onchange="wizCondUpdate('deliveryConds',${i},'attribute',this.value);renderWizStep('DELIVERY')"><option value="">Attribute</option>
                 <option ${c.attribute==='Impression Count'?'selected':''}>Impression Count</option>
                 <option ${c.attribute==='CTR Count'?'selected':''}>CTR Count</option>
               </select>
-              <select onchange="wizCondUpdate('deliveryConds',${i},'operator',this.value)"><option value="">Operator</option>
+              <select class="f-input" onchange="wizCondUpdate('deliveryConds',${i},'operator',this.value)"><option value="">Operator</option>
                 ${['<','<='].map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}
               </select>
               <input class="f-input" type="number" value="${c.value||''}" oninput="wizCondUpdate('deliveryConds',${i},'value',this.value);renderWizStep('DELIVERY')">
@@ -5767,7 +5773,7 @@ function renderWizStep(stepId){
       <div class="f-group"><label class="f-label">Event Conditions</label>
         <div class="cond-row" style="grid-template-columns:1fr 1fr 1fr auto;">
           <input class="f-input" type="text" value="${lockedAttr||'Select an event first'}" disabled>
-          <select onchange="wizCondUpdate('triggerConditions',0,'operator',this.value)"><option value="">Operator</option>${['Equals','Not Equals','Greater than','Less than','Is'].map(o=>`<option ${d.triggerConditions[0].operator===o?'selected':''}>${o}</option>`).join('')}</select>
+          <select class="f-input" onchange="wizCondUpdate('triggerConditions',0,'operator',this.value)"><option value="">Operator</option>${['Equals','Not Equals','Greater than','Less than','Is'].map(o=>`<option ${d.triggerConditions[0].operator===o?'selected':''}>${o}</option>`).join('')}</select>
           <input type="text" class="f-input" placeholder="Value" value="${d.triggerConditions[0].value||''}" oninput="wizCondUpdate('triggerConditions',0,'value',this.value)">
           <div></div>
         </div>
@@ -5775,7 +5781,7 @@ function renderWizStep(stepId){
           <div class="cond-and">AND</div>
           <div class="cond-row" style="grid-template-columns:1fr 1fr 1fr auto;">
             <input class="f-input" type="text" value="${lockedAttr}" disabled>
-            <select onchange="wizCondUpdate('triggerConditions',${i+1},'operator',this.value)"><option value="">Operator</option>${['Equals','Not Equals','Greater than','Less than','Is'].map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}</select>
+            <select class="f-input" onchange="wizCondUpdate('triggerConditions',${i+1},'operator',this.value)"><option value="">Operator</option>${['Equals','Not Equals','Greater than','Less than','Is'].map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}</select>
             <input type="text" class="f-input" placeholder="Value" value="${c.value||''}" oninput="wizCondUpdate('triggerConditions',${i+1},'value',this.value)">
             <div class="cond-remove" onclick="wizCondRemove('triggerConditions',${i+1})">✕</div>
           </div>`).join('')}
@@ -5927,7 +5933,13 @@ function multiSelectDropdownHtml(id, label, options, selected, onToggle, rerende
   const isOpen = openMultiSelectId === id;
   const toggleOpenExpr = `openMultiSelectId=openMultiSelectId==='${id}'?null:'${id}';${rerenderCall}`;
   const summary = selected.length ? (selected.length<=2 ? selected.join(', ') : `${selected.length} selected`) : `Select ${label.toLowerCase()}`;
-  return `<div class="f-group" style="position:relative;">
+  // flex:1;min-width:0 is a no-op unless this component's parent is itself
+  // display:flex (e.g. condRow's value-widget wrapper) — harmless
+  // everywhere else, but load-bearing there: without it, this div (a flex
+  // item with no explicit width) shrink-wraps to its own content instead
+  // of filling its column, leaving it narrower than its sibling plain
+  // <select>-based value widgets in the same row.
+  return `<div class="f-group" style="position:relative;flex:1;min-width:0;">
     ${label ? `<label class="f-label">${label}</label>` : ''}
     <div class="msel-trigger" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;" onclick="${toggleOpenExpr}">
       <span style="${selected.length?'':'color:var(--gray-400);'}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${selected.join(', ')}">${summary}</span>
