@@ -5862,13 +5862,13 @@ function multiSelectDropdownHtml(id, label, options, selected, onToggle, rerende
   const toggleOpenExpr = `openMultiSelectId=openMultiSelectId==='${id}'?null:'${id}';${rerenderCall}`;
   const summary = selected.length ? (selected.length<=2 ? selected.join(', ') : `${selected.length} selected`) : `Select ${label.toLowerCase()}`;
   return `<div class="f-group" style="position:relative;">
-    <label class="f-label">${label}</label>
+    ${label ? `<label class="f-label">${label}</label>` : ''}
     <div class="msel-trigger" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;" onclick="${toggleOpenExpr}">
       <span style="${selected.length?'':'color:var(--gray-400);'}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${selected.join(', ')}">${summary}</span>
       <span style="color:var(--gray-400);flex-shrink:0;">${isOpen?'▴':'▾'}</span>
     </div>
     ${isOpen ? `
-      <div style="position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.15);max-height:240px;overflow-y:auto;">
+      <div style="position:absolute;top:calc(100% + 4px);left:0;width:max-content;max-width:320px;z-index:50;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.15);max-height:240px;overflow-y:auto;">
         ${options.map(o=>`
           <label style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:12.5px;" onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background='transparent'">
             <input type="checkbox" ${selected.includes(o)?'checked':''} onchange="${onToggle(o)}">
