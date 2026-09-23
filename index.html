@@ -676,7 +676,7 @@
 
   .cond-group{border:1px solid var(--gray-200);border-radius:10px;padding:14px;margin-bottom:12px;background:var(--gray-25);}
   .cond-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:8px;}
-  .cond-and{font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:6px 0;}
+  .cond-and{font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:8px 0;}
   .cond-remove{width:26px;height:26px;border-radius:6px;color:var(--gray-400);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
   .cond-remove:hover{background:var(--error-bg);color:var(--error-text);}
   .msel-trigger{width:100%;font-family:inherit;font-size:13.5px;color:var(--neutral-800);
@@ -5190,7 +5190,7 @@ function condRow(c, idx, entityOptions, containerKey){
       }
       valueWidget = multiSelectDropdownHtml(`${containerKey}-${idx}`, '', msOptions, c.values||[],
         (o)=>`condToggleMulti('${containerKey}',${idx},'${o}')`,
-        `renderWizStep(wizSteps()[wiz.stepIdx].id)`);
+        `renderWizStep(wizSteps()[wiz.stepIdx].id)`, true);
     }
   }
 
@@ -5928,7 +5928,7 @@ let openMultiSelectId = null;
 // redraws whichever container is calling this — the drawer and the
 // general Event Trigger wizard step need different ones, so it's a
 // parameter rather than hardcoded, unlike the first version of this.
-function multiSelectDropdownHtml(id, label, options, selected, onToggle, rerenderCall){
+function multiSelectDropdownHtml(id, label, options, selected, onToggle, rerenderCall, compact){
   rerenderCall = rerenderCall || 'renderNudgeCommConfigModal()';
   const isOpen = openMultiSelectId === id;
   const toggleOpenExpr = `openMultiSelectId=openMultiSelectId==='${id}'?null:'${id}';${rerenderCall}`;
@@ -5939,7 +5939,15 @@ function multiSelectDropdownHtml(id, label, options, selected, onToggle, rerende
   // item with no explicit width) shrink-wraps to its own content instead
   // of filling its column, leaving it narrower than its sibling plain
   // <select>-based value widgets in the same row.
-  return `<div class="f-group" style="position:relative;flex:1;min-width:0;">
+  //
+  // compact (optional, condRow only): .f-group's shared margin-bottom:20px
+  // is meant for stacked standalone fields — inside a flex row it inflates
+  // this item's cross-axis margin-box height, so align-items:center centers
+  // it against a taller box than its siblings, visually pushing the value
+  // column's box up relative to the attribute/operator selects beside it.
+  // Zeroed here specifically, not on the shared .f-group rule, since the
+  // other 2 call sites (standalone drawer fields) need that 20px spacing.
+  return `<div class="f-group" style="position:relative;flex:1;min-width:0;${compact?'margin-bottom:0;':''}">
     ${label ? `<label class="f-label">${label}</label>` : ''}
     <div class="msel-trigger" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;" onclick="${toggleOpenExpr}">
       <span style="${selected.length?'':'color:var(--gray-400);'}overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${selected.join(', ')}">${summary}</span>
