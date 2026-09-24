@@ -5490,9 +5490,9 @@ function renderWizStep(stepId){
             <input class="f-input" type="text" value="${d.eligibilityCode||''}" oninput="fieldUpdate('eligibilityCode',this.value)" placeholder="e.g. CCQC001">
             <div></div>
           </div>
-          <div class="f-hint">Matched against the action code the bank returns. This nudge only shows when the response's value matches exactly — and it's also what ties the placeholders below to the right response fields.</div>
+          <div class="f-hint">Matched exactly against the action code the bank returns. Also determines which placeholders apply below.</div>
         </div>
-        <div class="f-hint" style="background:var(--info-bg);border:1px solid var(--blue-cta);border-radius:8px;padding:10px 14px;color:var(--info-text);">Audience size can't be estimated ahead of time — eligibility is decided live by the bank for each customer, not by a condition this dashboard evaluates.</div>
+        <div class="f-hint" style="background:var(--info-bg);border:1px solid var(--blue-cta);border-radius:8px;padding:10px 14px;color:var(--info-text);margin:0 0 20px;">Audience size can't be estimated — eligibility is decided live by the bank, per customer.</div>
         ${dncBlock}
         ${wizFooter()}`;
     }
