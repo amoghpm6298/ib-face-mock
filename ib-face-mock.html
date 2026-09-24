@@ -4953,6 +4953,15 @@ const ELIGIBILITY_META = {
   'Account': {
     'Status':{type:'select', options:['Active','Charge off','Pending closure','Closed','Dormant','Suspended','Forced suspended']},
     'Smart Tag':{type:'smartTag'}, 'Statement Due Date':{type:'date'},
+    // Added 2026-09-24 for Drip Campaigns' Conditional Split — a Spend
+    // Milestone campaign needs to re-check a customer's live progress
+    // toward their milestone target at several points across a 30-day
+    // journey (Day 10, 15, 20, 25, 30), not just once at entry. Both
+    // real Account-level attributes, same as Status/Smart Tag above —
+    // not a Drip-specific concept, so any future condition builder that
+    // targets Account can use them too.
+    'Milestone Progress %':{type:'number'},
+    'Engagement Tier':{type:'multiSelect', options:['Dormant','Engaged','Highly Engaged']},
     'Created On':{type:'date'}, 'Last Updated On':{type:'date'}, 'Account Block Codes':{type:'list'},
   },
   'Card': {
@@ -8473,7 +8482,20 @@ function dcCondUpdate(containerKey, idx, field, val){
   const arr = dcCondArrayFor(containerKey);
   if(field==='__remove') arr.splice(idx,1);
   else if(field==='__add') arr.push({attribute:'', operator:'', value:''});
-  else { arr[idx][field]=val; if(field==='attribute') arr[idx].value=''; }
+  else { arr[idx][field]=val; if(field==='attribute'){ arr[idx].value=''; arr[idx].values=[]; } }
+  if(containerKey==='goal') dcRenderGoalDrawer(); else dcRenderAddDrawer();
+}
+// Toggle handler for multiSelect-type condition rows (e.g. Engagement
+// Tier "Any of Engaged, Highly Engaged") — mirrors condToggleMulti()'s
+// role for the Nudges/Event-Trigger condition builder, kept separate
+// since Drip's condition arrays route through dcCondArrayFor's own
+// containerKey scheme, not wiz.draft.
+function dcCondToggleMulti(containerKey, idx, val){
+  const arr = dcCondArrayFor(containerKey);
+  const c = arr[idx];
+  c.values = c.values || [];
+  const i = c.values.indexOf(val);
+  if(i>-1) c.values.splice(i,1); else c.values.push(val);
   if(containerKey==='goal') dcRenderGoalDrawer(); else dcRenderAddDrawer();
 }
 // Entry point every condition-row call site should use instead of
@@ -8504,6 +8526,13 @@ function dcCondRowsHtml(conditions, entity, containerKey){
   const attrOptions = meta ? Object.keys(meta) : null;
   const rows = conditions.map((c,i)=>{
     const attrMeta = meta ? meta[c.attribute] : null;
+    // multiSelect only ever has one real operator ("Any of") — same
+    // "don't make someone pick from a 1-option list" precedent used
+    // throughout this file. Auto-filled directly into the live condition
+    // object during render (same pattern dcPromotedFieldHtml already uses
+    // to push a default row when one's missing), not left for the user to
+    // notice and pick manually from a dropdown with nothing else in it.
+    if(attrMeta?.type==='multiSelect' && !c.operator) c.operator='Any of';
     const attrField = attrOptions
       ? `<select onchange="dcCondUpdate('${containerKey}',${i},'attribute',this.value)">
           <option value="">Attribute</option>
@@ -8511,12 +8540,22 @@ function dcCondRowsHtml(conditions, entity, containerKey){
         </select>`
       : `<input type="text" class="f-input" placeholder="Attribute" value="${c.attribute||''}" oninput="dcCondUpdate('${containerKey}',${i},'attribute',this.value)">`;
     let valueField;
-    if(attrMeta?.type==='select') valueField = `<select onchange="dcCondUpdate('${containerKey}',${i},'value',this.value)"><option value="">Value</option>${attrMeta.options.map(o=>`<option ${c.value===o?'selected':''}>${o}</option>`).join('')}</select>`;
+    // Between needs two bounds, not one — real gap this hit the moment a
+    // Spend Milestone-style condition ("progress 0-50%") needed it.
+    // number/date already offered "Between" as an operator with nowhere
+    // to enter the second bound; fixed by adding a value2 input, same
+    // pattern condRow() already uses elsewhere in this file.
+    if(attrMeta?.type==='multiSelect'){
+      valueField = multiSelectDropdownHtml(`${containerKey}-${i}`, '', attrMeta.options, c.values||[],
+        (o)=>`dcCondToggleMulti('${containerKey}',${i},'${o}')`,
+        containerKey==='goal' ? 'dcRenderGoalDrawer()' : 'dcRenderAddDrawer()', true);
+    } else if(attrMeta?.type==='select') valueField = `<select onchange="dcCondUpdate('${containerKey}',${i},'value',this.value)"><option value="">Value</option>${attrMeta.options.map(o=>`<option ${c.value===o?'selected':''}>${o}</option>`).join('')}</select>`;
     else if(attrMeta?.type==='bool') valueField = `<select onchange="dcCondUpdate('${containerKey}',${i},'value',this.value)"><option value="">Value</option><option ${c.value==='true'?'selected':''}>true</option><option ${c.value==='false'?'selected':''}>false</option></select>`;
+    else if(attrMeta?.type==='number' && c.operator==='Between') valueField = `<div style="display:flex;gap:6px;"><input type="number" class="f-input" placeholder="From" value="${c.value||''}" oninput="dcCondUpdate('${containerKey}',${i},'value',this.value)"><input type="number" class="f-input" placeholder="To" value="${c.value2||''}" oninput="dcCondUpdate('${containerKey}',${i},'value2',this.value)"></div>`;
     else if(attrMeta?.type==='number') valueField = `<input type="number" class="f-input" placeholder="Value" value="${c.value||''}" oninput="dcCondUpdate('${containerKey}',${i},'value',this.value)">`;
     else if(attrMeta?.type==='date') valueField = `<input type="date" class="f-input" value="${c.value||''}" onchange="dcCondUpdate('${containerKey}',${i},'value',this.value)">`;
     else valueField = `<input type="text" class="f-input" placeholder="Value" value="${c.value||''}" oninput="dcCondUpdate('${containerKey}',${i},'value',this.value)">`;
-    const opOptions = attrMeta?.type==='number'||attrMeta?.type==='date' ? ['Equals','Greater than','Less than','Between'] : ['Equals','Not Equals'];
+    const opOptions = attrMeta?.type==='multiSelect' ? ['Any of'] : attrMeta?.type==='number'||attrMeta?.type==='date' ? ['Equals','Greater than','Less than','Between'] : ['Equals','Not Equals'];
     return `<div class="cond-row">
       ${attrField}
       <select onchange="dcCondUpdate('${containerKey}',${i},'operator',this.value)"><option value="">Operator</option>${opOptions.map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}</select>
@@ -8551,7 +8590,16 @@ function dcPickType(type){
   }[type];
   dcRenderAddDrawer();
 }
-function dcConfigField(key,val){ dripWiz.pendingConfig[key]=val; dcRenderAddDrawer(); }
+function dcConfigField(key,val){
+  dripWiz.pendingConfig[key]=val;
+  // Switching Split's condition source shouldn't leave stale state from
+  // whichever source was picked before — a Previous-step-outcome pick and
+  // an Account-attribute condition list have no relationship to each
+  // other, so carrying one into the other would silently build a node
+  // whose displayed question doesn't match what's actually configured.
+  if(key==='customSource'){ dripWiz.pendingConfig.outcome=''; dripWiz.pendingConfig.customConditions=[]; }
+  dcRenderAddDrawer();
+}
 function dcRandomBranchField(i,key,val){ dripWiz.pendingConfig.branches[i][key]=val; dcRenderAddDrawer(); }
 function dcAddRandomBranch(){
   const b = dripWiz.pendingConfig.branches;
@@ -8591,7 +8639,16 @@ function dcRenderAddDrawer(){
 // "Amount = 2000, MCC = 5411" rather than making a reviewer open the
 // drawer again to see what was actually configured.
 function dcCondSummary(conditions){
-  return (conditions||[]).filter(c=>c.attribute&&c.value).map(c=>`${c.attribute} ${c.operator==='Not Equals'?'≠':c.operator==='Equals'?'=':c.operator||'='} ${c.value}`).join(', ');
+  // Handles both a plain scalar .value (every existing condition type)
+  // and a .values array (multiSelect, e.g. Engagement Tier "Any of
+  // Engaged, Highly Engaged") — without this, a Split whose only
+  // condition is a multiSelect attribute would silently summarize to an
+  // empty string, since .value is never set on those rows.
+  return (conditions||[]).filter(c=>c.attribute&&((c.values&&c.values.length)||c.value)).map(c=>{
+    if(c.values&&c.values.length) return `${c.attribute} any of ${c.values.join('/')}`;
+    if(c.operator==='Between') return `${c.attribute} between ${c.value} and ${c.value2||'?'}`;
+    return `${c.attribute} ${c.operator==='Not Equals'?'≠':c.operator==='Equals'?'=':c.operator||'='} ${c.value}`;
+  }).join(', ');
 }
 function dcConfirmAddNode(){
   const t = dripWiz.addingType, p = dripWiz.pendingConfig;
@@ -8927,6 +8984,15 @@ function dcDrawerFormFor(type){
         const outcomeOptions = prevChannel ? deliveryStatusOptionsFor(prevChannel) : deliveryStatusOptionsAll();
         customHtml = `<div class="f-group"><label class="f-label">Outcome${prevChannel?` (${CHANNEL_LABELS[prevChannel]||prevChannel})`:''}</label><select class="f-input" onchange="dcConfigField('outcome',this.value)">
           ${outcomeOptions.map(o=>`<option ${p.outcome===o?'selected':''}>${o}</option>`).join('')}</select></div>`;
+      } else if(p.customSource==='Account attribute'){
+        // Added 2026-09-24, straight from the Spend Milestone use case: a
+        // Split needs to re-check a LIVE customer/account value at this
+        // point in the flow, not just once at entry — "Entry event
+        // attribute" below is frozen to whatever the entry event carried,
+        // which can't represent "how far has this account progressed by
+        // Day 20." Account is always available regardless of what (or
+        // whether) an event triggered entry, unlike sourceEntity below.
+        customHtml = `<div class="f-group"><label class="f-label">Condition</label>${dcCondRowsHtml(p.customConditions, 'Account', 'splitCustom')}</div>`;
       } else if(sourceEntity==='EMI Request'){
         customHtml = dcPromotedFieldHtml(p.customConditions, 'EMI Request', 'New Status', 'splitCustom');
       } else if(sourceEntity){
@@ -8937,6 +9003,7 @@ function dcDrawerFormFor(type){
       }
       basisHtml = `<div class="f-group"><label class="f-label">Source</label><select class="f-input" onchange="dcConfigField('customSource',this.value)">
         <option ${p.customSource==='Previous step outcome'?'selected':''}>Previous step outcome</option>
+        <option ${p.customSource==='Account attribute'?'selected':''}>Account attribute</option>
         <option ${p.customSource==='Entry event attribute'?'selected':''}>Entry event attribute</option></select></div>
         ${customHtml}`;
     }
@@ -8944,7 +9011,7 @@ function dcDrawerFormFor(type){
     <div class="f-group"><label class="f-label">Basis</label><select class="f-input" onchange="dcConfigField('basis',this.value)">
       <option ${p.basis==='Goal reached'?'selected':''}>Goal reached</option><option ${p.basis==='Custom condition'?'selected':''}>Custom condition</option></select></div>
     ${basisHtml}
-    <p class="f-hint">Bounded to two sources: the previous step's engagement outcome, or an attribute of the entry event — not arbitrary attributes anywhere in the flow.</p>`;
+    <p class="f-hint">Bounded to three sources: the previous step's engagement outcome, a live account attribute checked right now, or an attribute of the entry event — not arbitrary attributes anywhere in the flow.</p>`;
   }
   if(type==='RANDOM_SPLIT'){
     const total = p.branches.reduce((s,b)=>s+Number(b.pct||0),0);
