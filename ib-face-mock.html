@@ -6859,7 +6859,14 @@ function renderNudgeExecutionCharts(d){
   // above it, not the shared renderRankedBarList() helper: that component
   // hardcodes a "conv." rate label (a conversion-rate concept, not
   // applicable here), so it's hand-rolled here to say what it actually is.
-  const suppressionRows = Object.entries(data.suppression).map(([reason,count])=>({label:reason, count}));
+  // Real vocabulary underneath (matches Metabase's own reason codes) stays
+  // the data key — only the displayed row label is plain English.
+  const SUPPRESSION_REASON_LABELS = {
+    COOLDOWN_PERIOD_ACTIVE: 'Customer in cooldown',
+    CANCEL_EVENT_RECEIVED: 'Cancelled before sending',
+    NUDGE_DEACTIVATED: 'Nudge was turned off',
+  };
+  const suppressionRows = Object.entries(data.suppression).map(([reason,count])=>({label:SUPPRESSION_REASON_LABELS[reason]||reason, count}));
   const smax = Math.max(...suppressionRows.map(r=>r.count),1);
   document.getElementById('nudgeExecSuppressionBody').innerHTML = suppressionRows.map(r=>`
     <div class="funnel-row">
