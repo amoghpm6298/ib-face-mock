@@ -4559,7 +4559,7 @@ const NUDGES = [
   // built only to exercise the now-removed Source Trigger picker) were
   // both removed outright — neither has a purpose left. Bracketed name so
   // it's easy to spot in the Nudges list.
-  { id:'ND-88998', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'[Demo — Has Retry] EMI Conversion — WhatsApp Push', description:'Demo nudge with a real Retry on Failure attached to its WhatsApp trigger — open Analytics to see the retry funnel and its own engagement shown automatically.',
+  { id:'ND-88998', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'[Demo — Has Fallback] EMI Conversion — WhatsApp Push', description:'Demo nudge with a real Fallback attached to its WhatsApp trigger — open Analytics to see the fallback funnel and its own engagement shown automatically.',
     scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
     startDate:'05 Sep 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Demo'],
     createdBy:'Ananya Iyer', createdOn:'17 Sep 2026', variant:'BANNER', eligibilityEntity:'Transaction EMI',
@@ -5929,10 +5929,10 @@ function renderRetrySection(s){
     entryHtml = `
       <div style="margin-top:10px;padding:12px;border:1px solid var(--gray-200);border-radius:8px;background:var(--gray-25);">
         <div style="display:flex;gap:6px;align-items:flex-start;justify-content:flex-end;margin-bottom:-4px;">
-          <div class="cond-remove" onclick="disableRetry()" title="Remove retry">✕</div>
+          <div class="cond-remove" onclick="disableRetry()" title="Remove fallback">✕</div>
         </div>
         <div class="f-row2">
-          <div class="f-group"><label class="f-label">Retry On</label><select class="f-input" onchange="nudgeCommModalState.retry.channel=this.value;nudgeCommModalState.retry.account='';nudgeCommModalState.retry.templateId='';renderNudgeCommConfigModal()">
+          <div class="f-group"><label class="f-label">Fallback Channel</label><select class="f-input" onchange="nudgeCommModalState.retry.channel=this.value;nudgeCommModalState.retry.account='';nudgeCommModalState.retry.templateId='';renderNudgeCommConfigModal()">
             <option value="">Select channel</option>${COMM_CHANNELS.filter(c=>c!==s.channel || c===r.channel).map(c=>`<option value="${c}" ${r.channel===c?'selected':''}>${CHANNEL_LABELS[c]}</option>`).join('')}
           </select></div>
           <div class="f-group"><label class="f-label">Timing</label><select class="f-input" onchange="nudgeCommModalState.retry.delayType=this.value;renderNudgeCommConfigModal()">
@@ -5953,15 +5953,15 @@ function renderRetrySection(s){
         </select>
         ${r.channel && r.account && !templates.length ? `<div class="f-hint">No ${CHANNEL_LABELS[r.channel]} templates exist yet for this account — create one in Comms. Templates first.</div>` : ''}
         </div>
-        ${varsMismatch ? `<div class="f-hint" style="background:var(--error-bg);border:1px solid var(--error-border);border-radius:8px;padding:10px 14px;color:var(--error-text);">⚠ Variable mismatch — primary template uses {${primaryVars.join(', ')||'none'}}, retry template uses {${retryVars.join(', ')||'none'}}. Both templates must use the exact same variables before this can be saved.</div>` : ''}
+        ${varsMismatch ? `<div class="f-hint" style="background:var(--error-bg);border:1px solid var(--error-border);border-radius:8px;padding:10px 14px;color:var(--error-text);">⚠ Variable mismatch — primary template uses {${primaryVars.join(', ')||'none'}}, fallback template uses {${retryVars.join(', ')||'none'}}. Both templates must use the exact same variables before this can be saved.</div>` : ''}
       </div>`;
   }
   return `
     <div class="f-group" style="margin-top:16px;border-top:1px solid var(--gray-200);padding-top:16px;">
-      <label class="f-label">Retry on Failure <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
-      <p class="f-hint" style="margin-top:-2px;">Resends via a different channel when ${CHANNEL_LABELS[s.channel]} delivery fails. Tracked as part of this nudge — not a separate campaign.</p>
+      <label class="f-label">Fallback <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
+      <p class="f-hint" style="margin-top:-2px;">Sends via a different channel when ${CHANNEL_LABELS[s.channel]} delivery fails. Tracked as part of this nudge — not a separate campaign.</p>
       ${entryHtml}
-      ${!r ? `<div class="add-link" style="margin-top:10px;" onclick="enableRetry()">${ic('message')} Enable retry</div>` : ''}
+      ${!r ? `<div class="add-link" style="margin-top:10px;" onclick="enableRetry()">${ic('message')} Add fallback</div>` : ''}
     </div>`;
 }
 function enableRetry(){
@@ -6071,7 +6071,7 @@ function retryReviewRows(commBlocks){
       if(!r || !r.channel) return;
       const label = (commBlocks.length>1 ? `${b.name||'Trigger '+(bi+1)} · ` : '') + (CHANNEL_LABELS[ch]||ch);
       const val = `${CHANNEL_LABELS[r.channel]||r.channel} — ${r.templateName||'—'} (${r.statuses.length?r.statuses.join(', '):'no statuses set'})`;
-      rows.push([`Retry — ${label}`, val]);
+      rows.push([`Fallback — ${label}`, val]);
     });
   });
   return rows;
@@ -6275,9 +6275,9 @@ function renderRetryFunnel(d, channel, retry){
   const primaryData = mockAnalyticsChannelData(d.id, channel);
   const steps = [
     {label:`${CHANNEL_LABELS[channel]||channel} Sent`, count: primaryData.values.Sent},
-    {label:'Matched a Retry Status', count: matched},
-    {label:`${CHANNEL_LABELS[retry.channel]||retry.channel} Retry Sent`, count: sent},
-    {label:`${CHANNEL_LABELS[retry.channel]||retry.channel} Retry Delivered`, count: delivered},
+    {label:'Matched a Fallback Status', count: matched},
+    {label:`${CHANNEL_LABELS[retry.channel]||retry.channel} Fallback Sent`, count: sent},
+    {label:`${CHANNEL_LABELS[retry.channel]||retry.channel} Fallback Delivered`, count: delivered},
   ];
   const max = steps[0].count || 1;
   // Same fix already established for EMI Analytics' Conversion Funnel:
@@ -6294,8 +6294,8 @@ function renderRetryFunnel(d, channel, retry){
   };
   return `
     <div class="card" style="margin-bottom:16px;">
-      <p class="card-title">Retry Funnel — ${CHANNEL_LABELS[channel]||channel} → ${CHANNEL_LABELS[retry.channel]||retry.channel}</p>
-      <p class="f-hint" style="margin-top:-2px;">How much reach this retry recovered when ${CHANNEL_LABELS[channel]||channel} delivery hit ${retry.statuses.join(', ')||'the configured statuses'}.</p>
+      <p class="card-title">Fallback Funnel — ${CHANNEL_LABELS[channel]||channel} → ${CHANNEL_LABELS[retry.channel]||retry.channel}</p>
+      <p class="f-hint" style="margin-top:-2px;">How much reach this fallback recovered when ${CHANNEL_LABELS[channel]||channel} delivery hit ${retry.statuses.join(', ')||'the configured statuses'}.</p>
       <div style="margin:12px 0;">
         ${steps.map(s=>`
           <div class="funnel-row">
@@ -6570,7 +6570,7 @@ function renderNudgeAnalytics(baseNudge){
       const retry = retryByChannel[ch];
       return `
         ${channelCardHtml(baseNudge, ch, ci, '')}
-        ${retry ? renderRetryFunnel(baseNudge, ch, retry) + channelCardHtml(baseNudge, retry.channel, ci, 'Retry') : ''}
+        ${retry ? renderRetryFunnel(baseNudge, ch, retry) + channelCardHtml(baseNudge, retry.channel, ci, 'Fallback') : ''}
       `;
     }).join('')}
   </div>`;
@@ -8204,7 +8204,7 @@ const DC_STEP_TYPES = ['SEND','CHANNEL_FAILOVER','PAUSE','WAIT_UNTIL','SPLIT','R
 const DC_TYPE_SUB = {
   ENTRY_SEGMENT:'Static or dynamic cohort', ENTRY_EVENT:'Live event, incl. Transaction/EMI/Card Events',
   ENTRY_SCHEDULED:'Calendar date or recurrence', SEND:'Channel, template, timing',
-  CHANNEL_FAILOVER:'Retry on a fallback channel if primary delivery fails',
+  CHANNEL_FAILOVER:'Sends via a fallback channel if primary delivery fails',
   PAUSE:'Fixed wait duration', WAIT_UNTIL:'Wait for an event, with a timeout',
   SPLIT:'Two bounded sources only — prev. step outcome or entry-event attribute',
   RANDOM_SPLIT:'Creative A/B, % allocation', GOAL_EXIT:'Objective achieved', EXIT:'Sequence ran out, no goal met',
