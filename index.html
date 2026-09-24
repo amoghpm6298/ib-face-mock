@@ -6756,7 +6756,7 @@ function renderNudgeExecutionKpis(d){
     <div id="nudgeExecKpiCallout" style="margin-bottom:20px;"></div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Executions Over Time</p>
-      <p class="card-sub">Times this nudge's conditions matched and an execution was created, per day</p>
+      <p class="card-sub">How many times this nudge fired, per day</p>
       <div class="trend-chart" id="nudgeExecTrend"></div>
     </div>`;
 }
@@ -6766,25 +6766,25 @@ function renderNudgeExecutionDetail(d){
     <div class="section-heading">Funnel &amp; Drop-off</div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Received &rarr; Delivered</p>
-      <p class="card-sub">Every event this nudge listens to, from first receipt through to a delivered message</p>
+      <p class="card-sub">What happens from the event coming in to the message actually being delivered</p>
       <div id="nudgeExecFunnelBody"></div>
       <div id="nudgeExecDropoffCallout"></div>
     </div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Guardrail-Suppressed — By Reason</p>
-      <p class="card-sub">Why matched executions never made it to Dispatched</p>
+      <p class="card-sub">Why some of these never got sent</p>
       <div id="nudgeExecSuppressionBody"></div>
     </div>
 
     <div class="section-heading">Technical Health</div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Success Rate Trend</p>
-      <p class="card-sub">Share of matched executions that made it to Dispatched, per day</p>
+      <p class="card-sub">Share of matches that actually got sent, per day</p>
       <div class="trend-chart" id="nudgeSuccessRateTrend" style="height:70px;"></div>
     </div>
     <div class="card" style="margin-bottom:20px;">
       <p class="card-title">Time-to-Dispatch Latency</p>
-      <p class="card-sub">Average seconds from event received to dispatch, per day</p>
+      <p class="card-sub">Average time from event to send, per day</p>
       <div class="trend-chart" id="nudgeLatencyTrend" style="height:70px;"></div>
     </div>`;
 }
