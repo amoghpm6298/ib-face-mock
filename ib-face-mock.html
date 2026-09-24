@@ -6565,12 +6565,13 @@ function renderNudgeAnalytics(baseNudge){
       if(r && r.channel) retryByChannel[ch] = r;
     });
   });
+  const divider = '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">';
   return `<div style="padding:4px 0 2px;">
     ${channels.map((ch,ci)=>{
       const retry = retryByChannel[ch];
       return `
         ${channelCardHtml(baseNudge, ch, ci, '')}
-        ${retry ? renderRetryFunnel(baseNudge, ch, retry) + channelCardHtml(baseNudge, retry.channel, ci, 'Fallback') : ''}
+        ${retry ? divider + renderRetryFunnel(baseNudge, ch, retry) + divider + channelCardHtml(baseNudge, retry.channel, ci, 'Fallback') : ''}
       `;
     }).join('')}
   </div>`;
