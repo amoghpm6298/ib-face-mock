@@ -4458,7 +4458,32 @@ const NUDGE_TYPES = [
   {id:'PROMOTION', label:'Promotional Nudge', icon:'gift', sub:'Use datapoints across offers to trigger a nudge'},
   {id:'CROSS_SELL_UP_SELL', label:'Cross Sell/Up Sell', icon:'repeat', sub:'Use EMI related attributes to create a nudge'},
   {id:'OTHER', label:'Other', icon:'compass', sub:'Deliver value with gift vouchers'},
+  // New, proposed nudge type (2026-09-24) — not yet real in the actual
+  // product, unlike every other entry above (all verified against the
+  // real nudgesStepperConstants.tsx). Eligibility is decided entirely by
+  // a bank API at PWA-load time (via Grimlock), not by any condition
+  // Quibbler evaluates itself — see ELIGIBILITY step's own EXTERNAL_SOURCE
+  // branch below for the real mechanics.
+  {id:'EXTERNAL_SOURCE', label:'External Source Nudge', icon:'landmark', sub:'Bank API decides eligibility and supplies placeholder values live', isNew:true},
 ];
+// Real, normalized fields Grimlock exposes to Quibbler — the bank's own
+// raw response fields (e.g. ELIG_DET_1, PRODUCT_FEATURES) are Grimlock's
+// problem to map INTO these before they ever reach the dashboard, per
+// Amogh (2026-09-24): "elig_det_1 and product featuers are bank fields."
+// Quibbler/the admin never sees the raw bank field names, only these 5.
+const EXTERNAL_SOURCE_FIELDS = [
+  {key:'maxquickloan', label:'Max Quick Loan'},
+  {key:'maxinstantloan', label:'Max Instant Loan'},
+  {key:'neweligiblelimit', label:'New Eligible Limit'},
+  {key:'accountcardname', label:'Account/Card Name'},
+];
+// The one real matchable attribute today. A real select, not a locked/
+// disabled field — dropped the earlier "which API" picker entirely
+// (2026-09-24, tech team pushback relayed by Amogh) in favor of this
+// plain condition-row shape, which is also the natural place to grow if
+// a second matchable attribute is ever needed, without reintroducing an
+// API concept into the dashboard at all.
+const EXTERNAL_SOURCE_ATTRIBUTES = ['Eligibility Code'];
 const NUDGE_VARIANTS = [
   {id:'PILL', label:'Notification Pill'},
   {id:'BANNER', label:'Engagement Banner'},
@@ -4574,6 +4599,19 @@ const NUDGES = [
         configured:{ WHATSAPP:{ account:'IBL-Karix-Txns', templateId:'CT-3310', templateName:'Auth-to-EMI Consent WhatsApp', tracking:false, userAttribution:false, utmParams:[],
           retry:{ channel:'SMS', account:'IBL-Karix-Txns', templateId:'CT-3301', templateName:'EMI Conversion SMS', statuses:['FAILED','FAILED_TO_CONNECT'] } } } },
     ] },
+  // Demo entry for the new (2026-09-24, proposed) External Source Nudge
+  // type — real content from Amogh's own action-code table (CCQC001,
+  // "Quick Loan" cross-sell). Eligibility here isn't a condition Quibbler
+  // evaluates — it's decided live by the bank via Grimlock at PWA-load
+  // time; {maxquickloan} in the sub-text is filled in from that same
+  // response, using the real normalized field name.
+  { id:'ND-88997', triggerType:'standard', nudgeType:'EXTERNAL_SOURCE', name:'[Demo — External Source] Quick Loan Cross-Sell', description:'Bank API decides eligibility and supplies the loan limit live — no condition configured here matches it.',
+    scopeType:'Issuer', scopeName:'Yes Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'20 Sep 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Demo'],
+    createdBy:'Ananya Iyer', createdOn:'20 Sep 2026', variant:'BANNER',
+    externalSourceAttribute:'Eligibility Code', eligibilityCode:'CCQC001',
+    heading:'Need some extra cash?', subtext:'Get a Quick loan of up to {maxquickloan}',
+    ctaText:'Apply now', redirectLink:'https://irisbyyes-af.onelink.me/JFBa/QuickLoan' },
   { id:'ND-88214', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'EMI Cross-Sell — Festive Push', description:'Nudge eligible cardholders toward converting recent authorizations to EMI during the festive window.',
     scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
     startDate:'01 Aug 2026', endDate:'30 Sep 2026', status:'ACTIVE', labels:['EMI','Festive','Cross-Sell'],
@@ -4818,7 +4856,17 @@ function wizSteps(){
   // Cross-Sell/Up-Sell and Other nudge types in the real flow — not
   // shown-with-a-note, actually removed from the stepper (verified against
   // nudgesReviewSchema.tsx's DELIVERY/COMMUNICATION row conditions).
-  return STANDARD_STEPS.filter(s => !(['COMMUNICATION','DELIVERY'].includes(s.id) && ['CROSS_SELL_UP_SELL','OTHER'].includes(wiz.draft.nudgeType)));
+  // External Source (2026-09-24, proposed) only drops Communication — it's
+  // a pure in-PWA nudge with no external comms channel at all (the whole
+  // point is the bank API supplies eligibility + placeholder values for an
+  // in-app header/sub-text, never an SMS/Email/WhatsApp send) — but
+  // Interaction Limit (reshow/frequency rules) still genuinely applies to
+  // an in-PWA nudge, so it's deliberately NOT excluded the same way.
+  return STANDARD_STEPS.filter(s => {
+    if(s.id==='COMMUNICATION' && ['CROSS_SELL_UP_SELL','OTHER','EXTERNAL_SOURCE'].includes(wiz.draft.nudgeType)) return false;
+    if(s.id==='DELIVERY' && ['CROSS_SELL_UP_SELL','OTHER'].includes(wiz.draft.nudgeType)) return false;
+    return true;
+  });
 }
 function wizGoStep(idx){ if(idx <= wiz.stepIdx || wiz.isEdit){ wiz.stepIdx = idx; renderWizard(); } }
 function wizNext(){ const steps = wizSteps(); if(wiz.stepIdx < steps.length-1){ wiz.stepIdx++; renderWizard(); } }
@@ -4855,6 +4903,20 @@ function renderWizard(){
 }
 
 function fieldUpdate(key, val){ wiz.draft[key] = val; renderWizPreview(); }
+// Simple append-to-end insertion, not real cursor-position insertion —
+// deliberately kept this simple (no selectionStart tracking) since a
+// campaign manager typically builds these strings by clicking chips in
+// order ("Get a Quick loan of up to " then clicking {maxquickloan}), not
+// by inserting mid-sentence after the fact.
+function insertExternalSourceVar(field, key){
+  wiz.draft[field] = (wiz.draft[field]||'') + `{${key}}`;
+  renderWizStep('DISPLAY_ELEMENTS');
+}
+function externalSourceVarChips(field){
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+    ${EXTERNAL_SOURCE_FIELDS.map(f=>`<div class="msel-chip" style="cursor:pointer;" onclick="insertExternalSourceVar('${field}','${f.key}')">+ ${f.label}</div>`).join('')}
+  </div>`;
+}
 function toggleFieldBool(key){ wiz.draft[key] = !wiz.draft[key]; renderWizard(); }
 
 function wizFooter(nextLabel){
@@ -5326,7 +5388,7 @@ function renderWizStep(stepId){
         ${NUDGE_TYPES.map(t=>`
           <div class="pick-card ${d.nudgeType===t.id?'sel':''}" onclick="fieldUpdate('nudgeType','${t.id}');renderWizStep('NUDGE_TYPE')">
             <div class="pick-card-icon">${ic(t.icon)}</div>
-            <div><div class="pick-card-title">${t.label}</div><div class="pick-card-sub">${t.sub}</div></div>
+            <div><div class="pick-card-title">${t.label}${t.isNew?' <span class="badge info" style="font-size:10px;vertical-align:middle;">New</span>':''}</div><div class="pick-card-sub">${t.sub}</div></div>
           </div>`).join('')}
       </div>
       ${wizFooter()}`;
@@ -5404,7 +5466,37 @@ function renderWizStep(stepId){
         <div class="toggle-row"><div><div class="toggle-row-label">Allow Duplicate Accounts</div><div class="toggle-row-sub">Allow this customer to receive the nudge more than once.</div></div><div class="toggle ${d.allowDup?'on':''}" onclick="fieldUpdate('allowDup',!d.allowDup);renderWizStep('ELIGIBILITY')"></div></div>
         <div class="add-link" onclick="fieldUpdate('advancedOpen',!d.advancedOpen);renderWizStep('ELIGIBILITY')">${ic('sliders')} Advanced Settings</div>
         ${d.advancedOpen ? `<div class="f-group" style="margin-top:10px;"><label class="f-label">Query Template</label><select class="f-input"><option value="">None</option><option>High EMI Propensity Query</option></select></div>` : ''}`;
-    if(d.nudgeType==='FILE_UPLOAD'){
+    if(d.nudgeType==='EXTERNAL_SOURCE'){
+      // No API picker — dropped 2026-09-24 per Amogh, relaying tech team's
+      // pushback: a dedicated "which API" selector adds a real integration
+      // concept to the dashboard that just invites complication later
+      // (multiple APIs, which one owns which attribute, etc.). Reframed as
+      // a plain Attribute/Operator/Value condition row instead — same
+      // shape every other condition-based eligibility in this file already
+      // uses, and the natural place to grow if more matchable attributes
+      // ever exist, without needing an API concept at all. Only one real
+      // attribute today (Eligibility Code), rendered as a real (not
+      // locked/disabled) select on purpose, so it doesn't read as a dead
+      // end if a second attribute is ever added.
+      html = `
+        <h1 class="wiz-heading">Set Up Nudge User Base</h1>
+        <p class="wiz-sub">Eligibility for this nudge is decided live by the bank, per customer, the moment they open the PWA.</p>
+        <div class="f-group"><label class="f-label">Eligibility Condition</label>
+          <div class="cond-row" style="grid-template-columns:1fr 1fr 1fr auto;">
+            <select onchange="fieldUpdate('externalSourceAttribute',this.value)">
+              ${EXTERNAL_SOURCE_ATTRIBUTES.map(a=>`<option ${((d.externalSourceAttribute||EXTERNAL_SOURCE_ATTRIBUTES[0])===a)?'selected':''}>${a}</option>`).join('')}
+            </select>
+            <input class="f-input" type="text" value="Equals" disabled>
+            <input class="f-input" type="text" value="${d.eligibilityCode||''}" oninput="fieldUpdate('eligibilityCode',this.value)" placeholder="e.g. CCQC001">
+            <div></div>
+          </div>
+          <div class="f-hint">Matched against the action code the bank returns. This nudge only shows when the response's value matches exactly — and it's also what ties the placeholders below to the right response fields.</div>
+        </div>
+        <div class="f-hint" style="background:var(--info-bg);border:1px solid var(--blue-cta);border-radius:8px;padding:10px 14px;color:var(--info-text);">Audience size can't be estimated ahead of time — eligibility is decided live by the bank for each customer, not by a condition this dashboard evaluates.</div>
+        ${dncBlock}
+        ${wizFooter()}`;
+    }
+    else if(d.nudgeType==='FILE_UPLOAD'){
       html = `
         <h1 class="wiz-heading">Set Up Nudge User Base</h1>
         <p class="wiz-sub">Upload a CSV of the exact users this nudge should target.</p>
@@ -5510,8 +5602,12 @@ function renderWizStep(stepId){
       ${d.variant==='OFFERSTATE' ? `
         <div class="f-group f-row2"><div><label class="f-label">Nudge Icon</label><div class="upload-box" style="padding:14px;">${ic('tag')} Upload</div></div><div><label class="f-label">Brand Icon</label><div class="upload-box" style="padding:14px;">${ic('landmark')} Upload</div></div></div>
       ` : d.variant ? `<div class="f-group"><label class="f-label">Display Illustration</label><div class="upload-box" style="padding:14px;">${ic('gift')} Upload</div></div>` : ''}
-      <div class="f-group"><label class="f-label">Nudge Heading</label><input class="f-input" type="text" value="${d.heading||''}" oninput="fieldUpdate('heading',this.value)" placeholder="e.g. Convert to EMI and save"></div>
-      <div class="f-group"><label class="f-label">Nudge Sub-Text</label><input class="f-input" type="text" value="${d.subtext||''}" oninput="fieldUpdate('subtext',this.value)" placeholder="e.g. Split your recent purchase into easy installments"></div>
+      <div class="f-group"><label class="f-label">Nudge Heading</label><input class="f-input" type="text" value="${d.heading||''}" oninput="fieldUpdate('heading',this.value)" placeholder="${d.nudgeType==='EXTERNAL_SOURCE'?'e.g. Get a Quick loan of up to {maxquickloan}':'e.g. Convert to EMI and save'}">
+        ${d.nudgeType==='EXTERNAL_SOURCE' ? externalSourceVarChips('heading') : ''}
+      </div>
+      <div class="f-group"><label class="f-label">Nudge Sub-Text</label><input class="f-input" type="text" value="${d.subtext||''}" oninput="fieldUpdate('subtext',this.value)" placeholder="e.g. Split your recent purchase into easy installments">
+        ${d.nudgeType==='EXTERNAL_SOURCE' ? externalSourceVarChips('subtext') : ''}
+      </div>
       <div class="f-group"><label class="f-label">Text on Button</label><input class="f-input" type="text" value="${d.ctaText||''}" oninput="fieldUpdate('ctaText',this.value)" placeholder="e.g. Convert Now"></div>
       <div class="f-group f-row2">
         <div><label class="f-label">Nudge Sub-Text Color</label><input class="f-swatch" type="color" value="${d.subtextColor||'#667085'}" onchange="fieldUpdate('subtextColor',this.value)"></div>
@@ -6120,7 +6216,13 @@ function reviewSections(){
   }
   // Real step order (and Review/View section order) is User Base BEFORE
   // Timing for the event-based flow — matches getEventSampleData().
-  if(d.nudgeType==='FILE_UPLOAD' || d.nudgeType==='JOURNEY'){
+  if(d.nudgeType==='EXTERNAL_SOURCE'){
+    const usedVars = EXTERNAL_SOURCE_FIELDS.filter(f=>(d.heading||'').includes(`{${f.key}}`)||(d.subtext||'').includes(`{${f.key}}`));
+    sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:[
+      ['Eligibility Condition', `${d.externalSourceAttribute||EXTERNAL_SOURCE_ATTRIBUTES[0]} Equals ${d.eligibilityCode||'—'}`],
+      ['Placeholders Used', usedVars.length ? usedVars.map(f=>f.label).join(', ') : 'None'],
+    ]});
+  } else if(d.nudgeType==='FILE_UPLOAD' || d.nudgeType==='JOURNEY'){
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:[
       ['Journey Name', d.journey||'—'], ['Batch Name', d.batch||'—'],
       ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(c=>`${c.attribute} ${c.operator} ${c.value}`).join(', ')||'—'],
@@ -6156,6 +6258,13 @@ function reviewSections(){
         ...(d.dismissible ? [['Show Again After Dismissal', d.reshowMode==='ONCE_PER_SESSION'?'Each time user reopens the app':'Never']] : []),
         ['Nudge Interaction Limit', (d.deliveryConds||[]).filter(c=>c.attribute).map(c=>`${c.attribute} ${c.operator} ${c.value}`).join(' OR ')||'—'],
       ]});
+    }
+    // External Source is a pure in-PWA nudge — no comms channel at all
+    // (matches wizSteps()' own COMMUNICATION exclusion for this type) —
+    // so it falls through to the same DNC-only Communication section
+    // Cross-Sell/Up-Sell and Other already use, rather than showing empty
+    // trigger-block rows for a step that was never in its stepper.
+    if(!['CROSS_SELL_UP_SELL','OTHER','EXTERNAL_SOURCE'].includes(d.nudgeType)){
       sections.push({title:'Communication', stepId:'COMMUNICATION', rows: [
         ...(d.commBlocks||[]).map((b,i)=>[`Trigger ${i+1}`, `${b.name||'Untitled'} · ${Object.keys(b.configured||{}).filter(k=>b.configured[k]).join(', ')||'no channels configured'}`]),
         ...retryReviewRows(d.commBlocks),
