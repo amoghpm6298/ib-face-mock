@@ -6632,7 +6632,20 @@ function mockNudgeExecutionDaily(d){
     // when intHash was introduced.
     const dseed = intHash(idSeed + i);
     const matched = Math.max(0, Math.round((totalMatched/days)*(0.5+(dseed%100)/100)));
-    const suppressed = Math.round(matched*suppressionRate);
+    // Success Rate Trend (dispatched/matched) needs the suppression rate
+    // itself to move day to day — suppressionRate above is a single fixed
+    // value for the whole nudge, so using it directly here made
+    // dispatched/matched land within ~75.0%±0.2% every single day (the
+    // only movement was Math.round() noise) — a "trend" chart that's
+    // structurally flat by construction, not just visually similar. Real
+    // bug, caught from the screenshot itself (every bar the same height)
+    // after the Executions Over Time fix above turned out not to be what
+    // was being flagged. Jittered here with its own independent hash call
+    // (different multiplier from dseed above, so the two don't move in
+    // lockstep) rather than reusing dseed's own modulus.
+    const dsSeed = intHash(idSeed + i*13 + 97);
+    const daySuppressionRate = Math.min(0.6, Math.max(0.05, suppressionRate + ((dsSeed%21)-10)/200)); // jitter ±5pp
+    const suppressed = Math.round(matched*daySuppressionRate);
     const dispatched = matched-suppressed;
     const delivered = Math.round(dispatched*deliveryRate);
     const received = Math.round(matched/matchRate) || matched;
