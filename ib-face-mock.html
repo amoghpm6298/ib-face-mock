@@ -6615,9 +6615,22 @@ function mockNudgeExecutionDaily(d){
   const days = 60;
   const now = nudgeExecNow();
   const daily = [];
+  const idSeed = hashCode(d.id);
   for(let i=days-1;i>=0;i--){
     const date = new Date(now); date.setDate(date.getDate()-i);
-    const dseed = hashCode(d.id+'|'+date.toISOString().slice(0,10));
+    // intHash on a numeric (seed + day-index), not hashCode() on a date
+    // STRING — hashCode() is a polynomial rolling hash over decimal digit
+    // characters, and consecutive dates only change the string's trailing
+    // 1-2 characters (identical prefix), so its output drifts smoothly
+    // instead of scattering, then jumps whenever more of the prefix
+    // changes (day rolls from a single digit to double, or the month
+    // changes). Visible as bars climbing in a steady staircase for ~9
+    // days then jumping — caught from a screenshot ("bars are going up
+    // where the dates are"), not from a data check, since nothing here
+    // throws. Same bug class this file has hit and documented before
+    // (intHash's own comment); this call site just wasn't switched over
+    // when intHash was introduced.
+    const dseed = intHash(idSeed + i);
     const matched = Math.max(0, Math.round((totalMatched/days)*(0.5+(dseed%100)/100)));
     const suppressed = Math.round(matched*suppressionRate);
     const dispatched = matched-suppressed;
