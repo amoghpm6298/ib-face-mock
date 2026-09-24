@@ -6395,8 +6395,8 @@ function renderNudgeView(){
 
         ${(!showTabs || nvState.tab==='details') ? renderReviewBody(true) : (
           (isEventBased ? renderNudgeExecutionKpis(d) : '') +
-          (isEventBased ? '<div class="section-heading">Engagement</div><p class="card-sub" style="margin:-8px 0 12px;">Reflects this nudge\'s full history — not scoped to the date range selected above.</p>' : '') +
-          renderNudgeAnalytics(d) +
+          (isEventBased ? '<div class="section-heading">Engagement</div>' : '') +
+          (isEventBased ? '<div id="nudgeEngagementBody"></div>' : renderNudgeAnalytics(d)) +
           (isEventBased ? renderNudgeExecutionDetail(d) : '')
         )}
 
@@ -6424,7 +6424,22 @@ function renderNudgeView(){
   `;
   // render phone preview into the detail-page slot using the same renderer as the wizard
   wizPreviewInto('viewPhoneWrap');
-  if(isEventBased && showTabs && nvState.tab==='analytics') renderNudgeExecutionCharts(d);
+  if(isEventBased && showTabs && nvState.tab==='analytics') refreshNudgeExecutionView(d);
+}
+// The date filter's own <select> doesn't exist in the DOM yet at the
+// point renderNudgeAnalytics(d) would otherwise run inline (it's still
+// being concatenated into the outer template string) — nudgeExecRangeBounds()
+// would silently read its own fallback default instead of whatever's
+// actually selected. #nudgeEngagementBody is rendered as an empty
+// placeholder in that outer string instead, and both it and the charts
+// get populated here, after the real DOM (and the real <select>) exist —
+// same two-phase pattern renderNudgeExecutionCharts already used alone,
+// now shared so Engagement stays in sync with the date filter too,
+// instead of only refreshing once at initial load.
+function refreshNudgeExecutionView(d){
+  renderNudgeExecutionCharts(d);
+  const el = document.getElementById('nudgeEngagementBody');
+  if(el) el.innerHTML = renderNudgeAnalytics(d);
 }
 function wizPreviewInto(targetId){
   const d = wiz.draft;
@@ -6484,8 +6499,60 @@ function mockAnalyticsChannelData(nudgeId, ch){
   return { base, values, smallValues, missingAccount, dncFiltered, internalFailure, duplicate, finalSent,
     account: `${(nudgeId||'').split('-')[0]}-Karix-Txns`, template: `${CHANNEL_LABELS[ch]||ch}_Template_v2` };
 }
-function openAnalyticsAdvLogs(nudgeId, ch){
-  const data = mockAnalyticsChannelData(nudgeId, ch);
+// Date-range-aware version of mockAnalyticsChannelData — used only for
+// event-based nudges' Engagement section, since only that flow has a
+// date filter (standard/batch nudges keep reading the plain aggregate
+// above, unchanged, exactly as before). Same "always sum real per-day
+// rows" discipline already established for mockNudgeExecutionDaily: the
+// full-history aggregate anchors each day's share (via the same delivery/
+// open/click/read ratios), so the range total is a genuine sum, never a
+// second independently-seeded number that could drift from it.
+function mockChannelDailySeries(nudgeId, ch){
+  const totals = mockAnalyticsChannelData(nudgeId, ch);
+  const days = 60;
+  const now = nudgeExecNow();
+  const idSeed = hashCode(nudgeId+'|'+ch);
+  const deliveryRate = totals.values.Sent ? totals.values.Delivered/totals.values.Sent : 0.9;
+  const openRate = totals.values.Delivered ? totals.values.Opened/totals.values.Delivered : 0.5;
+  const clickRate = totals.values.Opened ? totals.values.Clicked/totals.values.Opened : 0.25;
+  const readRate = totals.values.Delivered ? totals.values.Read/totals.values.Delivered : 0.7;
+  const daily = [];
+  for(let i=days-1;i>=0;i--){
+    const date = new Date(now); date.setDate(date.getDate()-i);
+    const dseed = intHash(idSeed + i);
+    const share = 0.5 + (dseed%100)/100; // 0.5x-1.5x of the daily average
+    const sent = Math.max(0, Math.round((totals.values.Sent/days)*share));
+    const delivered = Math.round(sent*deliveryRate);
+    const opened = Math.round(delivered*openRate);
+    const clicked = Math.round(opened*clickRate);
+    const read = Math.round(delivered*readRate);
+    const smallValues = {};
+    Object.keys(totals.smallValues).forEach(label=>{ smallValues[label] = Math.round((totals.smallValues[label]/days)*share); });
+    daily.push({
+      date, values:{Sent:sent, Delivered:delivered, Opened:opened, Clicked:clicked, Read:read}, smallValues,
+      missingAccount: Math.round((totals.missingAccount/days)*share), dncFiltered: Math.round((totals.dncFiltered/days)*share),
+      internalFailure: Math.round((totals.internalFailure/days)*share), duplicate: Math.round((totals.duplicate/days)*share),
+      base: Math.round((totals.base/days)*share),
+    });
+  }
+  return daily;
+}
+function aggregateChannelDataRange(nudgeId, ch, from, to){
+  const rows = mockChannelDailySeries(nudgeId, ch).filter(r=>r.date>=from && r.date<=to);
+  const values = {}; ['Sent','Delivered','Opened','Clicked','Read'].forEach(k=>{ values[k] = rows.reduce((s,r)=>s+r.values[k],0); });
+  const smallValues = {};
+  (rows.length ? Object.keys(rows[0].smallValues) : []).forEach(label=>{ smallValues[label] = rows.reduce((s,r)=>s+r.smallValues[label],0); });
+  const missingAccount = rows.reduce((s,r)=>s+r.missingAccount,0);
+  const dncFiltered = rows.reduce((s,r)=>s+r.dncFiltered,0);
+  const internalFailure = rows.reduce((s,r)=>s+r.internalFailure,0);
+  const duplicate = rows.reduce((s,r)=>s+r.duplicate,0);
+  const base = rows.reduce((s,r)=>s+r.base,0);
+  const finalSent = Math.max(base - missingAccount - dncFiltered - internalFailure - duplicate, 0);
+  return { base, values, smallValues, missingAccount, dncFiltered, internalFailure, duplicate, finalSent,
+    account: `${(nudgeId||'').split('-')[0]}-Karix-Txns`, template: `${CHANNEL_LABELS[ch]||ch}_Template_v2` };
+}
+function openAnalyticsAdvLogs(nudgeId, ch, fromTs, toTs){
+  const data = fromTs!=null ? aggregateChannelDataRange(nudgeId, ch, new Date(fromTs), new Date(toTs)) : mockAnalyticsChannelData(nudgeId, ch);
   openSideDrawer(`
     <div class="sd-head">
       <div class="sd-title">Advanced Processing Details</div>
@@ -6510,14 +6577,19 @@ function openAnalyticsAdvLogs(nudgeId, ch){
 // Per-channel engagement card. Takes an explicit `ch` (rather than always
 // looping a nudge's own `channels`) and an optional `roleLabel` so the
 // exact same markup/data source can render both a nudge's own configured
-// channels AND a retry's channel — a retry reuses the SAME nudge id with
-// a different channel (mockAnalyticsChannelData(nudge.id, ch)), since a
-// retry was never a separate campaign with its own id to seed data for.
-function channelCardHtml(nudge, ch, ci, roleLabel){
+// channels AND a retry's channel. Optional `range` ({from,to} Date pair) —
+// when passed (event-based nudges' Engagement, which has a date filter),
+// reads the range-aware aggregator instead of the plain full-history one,
+// so Engagement stays scoped to the same range as every other section on
+// that page rather than always showing full history. Standard/batch
+// nudges call this with no range (they have no date filter at all) and
+// keep reading the plain aggregate, unchanged.
+function channelCardHtml(nudge, ch, ci, roleLabel, range){
   const m = ANALYTICS_METRICS[ch] || ANALYTICS_METRICS.SMS;
-  const data = mockAnalyticsChannelData(nudge.id, ch);
+  const data = range ? aggregateChannelDataRange(nudge.id, ch, range.from, range.to) : mockAnalyticsChannelData(nudge.id, ch);
   const statusKeys = Object.keys(ANALYTICS_STATUS_META);
   const sm = ANALYTICS_STATUS_META[statusKeys[(nudge.id.length+ci) % statusKeys.length]];
+  const advLogsArgs = range ? `'${nudge.id}','${ch}',${range.from.getTime()},${range.to.getTime()}` : `'${nudge.id}','${ch}'`;
   return `
   <div class="card" style="margin-bottom:16px;">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -6528,7 +6600,7 @@ function channelCardHtml(nudge, ch, ci, roleLabel){
           <span style="width:8px;height:8px;border-radius:50%;background:${sm.dot};display:inline-block;"></span>${sm.label}
         </span>
       </div>
-      <div class="rev-edit-link" style="cursor:pointer;" onclick="openAnalyticsAdvLogs('${nudge.id}','${ch}')">Advanced Logs</div>
+      <div class="rev-edit-link" style="cursor:pointer;" onclick="openAnalyticsAdvLogs(${advLogsArgs})">Advanced Logs</div>
     </div>
     <div style="display:flex;gap:28px;margin-top:16px;">
       <div><div class="f-hint" style="margin:0;">Account</div><div style="font-size:13px;font-weight:500;">${data.account}</div></div>
@@ -6565,13 +6637,20 @@ function renderNudgeAnalytics(baseNudge){
       if(r && r.channel) retryByChannel[ch] = r;
     });
   });
+  // Event-based nudges have a real date filter above this section — scope
+  // Engagement to the same range as everything else on the page, rather
+  // than always showing full history (decided 2026-09-24, reversing the
+  // earlier "always full history" call). Standard/batch nudges have no
+  // date filter at all, so they pass no range and keep reading the plain
+  // full-history aggregate, unchanged.
+  const range = baseNudge.triggerType==='event-based' ? nudgeExecRangeBounds() : null;
   const divider = '<hr style="border:none;border-top:1px solid var(--gray-200);margin:8px 0 20px;">';
   return `<div style="padding:4px 0 2px;">
     ${channels.map((ch,ci)=>{
       const retry = retryByChannel[ch];
       return `
-        ${channelCardHtml(baseNudge, ch, ci, '')}
-        ${retry ? divider + renderRetryFunnel(baseNudge, ch, retry) + divider + channelCardHtml(baseNudge, retry.channel, ci, 'Fallback') : ''}
+        ${channelCardHtml(baseNudge, ch, ci, '', range)}
+        ${retry ? divider + renderRetryFunnel(baseNudge, ch, retry) + divider + channelCardHtml(baseNudge, retry.channel, ci, 'Fallback', range) : ''}
       `;
     }).join('')}
   </div>`;
@@ -6692,7 +6771,7 @@ function aggregateNudgeExecutionRange(d, daily, from, to){
 // reinvented) and returns a [from,to] Date pair.
 function nudgeExecRangeBounds(){
   const el = document.getElementById('nudgeAnalyticsRange');
-  const rangeVal = el ? el.value : '30';
+  const rangeVal = el ? el.value : 'today';
   const now = nudgeExecNow();
   if(rangeVal==='custom'){
     const fromVal = document.getElementById('nudgeAnalyticsRangeFrom').value;
@@ -6718,25 +6797,25 @@ function nudgeExecDateFilterHtml(){
     <div class="viewing-as">
       <label>Date range</label>
       <select id="nudgeAnalyticsRange" onchange="onNudgeAnalyticsRangeChange()">
-        <option value="today">Today</option>
+        <option value="today" selected>Today</option>
         <option value="yesterday">Yesterday</option>
         <option value="7">Last 7 days</option>
-        <option value="30" selected>Last 30 days</option>
+        <option value="30">Last 30 days</option>
         <option value="all">All time</option>
         <option value="custom">Custom range</option>
       </select>
     </div>
     <div class="viewing-as" id="nudgeAnalyticsCustomRangeWrap" style="display:none;">
       <label>From</label>
-      <input type="date" id="nudgeAnalyticsRangeFrom" min="${iso(minDate)}" max="${iso(now)}" onchange="renderNudgeExecutionCharts(wiz.draft)">
+      <input type="date" id="nudgeAnalyticsRangeFrom" min="${iso(minDate)}" max="${iso(now)}" onchange="refreshNudgeExecutionView(wiz.draft)">
       <label style="margin-left:8px;">To</label>
-      <input type="date" id="nudgeAnalyticsRangeTo" min="${iso(minDate)}" max="${iso(now)}" onchange="renderNudgeExecutionCharts(wiz.draft)">
+      <input type="date" id="nudgeAnalyticsRangeTo" min="${iso(minDate)}" max="${iso(now)}" onchange="refreshNudgeExecutionView(wiz.draft)">
     </div>
   </div>`;
 }
 function onNudgeAnalyticsRangeChange(){
   document.getElementById('nudgeAnalyticsCustomRangeWrap').style.display = document.getElementById('nudgeAnalyticsRange').value==='custom' ? '' : 'none';
-  renderNudgeExecutionCharts(wiz.draft);
+  refreshNudgeExecutionView(wiz.draft);
 }
 // Headline row — kept as its own function/section so it renders first,
 // above the Associated Nudge funnel and Engagement cards, matching this
