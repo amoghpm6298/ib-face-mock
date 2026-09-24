@@ -300,9 +300,14 @@
     border-radius:8px;font-size:12.5px;color:var(--warning-text);font-weight:600;
   }
 
-  /* Trend chart — single series, one hue, baseline-anchored, rounded data-ends */
-  .trend-chart{display:flex;align-items:flex-end;gap:5px;height:170px;padding:24px 4px 0;}
-  .trend-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;position:relative;min-width:0;}
+  /* Trend chart — single series, one hue, baseline-anchored, rounded data-ends.
+     overflow-x:auto + a real per-column min-width (not min-width:0) means a
+     chart with more bars than comfortably fit scrolls instead of shrinking
+     columns below their own label's width — the direct fix for date labels
+     overlapping once a range has enough bars (columns used to cram to fit
+     no matter what, forcing every label to fight for the same pixels). */
+  .trend-chart{display:flex;align-items:flex-end;gap:5px;height:170px;padding:24px 4px 0;overflow-x:auto;overflow-y:hidden;}
+  .trend-bar-col{flex:1 1 36px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;position:relative;min-width:36px;}
   .trend-bar{width:100%;max-width:26px;background:var(--blue-cta);border-radius:4px 4px 0 0;cursor:pointer;transition:background .1s;}
   .trend-bar:hover{background:var(--blue-cta-hover);}
   .trend-label{font-size:10px;color:var(--gray-500);margin-top:6px;white-space:nowrap;}
@@ -6406,10 +6411,10 @@ function renderNudgeView(){
             </div>`).join('')}
         </div>` : ''}
       </div>
-      <div style="width:280px;flex-shrink:0;">
+      ${(!showTabs || nvState.tab==='details') ? `<div style="width:280px;flex-shrink:0;">
         <div class="wiz-preview-label" style="margin-bottom:10px;">Live Preview</div>
         <div class="phone" id="viewPhoneWrap"></div>
-      </div>
+      </div>` : ''}
     </div>
     ${canApprove ? `
       <div class="maker-bar">
@@ -6804,15 +6809,15 @@ function renderNudgeExecutionCharts(d){
   document.getElementById('nudgeExecKpiCallout').innerHTML =
     `<p class="card-sub" style="margin:0;">${data.matched.toLocaleString('en-IN')} executions reached ${data.uniqueCustomers.toLocaleString('en-IN')} unique customers, delivered at a ${deliveryRate}% rate.</p>`;
 
-  // Date labels overlap once the date-range filter allows more than ~15
-  // bars in a fixed-width chart (.trend-bar-col is flex:1/min-width:0, so
-  // it shrinks below its own label's width rather than wrapping or
-  // truncating — every extra bar the filter enables just crams the axis
-  // further). Every bar still renders and is still hoverable for its exact
-  // date; only the always-visible label thins out, roughly ≤10 shown
-  // regardless of range length. Applied to all 3 trend charts on this page.
-  const labelStep = Math.max(1, Math.ceil(data.dailySeries.length/10));
-  const dayLabel = (s,i) => i%labelStep===0 ? `${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}` : '';
+  // Every bar gets its own label, same as every other trend chart in this
+  // file (e.g. EMI Analytics' Bookings Trend) — thinning labels to every
+  // Nth bar was tried here specifically and reverted (2026-09-24): once
+  // .trend-bar-col has a real min-width instead of min-width:0, and
+  // .trend-chart can scroll horizontally, a long range scrolls instead of
+  // cramming columns below their own label's width, so skipping labels is
+  // no longer needed to avoid overlap — showing every date is strictly
+  // better once overlap is impossible by construction.
+  const dayLabel = (s) => `${s.date.getDate()} ${MONTH_ABBR5[s.date.getMonth()]}`;
 
   const execMax = Math.max(...data.dailySeries.map(s=>s.count), 1);
   document.getElementById('nudgeExecTrend').innerHTML = trendYAxisHtml(execMax) + data.dailySeries.map((s,i)=>`
