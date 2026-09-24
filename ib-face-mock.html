@@ -4466,17 +4466,6 @@ const NUDGE_TYPES = [
   // branch below for the real mechanics.
   {id:'EXTERNAL_SOURCE', label:'External Source Nudge', icon:'landmark', sub:'Bank API decides eligibility and supplies placeholder values live', isNew:true},
 ];
-// Real, normalized fields Grimlock exposes to Quibbler — the bank's own
-// raw response fields (e.g. ELIG_DET_1, PRODUCT_FEATURES) are Grimlock's
-// problem to map INTO these before they ever reach the dashboard, per
-// Amogh (2026-09-24): "elig_det_1 and product featuers are bank fields."
-// Quibbler/the admin never sees the raw bank field names, only these 5.
-const EXTERNAL_SOURCE_FIELDS = [
-  {key:'maxquickloan', label:'Max Quick Loan'},
-  {key:'maxinstantloan', label:'Max Instant Loan'},
-  {key:'neweligiblelimit', label:'New Eligible Limit'},
-  {key:'accountcardname', label:'Account/Card Name'},
-];
 // The one real matchable attribute today. A real select, not a locked/
 // disabled field — dropped the earlier "which API" picker entirely
 // (2026-09-24, tech team pushback relayed by Amogh) in favor of this
@@ -4903,20 +4892,6 @@ function renderWizard(){
 }
 
 function fieldUpdate(key, val){ wiz.draft[key] = val; renderWizPreview(); }
-// Simple append-to-end insertion, not real cursor-position insertion —
-// deliberately kept this simple (no selectionStart tracking) since a
-// campaign manager typically builds these strings by clicking chips in
-// order ("Get a Quick loan of up to " then clicking {maxquickloan}), not
-// by inserting mid-sentence after the fact.
-function insertExternalSourceVar(field, key){
-  wiz.draft[field] = (wiz.draft[field]||'') + `{${key}}`;
-  renderWizStep('DISPLAY_ELEMENTS');
-}
-function externalSourceVarChips(field){
-  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-    ${EXTERNAL_SOURCE_FIELDS.map(f=>`<div class="msel-chip" style="cursor:pointer;" onclick="insertExternalSourceVar('${field}','${f.key}')">+ ${f.label}</div>`).join('')}
-  </div>`;
-}
 function toggleFieldBool(key){ wiz.draft[key] = !wiz.draft[key]; renderWizard(); }
 
 function wizFooter(nextLabel){
@@ -5603,10 +5578,8 @@ function renderWizStep(stepId){
         <div class="f-group f-row2"><div><label class="f-label">Nudge Icon</label><div class="upload-box" style="padding:14px;">${ic('tag')} Upload</div></div><div><label class="f-label">Brand Icon</label><div class="upload-box" style="padding:14px;">${ic('landmark')} Upload</div></div></div>
       ` : d.variant ? `<div class="f-group"><label class="f-label">Display Illustration</label><div class="upload-box" style="padding:14px;">${ic('gift')} Upload</div></div>` : ''}
       <div class="f-group"><label class="f-label">Nudge Heading</label><input class="f-input" type="text" value="${d.heading||''}" oninput="fieldUpdate('heading',this.value)" placeholder="${d.nudgeType==='EXTERNAL_SOURCE'?'e.g. Get a Quick loan of up to {maxquickloan}':'e.g. Convert to EMI and save'}">
-        ${d.nudgeType==='EXTERNAL_SOURCE' ? externalSourceVarChips('heading') : ''}
       </div>
       <div class="f-group"><label class="f-label">Nudge Sub-Text</label><input class="f-input" type="text" value="${d.subtext||''}" oninput="fieldUpdate('subtext',this.value)" placeholder="e.g. Split your recent purchase into easy installments">
-        ${d.nudgeType==='EXTERNAL_SOURCE' ? externalSourceVarChips('subtext') : ''}
       </div>
       <div class="f-group"><label class="f-label">Text on Button</label><input class="f-input" type="text" value="${d.ctaText||''}" oninput="fieldUpdate('ctaText',this.value)" placeholder="e.g. Convert Now"></div>
       <div class="f-group f-row2">
@@ -6217,10 +6190,8 @@ function reviewSections(){
   // Real step order (and Review/View section order) is User Base BEFORE
   // Timing for the event-based flow — matches getEventSampleData().
   if(d.nudgeType==='EXTERNAL_SOURCE'){
-    const usedVars = EXTERNAL_SOURCE_FIELDS.filter(f=>(d.heading||'').includes(`{${f.key}}`)||(d.subtext||'').includes(`{${f.key}}`));
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:[
       ['Eligibility Condition', `${d.externalSourceAttribute||EXTERNAL_SOURCE_ATTRIBUTES[0]} Equals ${d.eligibilityCode||'—'}`],
-      ['Placeholders Used', usedVars.length ? usedVars.map(f=>f.label).join(', ') : 'None'],
     ]});
   } else if(d.nudgeType==='FILE_UPLOAD' || d.nudgeType==='JOURNEY'){
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:[
