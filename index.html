@@ -4567,7 +4567,7 @@ const NUDGES = [
     commBlocks:[
       { name:'', sendDate:'', repeatable:'without repeat', everyN:'7',
         configured:{ WHATSAPP:{ account:'IBL-Karix-Txns', templateId:'CT-3310', templateName:'Auth-to-EMI Consent WhatsApp', tracking:false, userAttribution:false, utmParams:[],
-          retry:{ channel:'SMS', account:'IBL-Karix-Txns', templateId:'CT-3301', templateName:'EMI Conversion SMS', statuses:['FAILED','FAILED_TO_CONNECT'], delayType:'Immediate', delay:'', delayUnit:'minutes' } } } },
+          retry:{ channel:'SMS', account:'IBL-Karix-Txns', templateId:'CT-3301', templateName:'EMI Conversion SMS', statuses:['FAILED','FAILED_TO_CONNECT'] } } } },
     ] },
   { id:'ND-88214', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'EMI Cross-Sell — Festive Push', description:'Nudge eligible cardholders toward converting recent authorizations to EMI during the festive window.',
     scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
@@ -5895,8 +5895,13 @@ function extractTemplateVars(template){
 // with one of the picked statuses, not "the nudge" as a whole. Lets two
 // different blocks that happen to both use, say, WhatsApp each carry a
 // completely independent retry.
+// No timing/delay concept — a fallback always fires immediately once its
+// trigger status is received (2026-09-24, per Amogh: "we dont need delay
+// -- we will assume campaign team wants it delivered as soon as we
+// receive the desired event"). Removed rather than defaulted-and-hidden,
+// since there's no field left for a hidden default to sit in.
 function newRetryConfig(){
-  return {channel:'', statuses:[], account:'', templateId:'', delayType:'Immediate', delay:'', delayUnit:'minutes'};
+  return {channel:'', statuses:[], account:'', templateId:''};
 }
 // Not a separate nudge at all — reverted 2026-09-23 from "Fallback
 // Nudges" (a real, standalone event-based NUDGES entry, its own approval/
@@ -5931,19 +5936,9 @@ function renderRetrySection(s){
         <div style="display:flex;gap:6px;align-items:flex-start;justify-content:flex-end;margin-bottom:-4px;">
           <div class="cond-remove" onclick="disableRetry()" title="Remove fallback">✕</div>
         </div>
-        <div class="f-row2">
-          <div class="f-group"><label class="f-label">Fallback Channel</label><select class="f-input" onchange="nudgeCommModalState.retry.channel=this.value;nudgeCommModalState.retry.account='';nudgeCommModalState.retry.templateId='';renderNudgeCommConfigModal()">
-            <option value="">Select channel</option>${COMM_CHANNELS.filter(c=>c!==s.channel || c===r.channel).map(c=>`<option value="${c}" ${r.channel===c?'selected':''}>${CHANNEL_LABELS[c]}</option>`).join('')}
-          </select></div>
-          <div class="f-group"><label class="f-label">Timing</label><select class="f-input" onchange="nudgeCommModalState.retry.delayType=this.value;renderNudgeCommConfigModal()">
-            <option ${r.delayType==='Immediate'?'selected':''}>Immediate</option><option ${r.delayType==='Delayed'?'selected':''}>Delayed</option>
-          </select></div>
-        </div>
-        ${r.delayType==='Delayed' ? `<div class="f-group"><label class="f-label">Send after</label><div style="display:flex;gap:8px;">
-          <input class="f-input" type="number" min="0" style="max-width:100px;" value="${r.delay}" oninput="nudgeCommModalState.retry.delay=this.value">
-          <select class="f-input" style="max-width:140px;" onchange="nudgeCommModalState.retry.delayUnit=this.value">
-            <option ${r.delayUnit==='minutes'?'selected':''}>minutes</option><option ${r.delayUnit==='hours'?'selected':''}>hours</option><option ${r.delayUnit==='days'?'selected':''}>days</option>
-          </select></div></div>` : ''}
+        <div class="f-group"><label class="f-label">Fallback Channel</label><select class="f-input" onchange="nudgeCommModalState.retry.channel=this.value;nudgeCommModalState.retry.account='';nudgeCommModalState.retry.templateId='';renderNudgeCommConfigModal()">
+          <option value="">Select channel</option>${COMM_CHANNELS.filter(c=>c!==s.channel || c===r.channel).map(c=>`<option value="${c}" ${r.channel===c?'selected':''}>${CHANNEL_LABELS[c]}</option>`).join('')}
+        </select></div>
         ${statusSelectHtml}
         <div class="f-group"><label class="f-label">Account</label><select class="f-input" ${!r.channel?'disabled':''} onchange="nudgeCommModalState.retry.account=this.value;nudgeCommModalState.retry.templateId='';renderNudgeCommConfigModal()">
           <option value="">${r.channel?'Select account':'Pick a channel first'}</option>${accounts.map(a=>`<option ${r.account===a?'selected':''}>${a}</option>`).join('')}
@@ -6026,7 +6021,7 @@ function submitNudgeCommConfig(){
   const r = s.retry;
   if(r && r.channel && r.account && r.templateId){
     const rTemplate = COMMS_TEMPLATES.find(t=>t.id===r.templateId);
-    retryToSave = { channel:r.channel, account:r.account, templateId:r.templateId, templateName:rTemplate?.name||'', statuses:[...r.statuses], delayType:r.delayType, delay:r.delay, delayUnit:r.delayUnit };
+    retryToSave = { channel:r.channel, account:r.account, templateId:r.templateId, templateName:rTemplate?.name||'', statuses:[...r.statuses] };
   }
   wiz.draft.commBlocks[s.blockIdx].configured[s.channel] = { account: s.account, templateId: s.templateId, templateName: template?.name||'', tracking: s.tracking, userAttribution:s.userAttribution, utmParams:s.utmParams, retry: retryToSave };
   chipToggleChannel(s.channel);
