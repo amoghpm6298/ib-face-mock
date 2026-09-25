@@ -4483,13 +4483,16 @@ const EXTERNAL_SOURCE_ATTRIBUTES = ['Eligibility Code (API 1)', 'Eligibility Cod
 // duplicated per API to match EXTERNAL_SOURCE_ATTRIBUTES' 2-API example.
 const EXTERNAL_SOURCE_VALID_PLACEHOLDERS = ['maxquickloan','maxinstantloan','neweligiblelimit','accountcardname']
   .flatMap(f=>['api1','api2'].map(api=>`${f}_${api}`));
-// Pulls every {token} out of Heading/Sub-Text and flags ones that aren't
-// in the real, known field list — same "validation, not just a hint"
-// discipline as the Fallback Nudges variable-matching check (Save button
-// disabled + inline error), not just a passive hint the admin could miss.
+// Pulls every ${token} out of Heading/Sub-Text and flags ones that aren't
+// in the real, known field list — same ${variableName} syntax this file
+// already uses for comms template variables (see extractTemplateVars),
+// per Amogh (2026-09-25): "this is the format for adding variable in
+// display options." Same "validation, not just a hint" discipline as the
+// Fallback Nudges variable-matching check (Save button disabled + inline
+// error), not just a passive hint the admin could miss.
 function externalSourceInvalidPlaceholders(d){
-  const tokens = `${d.heading||''} ${d.subtext||''}`.match(/\{([^}]*)\}/g) || [];
-  const names = [...new Set(tokens.map(t=>t.slice(1,-1)))];
+  const tokens = `${d.heading||''} ${d.subtext||''}`.match(/\$\{([^}]*)\}/g) || [];
+  const names = [...new Set(tokens.map(t=>t.slice(2,-1)))];
   return names.filter(n=>!EXTERNAL_SOURCE_VALID_PLACEHOLDERS.includes(n));
 }
 // Always rendered (with display:none when clean) rather than conditionally
@@ -4499,7 +4502,7 @@ function extPlaceholderErrorBoxHtml(invalid){
   return `<div id="extPlaceholderError" class="f-hint" style="background:var(--error-bg);border:1px solid var(--error-border);border-radius:8px;padding:10px 14px;color:var(--error-text);${invalid.length?'':'display:none;'}">${extPlaceholderErrorText(invalid)}</div>`;
 }
 function extPlaceholderErrorText(invalid){
-  return `⚠ Invalid placeholder${invalid.length>1?'s':''} — {${invalid.join('}, {')}} ${invalid.length>1?"aren't":"isn't"} a field Grimlock returns for this nudge. Fix the Heading/Sub-Text text above before continuing.`;
+  return `⚠ Invalid placeholder${invalid.length>1?'s':''} — \${${invalid.join('}, ${')}} ${invalid.length>1?"aren't":"isn't"} a field Grimlock returns for this nudge. Fix the Heading/Sub-Text text above before continuing.`;
 }
 // Heading/Sub-Text use oninput->fieldUpdate (never renderWizStep) so typing
 // doesn't lose cursor focus — a full re-render would replace the input
@@ -4632,17 +4635,19 @@ const NUDGES = [
   // type — real content from Amogh's own action-code table (CCQC001,
   // "Quick Loan" cross-sell). Eligibility here isn't a condition Quibbler
   // evaluates — it's decided live by the bank via Grimlock at PWA-load
-  // time; {maxquickloan_api1} in the sub-text is filled in from that same
-  // response. Both the attribute and the placeholder are API-scoped —
-  // Grimlock exposes a distinct field per source API (per Amogh,
-  // 2026-09-24) — final field names/mapping still to be confirmed in
-  // the PRD; the "_api1" suffix here is illustrative.
+  // time; ${maxquickloan_api1} in the sub-text is filled in from that
+  // same response, using the same ${variableName} syntax this file
+  // already uses for comms template variables. Both the attribute and
+  // the placeholder are API-scoped — Grimlock exposes a distinct field
+  // per source API (per Amogh, 2026-09-24) — final field names/mapping
+  // still to be confirmed in the PRD; the "_api1" suffix here is
+  // illustrative.
   { id:'ND-88997', triggerType:'standard', nudgeType:'EXTERNAL_SOURCE', name:'[Demo — External Source] Quick Loan Cross-Sell', description:'Bank API decides eligibility and supplies the loan limit live — no condition configured here matches it.',
     scopeType:'Issuer', scopeName:'Yes Bank (All Programs)', issuer:'Yes Bank', programs:[],
     startDate:'20 Sep 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Demo'],
     createdBy:'Ananya Iyer', createdOn:'20 Sep 2026', variant:'BANNER',
     externalSourceAttribute:'Eligibility Code (API 1)', eligibilityCode:'CCQC001',
-    heading:'Need some extra cash?', subtext:'Get a Quick loan of up to {maxquickloan_api1}',
+    heading:'Need some extra cash?', subtext:'Get a Quick loan of up to ${maxquickloan_api1}',
     ctaText:'Apply now', redirectLink:'https://irisbyyes-af.onelink.me/JFBa/QuickLoan' },
   { id:'ND-88214', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'EMI Cross-Sell — Festive Push', description:'Nudge eligible cardholders toward converting recent authorizations to EMI during the festive window.',
     scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
@@ -5621,7 +5626,7 @@ function renderWizStep(stepId){
       ${d.variant==='OFFERSTATE' ? `
         <div class="f-group f-row2"><div><label class="f-label">Nudge Icon</label><div class="upload-box" style="padding:14px;">${ic('tag')} Upload</div></div><div><label class="f-label">Brand Icon</label><div class="upload-box" style="padding:14px;">${ic('landmark')} Upload</div></div></div>
       ` : d.variant ? `<div class="f-group"><label class="f-label">Display Illustration</label><div class="upload-box" style="padding:14px;">${ic('gift')} Upload</div></div>` : ''}
-      <div class="f-group"><label class="f-label">Nudge Heading</label><input class="f-input" type="text" value="${d.heading||''}" oninput="fieldUpdate('heading',this.value)${d.nudgeType==='EXTERNAL_SOURCE'?';refreshExternalSourcePlaceholderCheck()':''}" placeholder="${d.nudgeType==='EXTERNAL_SOURCE'?'e.g. Get a Quick loan of up to {maxquickloan_api1}':'e.g. Convert to EMI and save'}">
+      <div class="f-group"><label class="f-label">Nudge Heading</label><input class="f-input" type="text" value="${d.heading||''}" oninput="fieldUpdate('heading',this.value)${d.nudgeType==='EXTERNAL_SOURCE'?';refreshExternalSourcePlaceholderCheck()':''}" placeholder="${d.nudgeType==='EXTERNAL_SOURCE'?'e.g. Get a Quick loan of up to ${maxquickloan_api1}':'e.g. Convert to EMI and save'}">
       </div>
       <div class="f-group"><label class="f-label">Nudge Sub-Text</label><input class="f-input" type="text" value="${d.subtext||''}" oninput="fieldUpdate('subtext',this.value)${d.nudgeType==='EXTERNAL_SOURCE'?';refreshExternalSourcePlaceholderCheck()':''}" placeholder="e.g. Split your recent purchase into easy installments">
       </div>
