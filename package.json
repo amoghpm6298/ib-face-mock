@@ -1,0 +1,7 @@
+{
+  "name": "ib-face-mock",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix drip-campaigns ci && npm --prefix drip-campaigns run build && mkdir -p public && cp index.html ib-face-mock.html public/ && rm -rf public/drip-campaigns && cp -r drip-campaigns/dist public/drip-campaigns"
+  }
+}
