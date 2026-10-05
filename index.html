@@ -1689,6 +1689,32 @@ function renderNav(){
 }
 renderNav();
 
+// Deep-link support: a ?page=<name> query param jumps straight to that
+// nav page on load, matching one of NAV's own real page keys — added so
+// the Drip Campaigns React app's sidebar (a separate build with no
+// shared router) can link back to a *specific* page here instead of
+// always landing on the root default. Kept deliberately small: no
+// hash-routing, no back/forward history entries, just an initial jump.
+// Deferred to DOMContentLoaded (not run inline here) — switchPage()
+// calls into render functions and data arrays (e.g. NUDGES) that are
+// declared further down this same script and aren't initialized yet
+// at this point in top-to-bottom execution; running synchronously here
+// throws a ReferenceError that leaves the page on its default view
+// with a stale nav highlight.
+function initDeepLink(){
+  try {
+    const target = new URLSearchParams(window.location.search).get('page');
+    if(!target) return;
+    const known = new Set();
+    NAV.forEach(n=>{
+      if(n.page) known.add(n.page);
+      if(n.children) n.children.forEach(c=>{ if(c.page) known.add(c.page); });
+    });
+    if(known.has(target) && target!==currentPage) switchPage(target);
+  } catch(e){}
+}
+document.addEventListener('DOMContentLoaded', initDeepLink);
+
 function switchPage(name){
   currentPage = name;
   document.querySelectorAll('.page-view').forEach(p=>p.classList.toggle('active', p.id==='page-'+name));
