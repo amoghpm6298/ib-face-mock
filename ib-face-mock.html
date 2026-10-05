@@ -1627,13 +1627,16 @@ const NAV = [
     {label:'Batch Creation', page:'jb-list'}, {label:'A/B Experimentation', page:'ab-list'}
   ]},
   {type:'submenu', icon:'message', label:'Communication Hub', children:[
-    {label:'Nudges', page:'nudges-list'}, {label:'Comms. Templates', page:'comms-list'}, {label:'DNC', page:'dnc'}, {label:'Drip Campaigns', page:'drip-list', tag:'NEW'},
-    // Temporary, parallel entry during the React Flow migration (see
-    // CLAUDE.md) — points at the real new build, kept alongside the
-    // original while both are verified side by side. Once confirmed,
-    // the ABOVE entry gets flipped to this same href pattern and this
-    // temporary one is removed, per the migration's staged-cutover plan.
-    {label:'Drip Campaigns (New)', href:'/drip-campaigns/', tag:'NEW'},
+    {label:'Nudges', page:'nudges-list'}, {label:'Comms. Templates', page:'comms-list'}, {label:'DNC', page:'dnc'},
+    // Cutover complete (see CLAUDE.md, React Flow migration): this used
+    // to be two parallel entries (the old in-page build + a temporary
+    // "(New)" link) kept side by side for verification. Now that the
+    // new build is verified end to end — including this nav itself —
+    // there's one real entry, pointing at the new build. The old
+    // in-page drip-list/drip-view/drip-create implementation below is
+    // deliberately left in place, just unreachable from here, per the
+    // plan's "keep it through one release cycle before hard-deleting."
+    {label:'Drip Campaigns', href:'/drip-campaigns/', tag:'NEW'},
   ]},
   {type:'heading', label:'Operations'},
   {type:'submenu', icon:'idcard', label:'OnboardIQ', children:[
@@ -1715,8 +1718,23 @@ function initDeepLink(){
 }
 document.addEventListener('DOMContentLoaded', initDeepLink);
 
+// Keeps the address bar in sync with the current page — the app itself
+// still has no real router (no popstate handling, no back/forward
+// support), so this is deliberately replaceState, not pushState: it
+// makes the current URL reflect/bookmarkable/shareable without
+// pretending every switchPage() call is a real history entry a user
+// could navigate back through.
+function syncUrl(name){
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', name);
+    history.replaceState(null, '', url);
+  } catch(e){}
+}
+
 function switchPage(name){
   currentPage = name;
+  syncUrl(name);
   document.querySelectorAll('.page-view').forEach(p=>p.classList.toggle('active', p.id==='page-'+name));
   closeDrawer(); closeModal();
   renderNav();
