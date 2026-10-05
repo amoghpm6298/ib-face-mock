@@ -4,6 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ib-face-mock</title>
+<!-- Dagre: computes node positions + edge routing points for the Drip
+     Campaigns canvas only, once it's a real graph (a step can be reached
+     by more than one branch, 2026-09-25) instead of a strict one-parent
+     tree. We still draw every node/edge ourselves in our own CSS — this
+     only supplies the x/y math, the same job it does inside tools like
+     dagre-based React Flow. No build step needed (plain <script> tag,
+     matches this whole file's "no build step" convention); everything
+     else in this prototype is still hand-rolled with zero dependencies,
+     this is the one deliberate exception, since hand-rolling a correct
+     layered-graph layout (no overlaps, clean routing for converging
+     edges) is genuinely hard to get right and not worth reinventing. -->
+<script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
 <style>
   :root{
     --blue-cta:#0a66ef;
@@ -199,14 +211,16 @@
   .funnel-pct{display:inline-block;min-width:32px;text-align:right;font-weight:600;}
   .funnel-pct{width:44px;text-align:right;font-size:11.5px;color:var(--gray-500);flex-shrink:0;}
 
-  /* Drip Campaigns — read-only tree-canvas renderer. A fixed top-down
-     auto-layout, not a free-drag canvas: every shape this platform
-     actually needs (linear+goal, random-split, parallel milestones) is a
-     tree, so a full drag/zoom/pan canvas engine would be solving a
-     problem we don't have. Classic pure-CSS org-chart connector trick —
-     each child gets a top border spanning half its width (extended to
-     full width for a middle child, no width at start/end), so the
-     connector matches however wide a subtree naturally lays out. */
+  /* Drip Campaigns — real graph canvas (2026-09-25 rebuild). A step can
+     now be reached by more than one branch (e.g. two paths that both
+     eventually "wait 3 days, then send a reminder" point at the SAME
+     node instead of each rebuilding it) — no longer a strict one-parent
+     tree, so the old pure-CSS border-trick connectors (which only work
+     for exactly one parent per box) don't apply. Dagre computes every
+     node's x/y and every edge's routing points; every node/edge below is
+     still drawn in our own CSS, absolutely positioned inside one
+     explicitly-sized wrapper (.dc-graph-canvas), with an <svg> overlay
+     for the edge lines. */
   .dc-tree-wrap{overflow-x:auto;padding:24px 12px 8px;position:relative;}
   .dc-zoom-controls{
     position:sticky;top:10px;left:10px;display:inline-flex;gap:4px;align-items:center;z-index:5;
@@ -218,11 +232,13 @@
   }
   .dc-zoom-btn:hover{background:var(--info-bg);color:var(--blue-cta);}
   .dc-zoom-pct{font-size:11px;color:var(--gray-500);width:36px;text-align:center;}
-  .dc-tree-root{display:flex;justify-content:center;min-width:max-content;}
-  .dc-subtree{display:flex;flex-direction:column;align-items:center;}
+  .dc-tree-root{display:block;min-width:max-content;}
+  .dc-graph-canvas{position:relative;}
+  .dc-edge-layer{position:absolute;top:0;left:0;overflow:visible;pointer-events:none;}
+  .dc-edge-path{fill:none;stroke:var(--gray-300);stroke-width:2px;}
   .dc-node-card{
-    width:186px;border-radius:9px;border:1.5px solid var(--gray-200);background:#fff;
-    padding:9px 11px;box-shadow:0 1px 2px rgba(0,0,0,.04);position:relative;
+    position:absolute;width:186px;border-radius:9px;border:1.5px solid var(--gray-200);background:#fff;
+    padding:9px 11px;box-shadow:0 1px 2px rgba(0,0,0,.04);
   }
   /* Only the builder's cards are actually clickable-to-edit — the
      read-only campaign view reuses this same card class, so the hover
@@ -238,35 +254,44 @@
   .dc-node-card.cat-split{border-color:var(--warning-border);} .dc-node-card.cat-split .dc-node-type{color:var(--warning-text);}
   .dc-node-card.cat-goal{border-color:var(--success-border);background:var(--success-bg);} .dc-node-card.cat-goal .dc-node-type{color:var(--success-text);}
   .dc-node-card.cat-exit{border-color:var(--gray-300);background:var(--gray-50);} .dc-node-card.cat-exit .dc-node-type{color:var(--gray-500);}
-  .dc-down-stub{width:2px;height:20px;background:var(--gray-300);}
-  .dc-children{display:flex;}
-  .dc-child{position:relative;padding:20px 14px 0;display:flex;flex-direction:column;align-items:center;}
-  .dc-child::before{content:'';position:absolute;top:0;left:0;right:0;height:20px;border-top:2px solid var(--gray-300);}
-  .dc-child:first-child::before{left:50%;}
-  .dc-child:last-child::before{right:50%;}
-  .dc-child:only-child::before{display:none;}
-  .dc-child::after{content:'';position:absolute;top:0;left:50%;width:2px;height:20px;background:var(--gray-300);}
-  .dc-branch-label{
-    position:absolute;top:-8px;left:50%;transform:translateX(-50%);
-    font-size:10px;font-weight:700;color:var(--gray-600);background:#fff;
-    padding:1px 6px;border:1px solid var(--gray-200);border-radius:20px;white-space:nowrap;z-index:1;
+  /* A node reached by more than one edge gets a small "shared step"
+     marker instead of relying on the viewer to notice two lines meeting
+     at one box — the whole point of the merge is easy to miss otherwise. */
+  .dc-node-card.shared{box-shadow:0 0 0 2px var(--blue-cta),0 2px 6px rgba(10,102,239,.15);}
+  .dc-shared-badge{
+    position:absolute;top:-9px;right:8px;background:var(--blue-cta);color:#fff;
+    font-size:9px;font-weight:700;padding:1px 6px;border-radius:20px;
   }
+  .dc-branch-label{
+    position:absolute;font-size:10px;font-weight:700;color:var(--gray-600);background:#fff;
+    padding:1px 6px;border:1px solid var(--gray-200);border-radius:20px;white-space:nowrap;z-index:1;
+    transform:translate(-50%,-50%);
+  }
+  /* A bare connector's chip has nothing to say but "remove me" — hidden
+     at rest so a plain line never shows an empty floating pill, revealed
+     on hover of that same spot. Matches .dc-node-remove's own hidden-
+     until-hovered convention elsewhere on this canvas. */
+  .dc-branch-label-bare{opacity:0;transition:opacity .12s;}
+  .dc-branch-label-bare:hover{opacity:1;}
+  /* An open slot (a branch with nowhere to go yet) is a real node in
+     dagre's own layout pass too — small and round, so it takes its
+     rightful place in the layout instead of sitting outside it. */
+  .dc-add-btn{
+    position:absolute;width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--gray-300);background:#fff;
+    color:var(--gray-500);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+  }
+  .dc-add-btn:hover{border-color:var(--blue-cta);color:var(--blue-cta);border-style:solid;}
 
   /* Drip Campaigns — builder. Two panes, not the Nudges wizard's three —
-     a tree needs a wide canvas, not a narrow summary strip, so "preview"
+     a graph needs a wide canvas, not a narrow summary strip, so "preview"
      and "mid" collapse into one canvas pane; the rail is context-sensitive
      (campaign fields when nothing's selected, the add-step form when a
      leaf's + is clicked) rather than a fixed linear step list, because a
-     tree doesn't have one linear sequence of steps to walk through. */
+     graph doesn't have one linear sequence of steps to walk through. */
   .dcb-shell{display:flex;height:100vh;}
   .dcb-rail{width:320px;flex-shrink:0;border-right:1px solid var(--gray-200);padding:24px 20px 100px;overflow-y:auto;background:var(--gray-25);}
   .dcb-canvas{flex:1;min-width:0;overflow:auto;padding:24px 28px 100px;background:#fbfbfc;}
-  .dc-add-btn{
-    width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--gray-300);background:#fff;
-    color:var(--gray-500);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;
-    cursor:pointer;margin-top:6px;
-  }
-  .dc-add-btn:hover{border-color:var(--blue-cta);color:var(--blue-cta);border-style:solid;}
   .dc-node-card.selected-target{border-color:var(--blue-cta);box-shadow:0 0 0 3px rgba(10,102,239,.12);}
   .dc-node-card .dc-node-remove{
     position:absolute;top:5px;right:6px;font-size:11px;color:var(--gray-400);cursor:pointer;line-height:1;display:none;
@@ -278,7 +303,13 @@
     font-size:10px;font-weight:700;cursor:pointer;display:inline-block;
   }
   .dc-auto-badge:hover{background:var(--blue-cta);color:#fff;}
-  .dc-type-picker{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;}
+  /* Grouped by category (Actions/Waits/Logic/Reuse), not a flat list —
+     Adobe Campaign and MoEngage both group their equivalent node picker
+     by semantic category; matched here as a direct, low-risk adoption
+     from that research (2026-09-25). */
+  .dc-type-group-label{font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--gray-400);margin:14px 0 6px;}
+  .dc-type-group-label:first-child{margin-top:0;}
+  .dc-type-picker{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .dc-type-opt{
     border:1.5px solid var(--gray-200);border-radius:8px;padding:9px 10px;cursor:pointer;font-size:12px;font-weight:600;
   }
@@ -288,11 +319,27 @@
   .dc-type-opt.cat-entry{color:var(--info-text);} .dc-type-opt.cat-send{color:var(--blue-cta);}
   .dc-type-opt.cat-flow{color:var(--gray-600);} .dc-type-opt.cat-split{color:var(--warning-text);}
   .dc-type-opt.cat-goal{color:var(--success-text);} .dc-type-opt.cat-exit{color:var(--gray-500);}
+  .dc-type-opt.cat-link{color:var(--indigo);}
   .dc-add-entry-placeholder{
     width:220px;margin:24px 0 0 24px;padding:22px;text-align:center;border-radius:10px;
     border:1.5px dashed var(--gray-300);color:var(--gray-500);font-size:13px;font-weight:600;cursor:pointer;
   }
   .dc-add-entry-placeholder:hover{border-color:var(--blue-cta);color:var(--blue-cta);}
+  /* Hover-reveal "insert a branch here" strip, rendered above every
+     Random Split / Decision Split branch row — lets a branch be inserted
+     anywhere in the list, not just appended at the end via "+ Add
+     branch". Kept low-profile at rest (a thin line, not a visible button)
+     so it doesn't compete with the real fields for attention until the
+     user is actually hovering that gap. */
+  .dcb-insert-row{height:14px;margin:-3px 0 3px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;}
+  .dcb-insert-row::before,.dcb-insert-row::after{content:'';flex:1;height:1px;background:transparent;transition:background .12s;}
+  .dcb-insert-row:hover::before,.dcb-insert-row:hover::after{background:var(--blue-cta);}
+  .dcb-insert-plus{
+    width:18px;height:18px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    font-size:13px;line-height:1;color:#fff;background:var(--blue-cta);opacity:0;transform:scale(.7);
+    transition:opacity .12s,transform .12s;
+  }
+  .dcb-insert-row:hover .dcb-insert-plus{opacity:1;transform:scale(1);}
 
   .dropoff-callout{
     display:flex;align-items:center;gap:8px;margin-top:16px;padding:10px 14px;
@@ -1580,7 +1627,13 @@ const NAV = [
     {label:'Batch Creation', page:'jb-list'}, {label:'A/B Experimentation', page:'ab-list'}
   ]},
   {type:'submenu', icon:'message', label:'Communication Hub', children:[
-    {label:'Nudges', page:'nudges-list'}, {label:'Comms. Templates', page:'comms-list'}, {label:'DNC', page:'dnc'}, {label:'Drip Campaigns', page:'drip-list', tag:'NEW'}
+    {label:'Nudges', page:'nudges-list'}, {label:'Comms. Templates', page:'comms-list'}, {label:'DNC', page:'dnc'}, {label:'Drip Campaigns', page:'drip-list', tag:'NEW'},
+    // Temporary, parallel entry during the React Flow migration (see
+    // CLAUDE.md) — points at the real new build, kept alongside the
+    // original while both are verified side by side. Once confirmed,
+    // the ABOVE entry gets flipped to this same href pattern and this
+    // temporary one is removed, per the migration's staged-cutover plan.
+    {label:'Drip Campaigns (New)', href:'/drip-campaigns/', tag:'NEW'},
   ]},
   {type:'heading', label:'Operations'},
   {type:'submenu', icon:'idcard', label:'OnboardIQ', children:[
@@ -1628,7 +1681,7 @@ function renderNav(){
         <span class="sb-icon">${ic(n.icon)}</span>${n.label}<span class="sb-chev">${chev()}</span>
       </div>
       <div class="sb-sub ${(n.open||hasActiveChild)?'open':''}">
-        ${n.children.map(c=>`<div class="sb-sub-item ${pageMatches(c.page,currentPage)?'active':''}" ${c.page?`onclick="switchPage('${c.page}')"`:''}>${c.label}${c.tag?`<span class="sb-new-tag">${c.tag}</span>`:''}</div>`).join('')}
+        ${n.children.map(c=>`<div class="sb-sub-item ${pageMatches(c.page,currentPage)?'active':''}" ${c.page?`onclick="switchPage('${c.page}')"`:(c.href?`onclick="window.location.href='${c.href}'"`:'')}>${c.label}${c.tag?`<span class="sb-new-tag">${c.tag}</span>`:''}${c.href?`<span class="sb-ext">${ic('external')}</span>`:''}</div>`).join('')}
       </div>`;
     }
   }).join('');
@@ -8241,10 +8294,10 @@ function submitDnc(){
 }
 
 /* ---------------- Drip Campaigns ---------------- */
-// Node palette, deliberately bounded (see journeysnudgesemi/CLAUDE.md) —
-// every shape this platform needs (linear+goal, random-split reminder,
-// parallel milestones) renders as a tree, so category drives styling only;
-// there is no free-drag canvas engine here, this is a fixed auto-layout.
+// Node palette. Fixed set, still deliberately bounded (see
+// journeysnudgesemi/CLAUDE.md) — but as of the 2026-09-25 graph rebuild,
+// category drives both styling AND the type-picker's section grouping
+// (see DC_TYPE_CATEGORIES below), not just card color.
 const DC_NODE_META = {
   ENTRY_SEGMENT:   {cat:'entry', type:'Entry · Segment'},
   ENTRY_EVENT:     {cat:'entry', type:'Entry · Event Trigger'},
@@ -8254,16 +8307,101 @@ const DC_NODE_META = {
   PAUSE:           {cat:'flow',  type:'Pause'},
   WAIT_UNTIL:      {cat:'flow',  type:'Wait Until'},
   SPLIT:           {cat:'split', type:'Conditional Split'},
+  DECISION_SPLIT:  {cat:'split', type:'Decision Split'},
   RANDOM_SPLIT:    {cat:'split', type:'Random Split'},
   GOAL_EXIT:       {cat:'goal',  type:'Goal-Based Exit'},
   EXIT:            {cat:'exit',  type:'Exit'},
 };
-// Terse node constructor: n(type, label, meta, children, branchLabel)
+// Groups the add-step type picker into labeled sections instead of one
+// flat 8-item grid — a direct, convergent finding from researching Adobe
+// Campaign (Targeting/Execution/Channels/Data-Mgmt) and MoEngage
+// (Actions/Conditions/Controls): both independently group their
+// equivalent node picker by semantic category. "Reuse" (Connect to an
+// Existing Step) is added as its own section by dcTypePickerHtml, not
+// listed here, since it isn't a real node type.
+const DC_TYPE_CATEGORIES = [
+  {label:'Actions', types:['SEND','CHANNEL_FAILOVER']},
+  {label:'Waits', types:['PAUSE','WAIT_UNTIL']},
+  {label:'Logic', types:['SPLIT','DECISION_SPLIT','RANDOM_SPLIT','GOAL_EXIT','EXIT']},
+];
+// Terse node constructor, kept only for authoring the readable nested
+// seed data below — n(type, label, meta, children, branchLabel) builds a
+// plain nested-children tree, the shape this file has always used for
+// hand-authored example campaigns. dcTreeToGraph() (below) converts this
+// into the real, flat {nodes, edges, rootId} graph shape every part of
+// this feature actually operates on — nesting stays because it's far
+// more readable to author by hand than a flat node/edge list would be;
+// the runtime representation is what changed, not the seed data's shape.
 function n(type,label,meta,children,branchLabel){
   return {type,label,meta:meta||'',children:children||[],branchLabel:branchLabel||''};
 }
-function dcCountSends(node){
-  return (node.type==='SEND'?1:0) + node.children.reduce((s,c)=>s+dcCountSends(c),0);
+let dcNodeIdSeq = 1, dcEdgeIdSeq = 1, dcBranchIdSeq = 1;
+function dcNewNodeId(){ return 'dcn'+(dcNodeIdSeq++); }
+function dcNewEdgeId(){ return 'dce'+(dcEdgeIdSeq++); }
+// Random Split / Decision Split branches need a stable identity of their
+// own, independent of array position — without one, inserting a branch
+// in the middle (not just appending) has no way to tell "this is a new
+// branch, give it a fresh open edge" apart from "these are the same
+// branches, just shifted over," and silently mismatches every edge after
+// the insertion point. Assigned once, at whichever moment a branch object
+// is first created (default config, Add, or Insert), and carried onto
+// its corresponding edge as edge.branchId.
+function dcNewBranchId(){ return 'dcb'+(dcBranchIdSeq++); }
+// Converts a hand-authored nested tree (n(...) calls, or the equivalent
+// plain object literals DRIP-005/006 use) into the real graph shape:
+// {nodes: {id: {...no children/branchLabel}}, edges: [{id,from,to,branchLabel,autoGenerated}], rootId}.
+// EMPTY placeholder nodes become edges with to:null instead of a real
+// node — an open slot was never really "a node," just an unfilled
+// connection, which is a cleaner fit for a graph than a typed leaf.
+function dcTreeToGraph(root){
+  const nodes = {}, edges = [];
+  function walk(treeNode){
+    if(!treeNode) return null;
+    if(treeNode.type==='EMPTY') return null;
+    const id = dcNewNodeId();
+    nodes[id] = { id, type:treeNode.type, label:treeNode.label, meta:treeNode.meta||'',
+      _config:treeNode._config, autoGenerated:!!treeNode.autoGenerated };
+    (treeNode.children||[]).forEach(child=>{
+      const childId = walk(child);
+      edges.push({ id:dcNewEdgeId(), from:id, to:childId, branchLabel:child.branchLabel||'', autoGenerated:!!child.autoGenerated });
+    });
+    return id;
+  }
+  const rootId = walk(root);
+  return { nodes, edges, rootId };
+}
+function dcOutgoingEdges(edges, nodeId){ return edges.filter(e=>e.from===nodeId); }
+function dcIncomingEdges(edges, nodeId){ return edges.filter(e=>e.to===nodeId); }
+function dcCountSends(graph){
+  return Object.values(graph.nodes).filter(nd=>nd.type==='SEND').length;
+}
+// Can nodeId be reached FROM startId by following outgoing edges forward?
+// Used to block a merge that would close a loop — connecting fromNodeId's
+// open branch to some target T is only safe when T can't already reach
+// back to fromNodeId (dripWiz.edges is always the live builder graph;
+// this is only ever called during the live builder, never for read-only
+// view or the seed campaigns, so it's fine to read it directly).
+function dcCanReach(startId, targetId){
+  if(startId===targetId) return true;
+  const seen = new Set([startId]);
+  const stack = [startId];
+  while(stack.length){
+    const cur = stack.pop();
+    for(const e of dripWiz.edges){
+      if(e.from===cur && e.to && !seen.has(e.to)){
+        if(e.to===targetId) return true;
+        seen.add(e.to); stack.push(e.to);
+      }
+    }
+  }
+  return false;
+}
+// Every existing node EXCEPT fromNodeId itself and anything that could
+// already reach back to it — connecting fromNodeId's open branch to one
+// of those would create a cycle, which a nudge sequence (strictly
+// forward-moving) can never legitimately have.
+function dcValidMergeTargets(fromNodeId){
+  return Object.values(dripWiz.nodes).filter(nd => nd.id!==fromNodeId && !dcCanReach(nd.id, fromNodeId));
 }
 
 const DRIP_CAMPAIGNS = [
@@ -8360,6 +8498,13 @@ const DRIP_CAMPAIGNS = [
     controlPct:10, startDate:'', endDate:'', status:'PENDING_REVIEW',
     root: {"type":"ENTRY_EVENT","label":"Card Issued","meta":"Card Events","children":[{"type":"RANDOM_SPLIT","label":"Channel Strategy Test","meta":"WhatsApp-first 60% / SMS-first 40% allocation","children":[{"type":"SEND","label":"Activate + Set PIN","meta":"WhatsApp · IBL-Karix-Onb · 11:00 · Template: Card Activation WhatsApp","children":[{"type":"SPLIT","label":"Card Activated?","meta":"Goal check, auto-inserted after every Send","children":[{"type":"GOAL_EXIT","label":"Card Activated","meta":"","children":[],"branchLabel":"Yes"},{"type":"SPLIT","label":"Previous step: Clicked?","meta":"Custom condition split","children":[{"type":"PAUSE","label":"Wait 1 days","meta":"","children":[{"type":"SEND","label":"Finish PIN Setup","meta":"WhatsApp · IBL-Karix-Onb · 11:00 · Template: PIN Setup Reminder WhatsApp","children":[{"type":"SPLIT","label":"Card Activated?","meta":"Goal check, auto-inserted after every Send","children":[{"type":"GOAL_EXIT","label":"Card Activated","meta":"","children":[],"branchLabel":"Yes"},{"type":"EXIT","label":"Started activation but did not finish PIN setup","meta":"","children":[],"branchLabel":"No"}],"branchLabel":""}],"branchLabel":""}],"branchLabel":"Yes"},{"type":"PAUSE","label":"Wait 2 days","meta":"","children":[{"type":"CHANNEL_FAILOVER","label":"WhatsApp → SMS","meta":"Retries on fallback if primary delivery fails","children":[{"type":"SEND","label":"Reminder","meta":"SMS · IBL-Karix-Txns · 11:00 · Template: EMI Conversion SMS","children":[{"type":"SPLIT","label":"Card Activated?","meta":"Goal check, auto-inserted after every Send","children":[{"type":"GOAL_EXIT","label":"Card Activated","meta":"","children":[],"branchLabel":"Yes"},{"type":"EXIT","label":"No engagement after 2 attempts","meta":"","children":[],"branchLabel":"No"}],"branchLabel":""}],"branchLabel":""}],"branchLabel":""}],"branchLabel":"No"}],"branchLabel":"No"}],"branchLabel":""}],"branchLabel":"WhatsApp-first (60%)"},{"type":"SEND","label":"Activate + Set PIN (SMS)","meta":"SMS · IBL-Karix-Txns · 11:00 · Template: EMI Conversion SMS","children":[{"type":"SPLIT","label":"Card Activated?","meta":"Goal check, auto-inserted after every Send","children":[{"type":"GOAL_EXIT","label":"Card Activated","meta":"","children":[],"branchLabel":"Yes"},{"type":"EXIT","label":"No activation after SMS-first attempt","meta":"","children":[],"branchLabel":"No"}],"branchLabel":""}],"branchLabel":"SMS-first (40%)"}],"branchLabel":""}],"branchLabel":""} },
 ];
+// One-time migration, run right after the array above loads: every
+// example campaign is still hand-authored as a readable nested tree
+// (via n(...) or the equivalent plain object literal), converted here
+// into the real {nodes, edges, rootId} graph shape everything else in
+// this feature — the list, the read-only view, and the builder's
+// continue-editing paths — actually operates on.
+DRIP_CAMPAIGNS.forEach(c=>{ if(c.root) c.root = dcTreeToGraph(c.root); });
 const DRIP_STATUS_META = {
   DRAFT:   {label:'Draft',            badge:'gray'},
   PENDING_REVIEW: {label:'Pending Approval', badge:'warning'},
@@ -8379,7 +8524,7 @@ function renderDripList(){
   document.getElementById('dripListCount').textContent = `${DRIP_CAMPAIGNS.length} campaigns`;
   document.getElementById('dripListBody').innerHTML = DRIP_CAMPAIGNS.map(c=>{
     const sm = DRIP_STATUS_META[c.status];
-    const entryMeta = c.root ? DC_NODE_META[c.root.type] : null;
+    const entryMeta = c.root ? DC_NODE_META[c.root.nodes[c.root.rootId].type] : null;
     return `
     <tr onclick="${c.status==='DRAFT'?`openDripEditDraft('${c.id}')`:`openDripView('${c.id}')`}" style="cursor:pointer;">
       <td><b>${c.name}</b></td>
@@ -8413,20 +8558,172 @@ function dcZoomControlsHtml(currentZoom, zoomVarExpr, rerenderFn){
   </div>`;
 }
 
-function dcRenderNode(node){
-  const meta = DC_NODE_META[node.type];
-  return `
-  <div class="dc-subtree">
-    <div class="dc-node-card cat-${meta.cat}">
+// Node card dimensions, used only as a layout hint for dagre (it needs a
+// width/height per node to compute positions) — the actual rendered card
+// still sizes to its real content via ordinary CSS, so a real card can be
+// a little taller than this estimate without visibly overlapping the row
+// below it, since ranksep already gives some vertical slack.
+const DC_CARD_W = 186, DC_CARD_H = 74, DC_SLOT_SIZE = 26;
+// A node card's real height varies with its content (a one-line Pause
+// vs. a Send whose meta line wraps, vs. any auto-generated node also
+// carrying the "Auto-added, click to replace" badge underneath) — up to
+// 30-40px of real difference. Feeding dagre a single fixed height was a
+// real bug, not a cosmetic one: dagre draws every connector assuming
+// that fixed box, so on any taller-than-average card the line (and its
+// branch-label chip) started partway through the card's real body
+// instead of at its actual bottom edge, which is exactly what read as
+// "floating randomly, not near the node." Fixed by rendering each card
+// once into a hidden, off-screen probe purely to measure its real
+// height before dagre ever runs — the same markup dcRenderGraphCanvas
+// renders for real, not an approximation of it.
+// editable-only chrome (the root's own remove ✕, the auto-badge's
+// "click to replace") never renders on the read-only campaign view —
+// matches the pre-rebuild renderer's own split (dcRenderNode had
+// neither; only dcRenderNodeEditable did) and keeps a viewer from being
+// shown interactive-looking language for something they can't click.
+function dcNodeCardBodyHtml(nd, editable, incoming, isRoot, edges){
+  const meta = DC_NODE_META[nd.type];
+  const isShared = (incoming[nd.id]||0) > 1;
+  const removeBtn = (editable && isRoot) ? `<div class="dc-node-remove" onclick="event.stopPropagation();dcRemoveRoot()" title="Remove entry">✕</div>` : '';
+  const autoEdge = (editable && nd.autoGenerated) ? edges.find(e=>e.to===nd.id) : null;
+  return `${isShared?`<div class="dc-shared-badge">Reused in ${incoming[nd.id]} places</div>`:''}
+      ${removeBtn}
       <div class="dc-node-type">${meta.type}</div>
-      <div class="dc-node-label">${node.label}</div>
-      ${node.meta?`<div class="dc-node-meta">${node.meta}</div>`:''}
-    </div>
-    ${node.children.length?`
-    <div class="dc-down-stub"></div>
-    <div class="dc-children">
-      ${node.children.map(c=>`<div class="dc-child">${c.branchLabel?`<div class="dc-branch-label">${c.branchLabel}</div>`:''}${dcRenderNode(c)}</div>`).join('')}
-    </div>`:''}
+      <div class="dc-node-label">${nd.label}</div>
+      ${nd.meta?`<div class="dc-node-meta">${nd.meta}</div>`:''}
+      ${autoEdge?`<div class="dc-auto-badge" onclick="event.stopPropagation();dcReplaceAutoNode('${autoEdge.id}')" title="Auto-added — click to replace with your own step">↻ Auto-added, click to replace</div>`:''}`;
+}
+function dcMeasureCardHeights(graph, editable, incoming){
+  const probe = document.createElement('div');
+  probe.className = 'dc-node-card';
+  probe.style.cssText = `position:absolute;visibility:hidden;top:-9999px;left:-9999px;width:${DC_CARD_W}px;`;
+  document.body.appendChild(probe);
+  const heights = {};
+  Object.values(graph.nodes).forEach(nd=>{
+    probe.innerHTML = dcNodeCardBodyHtml(nd, editable, incoming, graph.rootId===nd.id, graph.edges);
+    heights[nd.id] = Math.ceil(probe.getBoundingClientRect().height) || DC_CARD_H;
+  });
+  document.body.removeChild(probe);
+  return heights;
+}
+// Runs dagre over a {nodes, edges, rootId} graph. Every open slot
+// (edge.to === null) gets its own small virtual node in the SAME layout
+// pass, so the "+" add button takes its rightful place in the layout
+// instead of floating outside whatever dagre computed for the real nodes.
+function dcComputeLayout(graph, cardHeights){
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({rankdir:'TB', nodesep:36, ranksep:56, marginx:24, marginy:24});
+  g.setDefaultEdgeLabel(()=>({}));
+  Object.keys(graph.nodes).forEach(id=>g.setNode(id, {width:DC_CARD_W, height:cardHeights[id]||DC_CARD_H}));
+  const slotIds = {};
+  graph.edges.forEach(e=>{
+    if(e.to===null){
+      const slotId = '__slot_'+e.id;
+      slotIds[e.id] = slotId;
+      // The "+" button itself only needs DC_SLOT_SIZE of visual room, but
+      // every edge (including one ending in an open slot) gets a branch-
+      // label chip centered on its midpoint, and that chip is a fixed
+      // ~120px-wide box — real node cards (186px + nodesep) are already
+      // spaced further apart than that, but two bare DC_SLOT_SIZE (26px)
+      // slots sitting side by side only end up ~62px apart, so their
+      // chips overlap every time there are 2+ open branches at once
+      // (Decision Split, Random Split). Giving dagre a wider WIDTH HINT
+      // here (not the slot's actual rendered size) reserves enough real
+      // estate for the chip without changing how big the "+" button
+      // itself looks — DC_ADD_BTN_RENDER still uses DC_SLOT_SIZE/2 to
+      // center the small circle within that wider allocated space.
+      g.setNode(slotId, {width:Math.max(DC_SLOT_SIZE, 132), height:DC_SLOT_SIZE});
+      g.setEdge(e.from, slotId);
+    } else {
+      g.setEdge(e.from, e.to);
+    }
+  });
+  dagre.layout(g);
+  return {g, slotIds};
+}
+// Shared by the read-only campaign view and the live builder canvas —
+// the layout/edge-drawing math is identical either way; only click
+// handlers, the remove/auto-replace controls, and the "+" add buttons
+// are conditional on `editable`. A node renders exactly once regardless
+// of how many edges lead into it (the whole point of the 2026-09-25
+// graph rebuild — two branches that converge on the same step share one
+// real card with two lines arriving at it, not two duplicate cards).
+function dcRenderGraphCanvas(graph, editable){
+  if(!graph || !graph.rootId) return '<div class="placeholder">No steps yet — still a draft.</div>';
+  const incoming = {};
+  graph.edges.forEach(e=>{ if(e.to) incoming[e.to] = (incoming[e.to]||0)+1; });
+  const cardHeights = dcMeasureCardHeights(graph, editable, incoming);
+  const {g, slotIds} = dcComputeLayout(graph, cardHeights);
+  const gw = Math.ceil(g.graph().width), gh = Math.ceil(g.graph().height);
+
+  const edgesHtml = graph.edges.map(e=>{
+    const toId = e.to || slotIds[e.id];
+    const points = g.edge(e.from, toId).points;
+    const d = points.map((p,i)=>`${i===0?'M':'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    const mid = points[Math.floor(points.length/2)];
+    const hasLabel = !!e.branchLabel;
+    if(!editable && !hasLabel) return `<path class="dc-edge-path" d="${d}"></path>`;
+    const chipContent = hasLabel ? `${e.branchLabel}${editable?' <span style="opacity:.55;margin-left:2px;">✕</span>':''}` : (editable ? '✕' : '');
+    // The chip sits inside <svg class="dc-edge-layer">, which is
+    // pointer-events:none so the edge lines themselves never swallow
+    // clicks meant for the canvas underneath — but that value is
+    // inherited by everything inside it, including this chip, unless
+    // explicitly overridden back to auto right here. Missing this was a
+    // real bug: the ✕ looked clickable (real cursor:pointer) but a real
+    // mouse click did nothing at all, since the click never reached the
+    // onclick handler in the first place.
+    // The foreignObject box itself is correctly centered on the line
+    // (x = mid.x - half its own width) — the bug was inside it: the chip
+    // div is display:inline-block, which lays out flush-left within its
+    // container by default, not centered. The box was right, its
+    // content wasn't, so every chip rendered visibly off to one side of
+    // the actual line instead of sitting on it. Fixed with real flexbox
+    // centering on the foreignObject itself, not just a corrected offset.
+    // A bare (unlabeled) connector's chip carries nothing but the remove
+    // ✕ — no branch name, no "Yes"/"No", nothing to actually read. Shown
+    // permanently, it renders as an empty floating pill with a lone X in
+    // it and no context ("what is this?" — a real user reaction to
+    // exactly this). Labeled chips (Yes/No/a real branch name) stay
+    // fully visible always, since they carry real information; the bare
+    // ones now sit invisible at rest and reveal only on hover, same
+    // hidden-until-hovered convention this file already uses for a
+    // node's own remove ✕ (.dc-node-remove) — discovered by hovering the
+    // connector, not shown as permanent visual clutter.
+    const chip = chipContent ? `<foreignObject x="${(mid.x-60).toFixed(1)}" y="${(mid.y-11).toFixed(1)}" width="120" height="22" style="overflow:visible;pointer-events:${editable?'auto':'none'};display:flex;align-items:center;justify-content:center;">
+      <div class="dc-branch-label${!hasLabel && editable?' dc-branch-label-bare':''}" style="position:static;transform:none;display:inline-block;pointer-events:auto;${editable?'cursor:pointer;':''}" ${editable?`onclick="dcRemoveEdge('${e.id}')" title="Remove this connection"`:''}>${chipContent}</div>
+    </foreignObject>` : '';
+    return `<path class="dc-edge-path" d="${d}"></path>${chip}`;
+  }).join('');
+
+  const slotsHtml = editable ? graph.edges.filter(e=>e.to===null).map(e=>{
+    const pos = g.node(slotIds[e.id]);
+    return `<div class="dc-add-btn" style="left:${(pos.x-DC_SLOT_SIZE/2).toFixed(1)}px;top:${(pos.y-DC_SLOT_SIZE/2).toFixed(1)}px;" onclick="dcSelectAddAt('edge','${e.id}')" title="Add next step">+</div>`;
+  }).join('') : '';
+
+  const growHtml = editable ? Object.values(graph.nodes).filter(nd=>{
+    const outCount = graph.edges.filter(e=>e.from===nd.id).length;
+    return outCount===0 && nd.type!=='GOAL_EXIT' && nd.type!=='EXIT';
+  }).map(nd=>{
+    const pos = g.node(nd.id);
+    return `<div class="dc-add-btn" style="left:${(pos.x-DC_SLOT_SIZE/2).toFixed(1)}px;top:${(pos.y+pos.height/2+8).toFixed(1)}px;" onclick="dcSelectAddAt('growLeaf','${nd.id}')" title="Add next step">+</div>`;
+  }).join('') : '';
+
+  const nodesHtml = Object.values(graph.nodes).map(nd=>{
+    const pos = g.node(nd.id);
+    const meta = DC_NODE_META[nd.type];
+    const left = (pos.x-DC_CARD_W/2).toFixed(1), top = (pos.y-pos.height/2).toFixed(1);
+    const isShared = (incoming[nd.id]||0) > 1;
+    const isRoot = graph.rootId===nd.id;
+    const clickAttrs = editable ? `onclick="dcOpenEditNode('${nd.id}')" title="Click to edit this step" style="cursor:pointer;left:${left}px;top:${top}px;"` : `style="left:${left}px;top:${top}px;"`;
+    return `
+    <div class="dc-node-card${editable?' editable':''} cat-${meta.cat}${isShared?' shared':''}" ${clickAttrs}>
+      ${dcNodeCardBodyHtml(nd, editable, incoming, isRoot, graph.edges)}
+    </div>`;
+  }).join('');
+
+  return `<div class="dc-graph-canvas" style="width:${gw}px;height:${gh}px;">
+    <svg class="dc-edge-layer" width="${gw}" height="${gh}">${edgesHtml}</svg>
+    ${nodesHtml}${slotsHtml}${growHtml}
   </div>`;
 }
 function renderDripView(){
@@ -8453,33 +8750,57 @@ function renderDripView(){
     <div class="card" style="padding:0;">
       <div class="dc-tree-wrap">
         ${c.root?dcZoomControlsHtml(dripViewState.zoom, 'dripViewState.zoom', 'renderDripView'):''}
-        <div class="dc-tree-root" style="transform:scale(${dripViewState.zoom});transform-origin:top center;">${c.root?dcRenderNode(c.root):'<div class="placeholder">No steps yet — still a draft.</div>'}</div>
+        <div class="dc-tree-root" style="transform:scale(${dripViewState.zoom});transform-origin:top left;">${dcRenderGraphCanvas(c.root, false)}</div>
       </div>
     </div>`;
 }
 
 /* ---------------- Drip Campaigns: Create / Edit builder ---------------- */
 const DC_ENTRY_TYPES = ['ENTRY_SEGMENT','ENTRY_EVENT','ENTRY_SCHEDULED'];
-const DC_STEP_TYPES = ['SEND','CHANNEL_FAILOVER','PAUSE','WAIT_UNTIL','SPLIT','RANDOM_SPLIT','GOAL_EXIT','EXIT'];
+const DC_STEP_TYPES = ['SEND','CHANNEL_FAILOVER','PAUSE','WAIT_UNTIL','SPLIT','DECISION_SPLIT','RANDOM_SPLIT','GOAL_EXIT','EXIT'];
 const DC_TYPE_SUB = {
   ENTRY_SEGMENT:'Static or dynamic cohort', ENTRY_EVENT:'Live event, incl. Transaction/EMI/Card Events',
   ENTRY_SCHEDULED:'Calendar date or recurrence', SEND:'Channel, template, timing',
   CHANNEL_FAILOVER:'Sends via a fallback channel if primary delivery fails',
   PAUSE:'Fixed wait duration', WAIT_UNTIL:'Wait for an event, with a timeout',
   SPLIT:'Two bounded sources only — prev. step outcome or entry-event attribute',
+  DECISION_SPLIT:'Branch by ranges or values of one attribute — first match wins, plus a catch-all',
   RANDOM_SPLIT:'Creative A/B, % allocation', GOAL_EXIT:'Objective achieved', EXIT:'Sequence ran out, no goal met',
 };
-let dripWiz = null; // { id, isEdit, versionOf, name, goal, controlPct, root, addingAt, addingType, pendingConfig }
+let dripWiz = null; // { id, isEdit, versionOf, name, goal, controlPct, nodes, edges, rootId, addingAt, addingType, editingNodeId, pendingConfig }
 
-function dcEmptyGoalCheck(question){
-  return n('SPLIT', question, 'Goal check, auto-inserted after every Send', [
-    {...n('GOAL_EXIT', question.replace(/\?$/,''), '', [], 'Yes'), autoGenerated:true},
-    { type:'EMPTY', branchLabel:'No', children:[] },
-  ]);
+// Builds the auto goal-check Split (+ its auto Yes -> GOAL_EXIT, matching
+// dcEmptyGoalCheck's old tree shape) directly into dripWiz's own graph,
+// wired from fromNodeId. Only ever used inside the live builder (never
+// for the seed campaigns below, which are authored as a tree and
+// converted wholesale by dcTreeToGraph), so it reads/writes dripWiz
+// directly rather than taking nodes/edges as parameters.
+function dcAddAutoGoalCheck(fromNodeId, question){
+  const splitId = dcNewNodeId(), goalId = dcNewNodeId();
+  dripWiz.nodes[splitId] = {id:splitId, type:'SPLIT', label:question, meta:'Goal check, auto-inserted after every Send', _config:null, autoGenerated:false};
+  dripWiz.nodes[goalId] = {id:goalId, type:'GOAL_EXIT', label:question.replace(/\?$/,''), meta:'', _config:null, autoGenerated:true};
+  dripWiz.edges.push({id:dcNewEdgeId(), from:fromNodeId, to:splitId, branchLabel:'', autoGenerated:false});
+  dripWiz.edges.push({id:dcNewEdgeId(), from:splitId, to:goalId, branchLabel:'Yes', autoGenerated:true});
+  dripWiz.edges.push({id:dcNewEdgeId(), from:splitId, to:null, branchLabel:'No', autoGenerated:false});
+}
+function dcRootNode(graph){ return graph && graph.rootId ? graph.nodes[graph.rootId] : null; }
+// Reseeds the id counters past whatever a cloned-in campaign already
+// uses, so any new node/edge created while continuing to edit it can
+// never collide with an id that graph already has.
+function dcSeedIdCountersFrom(graph){
+  let maxN=0, maxE=0, maxB=0;
+  Object.keys(graph.nodes).forEach(id=>{ const m=+String(id).replace('dcn',''); if(m>maxN) maxN=m; });
+  graph.edges.forEach(e=>{
+    const m=+String(e.id).replace('dce',''); if(m>maxE) maxE=m;
+    if(e.branchId){ const mb=+String(e.branchId).replace('dcb',''); if(mb>maxB) maxB=mb; }
+  });
+  dcNodeIdSeq = maxN+1; dcEdgeIdSeq = maxE+1; dcBranchIdSeq = maxB+1;
 }
 function openDripCreate(){
+  dcNodeIdSeq = 1; dcEdgeIdSeq = 1; dcBranchIdSeq = 1;
   dripWiz = { id:null, isEdit:false, isDraftContinuation:false, versionOf:null, name:'', goal:null, controlPct:10,
-    issuer:'', programs:[], startDate:'', endDate:'', entryEventCategory:null, step:'setup', root:null, addingAt:null, addingType:null, editingPath:null, pendingConfig:{} };
+    issuer:'', programs:[], startDate:'', endDate:'', entryEventCategory:null, step:'setup',
+    nodes:{}, edges:[], rootId:null, addingAt:null, addingType:null, editingNodeId:null, pendingConfig:{} };
   switchPage('drip-create');
 }
 // Continuing a not-yet-live Draft — edited in place, no versioning. A
@@ -8488,10 +8809,13 @@ function openDripCreate(){
 // once something has actually gone out to real customers.
 function openDripEditDraft(id){
   const c = DRIP_CAMPAIGNS.find(x=>x.id===id);
+  const clonedRoot = c.root ? JSON.parse(JSON.stringify(c.root)) : {nodes:{}, edges:[], rootId:null};
+  dcSeedIdCountersFrom(clonedRoot);
+  const rn = dcRootNode(clonedRoot);
   dripWiz = { id:c.id, isEdit:false, isDraftContinuation:true, versionOf:null, name:c.name, goal:c.goal?{...c.goal}:null,
     controlPct:c.controlPct, issuer:c.issuer||'', programs:c.programs?[...c.programs]:[], startDate:c.startDate||'', endDate:c.endDate||'',
-    entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null, step:'build',
-    root: c.root?JSON.parse(JSON.stringify(c.root)):null, addingAt:null, addingType:null, editingPath:null, pendingConfig:{} };
+    entryEventCategory: rn&&rn.type==='ENTRY_EVENT' ? rn.meta.split(' · ')[0] : null, step:'build',
+    nodes:clonedRoot.nodes, edges:clonedRoot.edges, rootId:clonedRoot.rootId, addingAt:null, addingType:null, editingNodeId:null, pendingConfig:{} };
   switchPage('drip-create');
 }
 function dcNextId(){ return 'DRIP-'+String(Math.max(...DRIP_CAMPAIGNS.map(c=>parseInt(c.id.split('-')[1])))+1).padStart(3,'0'); }
@@ -8544,40 +8868,46 @@ function dcRenderGoalDrawer(){
 }
 function openDripEdit(id){
   const c = DRIP_CAMPAIGNS.find(x=>x.id===id);
+  const clonedRoot = JSON.parse(JSON.stringify(c.root));
+  dcSeedIdCountersFrom(clonedRoot);
+  const rn = dcRootNode(clonedRoot);
   // Start/End Date deliberately reset, not inherited — a new version's
   // activation timing is its own fresh decision, not a copy-forward.
   dripWiz = { id:null, isEdit:true, isDraftContinuation:false, versionOf:c.id, name:c.name, goal:c.goal?{...c.goal}:null,
     controlPct:c.controlPct, issuer:c.issuer||'', programs:c.programs?[...c.programs]:[], startDate:'', endDate:'',
-    entryEventCategory: c.root&&c.root.type==='ENTRY_EVENT' ? c.root.meta.split(' · ')[0] : null, step:'build',
-    root: JSON.parse(JSON.stringify(c.root)), addingAt:null, addingType:null, editingPath:null, pendingConfig:{} };
+    entryEventCategory: rn&&rn.type==='ENTRY_EVENT' ? rn.meta.split(' · ')[0] : null, step:'build',
+    nodes:clonedRoot.nodes, edges:clonedRoot.edges, rootId:clonedRoot.rootId, addingAt:null, addingType:null, editingNodeId:null, pendingConfig:{} };
   switchPage('drip-create');
 }
-// Path = array of child indices from root; null path means "root itself".
-function dcGetAt(path){
-  let node = dripWiz.root;
-  for(const i of path) node = node.children[i];
-  return node;
+// Resolves whichever node the current "add" action is really adding FROM
+// — an edge's own .from for a branch slot, or the node itself for a
+// leaf that's growing its first step. Root has no source.
+function dcAddingAtSourceId(){
+  const a = dripWiz.addingAt;
+  if(!a) return null;
+  if(a.kind==='edge'){ const e = dripWiz.edges.find(x=>x.id===a.edgeId); return e?e.from:null; }
+  if(a.kind==='growLeaf') return a.nodeId;
+  return null;
 }
-function dcParentOf(path){
-  let node = dripWiz.root;
-  for(let k=0;k<path.length-1;k++) node = node.children[path[k]];
-  return node;
-}
-// The channel of the most recent Send before this point in the tree — NOT
-// just the immediate parent, since every Send auto-inserts its own
-// goal-check Split as a child (dcEmptyGoalCheck()), so a user-added Split
-// almost always has that auto-Split as its direct parent, never the Send
-// itself. Walks upward from the insertion/edit point until it hits a real
-// Send, transparently skipping over that plumbing (and any Pause/Wait
-// Until in between) — "previous step outcome" means "how did the last
-// message we actually sent perform," not "whatever structural node is
-// directly above this one."
+// The channel of the most recent Send before this point in the graph —
+// NOT just the immediate parent, since every Send auto-inserts its own
+// goal-check Split right after it (dcAddAutoGoalCheck()), so a user-added
+// Split almost always has that auto-Split as its direct parent, never the
+// Send itself. Walks backward via incoming edges from the insertion/edit
+// point until it hits a real Send, transparently skipping over that
+// plumbing (and any Pause/Wait Until in between) — "previous step
+// outcome" means "how did the last message we actually sent perform,"
+// not "whatever node is directly above this one." For a node reached by
+// more than one edge (a real merge), this follows whichever incoming
+// edge happens to be found first — a known, acceptable simplification,
+// not a correctness guarantee for every possible merged path.
 function dcPreviousStepChannel(){
-  const path = dripWiz.editingPath !== null ? dripWiz.editingPath : dripWiz.addingAt;
-  if(!path) return null;
-  for(let k=path.length; k>=0; k--){
-    const node = k===0 ? dripWiz.root : dcGetAt(path.slice(0,k));
-    if(node && node.type==='SEND' && node._config) return node._config.channel;
+  let nodeId = dripWiz.editingNodeId!==null ? dripWiz.editingNodeId : dcAddingAtSourceId();
+  while(nodeId){
+    const nd = dripWiz.nodes[nodeId];
+    if(nd && nd.type==='SEND' && nd._config) return nd._config.channel;
+    const inc = dripWiz.edges.find(e=>e.to===nodeId);
+    nodeId = inc ? inc.from : null;
   }
   return null;
 }
@@ -8587,12 +8917,16 @@ function dcPreviousStepChannel(){
 // action and result. Reuses the same generic #sideDrawer component real
 // ironbank-face uses for Communication Configure etc. (see its CSS
 // comment), not a new pattern invented just for this page.
-function dcSelectAddAt(path){
-  dripWiz.addingAt = path; dripWiz.addingType = null; dripWiz.pendingConfig = {};
+// kind: 'edge' (filling an existing open branch slot, ref = edge id),
+// 'growLeaf' (a non-branching leaf's first next step, ref = node id), or
+// 'root' (the very first Add Entry click, ref unused).
+function dcSelectAddAt(kind, ref){
+  dripWiz.addingAt = kind==='edge' ? {kind, edgeId:ref} : kind==='growLeaf' ? {kind, nodeId:ref} : {kind:'root'};
+  dripWiz.addingType = null; dripWiz.pendingConfig = {}; dripWiz._connectMode = false; dripWiz._connectSearch = '';
   renderDripBuilder();
   dcRenderAddDrawer();
 }
-function dcCancelAdd(){ dripWiz.addingAt = null; dripWiz.addingType = null; closeSideDrawer(); renderDripBuilder(); }
+function dcCancelAdd(){ dripWiz.addingAt = null; dripWiz.addingType = null; dripWiz._connectMode = false; closeSideDrawer(); renderDripBuilder(); }
 // Event Category -> the ELIGIBILITY_META entity carrying its real typed
 // attributes, reused as-is rather than duplicating attribute lists.
 // Journey/Offer/Card Events have no such entity yet (Card Events is
@@ -8715,13 +9049,15 @@ function dcPickType(type){
   dripWiz.pendingConfig = {
     ENTRY_SEGMENT:{cohortDesc:'All eligible customers', entity:'Customer', conditions:[]},
     ENTRY_EVENT:{eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:'', conditions:[]},
-    ENTRY_SCHEDULED:{recurrenceType:'Monthly', dayOfMonth:'1', weekInterval:'1', dayOfWeek:'Monday', dayInterval:'1', timeOfDay:'09:00'},
+    ENTRY_SCHEDULED:{recurrenceType:'Monthly', dayOfMonth:'1', weekInterval:'1', dayOfWeek:'Monday', dayInterval:'1', timeOfDay:'09:00', entity:'Customer', conditions:[]},
     SEND:{name:'Send Message', channel:'WHATSAPP', account:'', templateId:'', timing:'Absolute', absTime:'11:00',
       relativeAnchor:'Previous Step', relativeDuration:1, relativeUnit:'days'},
-    CHANNEL_FAILOVER:{primaryChannel:'WHATSAPP', fallbackChannel:'SMS'},
+    CHANNEL_FAILOVER:{primaryChannel:'WHATSAPP', fallbackChannel:'SMS', account:'', templateId:''},
     PAUSE:{duration:2, unit:'days'},
     WAIT_UNTIL:{eventCategory:Object.keys(EVENT_CATEGORIES)[0], eventType:'', duration:7, unit:'days', conditions:[]},
     SPLIT:{basis:'Goal reached', customSource:'Previous step outcome', outcome:'Clicked', customConditions:[]},
+    DECISION_SPLIT:{name:'Decision', source:'Account attribute', attribute:'', outcome:'Clicked',
+      branches:[{label:'Branch 1', operator:'Equals', value:'', value2:''},{label:'Branch 2', operator:'Equals', value:'', value2:''}]},
     RANDOM_SPLIT:{name:'Channel test', branches:[{label:'A', pct:50},{label:'B', pct:50}]},
     GOAL_EXIT:{reason:dcGoalLabel(dripWiz.goal)||'Goal achieved'},
     EXIT:{reason:'Sequence exhausted'},
@@ -8741,37 +9077,122 @@ function dcConfigField(key,val){
 function dcRandomBranchField(i,key,val){ dripWiz.pendingConfig.branches[i][key]=val; dcRenderAddDrawer(); }
 function dcAddRandomBranch(){
   const b = dripWiz.pendingConfig.branches;
-  b.push({label:String.fromCharCode(65+b.length), pct:0});
+  b.push({id:dcNewBranchId(), label:String.fromCharCode(65+b.length), pct:0});
+  dcRenderAddDrawer();
+}
+// Inserts a new branch right after index i (i===-1 inserts before the
+// very first branch) — the real fix for "I want a branch in between,
+// not just appended at the end." A fresh id means dcConfirmEditNode can
+// tell this apart from every existing branch regardless of where it
+// lands in the array, so it gets its own new open edge without
+// disturbing any branch that already has a subtree built under it.
+function dcInsertRandomBranch(i){
+  const b = dripWiz.pendingConfig.branches;
+  b.splice(i+1, 0, {id:dcNewBranchId(), label:String.fromCharCode(65+b.length), pct:0});
   dcRenderAddDrawer();
 }
 function dcRemoveRandomBranch(i){ dripWiz.pendingConfig.branches.splice(i,1); dcRenderAddDrawer(); }
+// Decision Split's own branch list — same shape of helper as Random
+// Split's (field/add/remove/insert), but each branch carries a real
+// condition (operator+value) instead of a percentage, since branches
+// here are evaluated top-to-bottom by which one actually matches, not
+// allocated.
+function dcDecisionBranchField(i,key,val){ dripWiz.pendingConfig.branches[i][key]=val; dcRenderAddDrawer(); }
+function dcAddDecisionBranch(){
+  const b = dripWiz.pendingConfig.branches;
+  b.push({id:dcNewBranchId(), label:'Branch '+(b.length+1), operator:'Equals', value:'', value2:''});
+  dcRenderAddDrawer();
+}
+function dcInsertDecisionBranch(i){
+  const b = dripWiz.pendingConfig.branches;
+  b.splice(i+1, 0, {id:dcNewBranchId(), label:'Branch '+(b.length+1), operator:'Equals', value:'', value2:''});
+  dcRenderAddDrawer();
+}
+function dcRemoveDecisionBranch(i){ dripWiz.pendingConfig.branches.splice(i,1); dcRenderAddDrawer(); }
+// Thin hover-reveal "+" strip rendered ABOVE a branch row — clicking it
+// inserts a new branch right there, not just at the end. insertFnName(-1)
+// (used before the first row) inserts at the very start. Shared across
+// all 3 branch-list renders (Decision Split's two source variants, Random
+// Split) rather than repeating the markup three times.
+function dcBranchInsertRowHtml(insertFnName, i){
+  return `<div class="dcb-insert-row" onclick="${insertFnName}(${i})" title="Insert a branch here"><span class="dcb-insert-plus">+</span></div>`;
+}
 function dcAddFormValid(t){
   const p = dripWiz.pendingConfig;
   if(t==='ENTRY_EVENT'||t==='WAIT_UNTIL') return !!p.eventType;
   if(t==='SEND') return !!(p.account && p.templateId);
   if(t==='RANDOM_SPLIT') return p.branches.reduce((s,b)=>s+Number(b.pct||0),0)===100;
-  if(t==='CHANNEL_FAILOVER') return !!(p.primaryChannel && p.fallbackChannel && p.primaryChannel!==p.fallbackChannel);
+  if(t==='CHANNEL_FAILOVER') return !!(p.primaryChannel && p.fallbackChannel && p.primaryChannel!==p.fallbackChannel && p.account && p.templateId);
+  if(t==='DECISION_SPLIT'){
+    if(p.source!=='Previous step outcome' && !p.attribute) return false;
+    return p.branches.length>0 && p.branches.every(b => b.value!=='' && b.value!=null && (b.operator!=='Between' || (b.value2!=='' && b.value2!=null)));
+  }
   return true;
 }
 function dcRenderAddDrawer(){
-  const isEditing = dripWiz.editingPath!==null;
-  const isEntry = dripWiz.root===null;
+  const isEditing = dripWiz.editingNodeId!==null;
+  const isEntry = dripWiz.rootId===null;
   const types = isEntry ? DC_ENTRY_TYPES : DC_STEP_TYPES;
   const t = dripWiz.addingType;
   const cancelFn = isEditing ? 'dcCancelEdit' : 'dcCancelAdd';
+  const sourceId = isEditing ? null : dcAddingAtSourceId();
+  const canConnect = !isEditing && !isEntry && sourceId && dcValidMergeTargets(sourceId).length>0;
+  const connectMode = !isEditing && dripWiz._connectMode;
+  const primaryDisabled = connectMode ? !dripWiz._connectTarget : !(t&&dcAddFormValid(t));
+  const primaryFn = connectMode ? 'dcConfirmConnectExisting' : (isEditing?'dcConfirmEditNode':'dcConfirmAddNode');
+  const primaryLabel = connectMode ? 'Connect' : (isEditing?'Save Changes':(isEntry?'Add Entry':'Add Step'));
   openSideDrawer(`
     <div class="sd-head">
       <div class="sd-title">${isEditing?'Edit Step':(isEntry?'Add Entry':'Add Next Step')}</div>
       <button class="drawer-close" onclick="${cancelFn}()">×</button>
     </div>
     <div class="sd-body">
-      ${isEditing?'':dcTypePickerHtml(types)}
-      ${t?dcDrawerFormFor(t):''}
+      ${isEditing?'':dcTypePickerHtml(types, canConnect)}
+      ${connectMode ? dcConnectExistingHtml(sourceId) : (t?dcDrawerFormFor(t):'')}
     </div>
     <div class="sd-foot">
       <button class="btn secondary" onclick="${cancelFn}()">Cancel</button>
-      <button class="btn primary" ${!(t&&dcAddFormValid(t))?'disabled style="opacity:.5;"':''} onclick="${isEditing?'dcConfirmEditNode':'dcConfirmAddNode'}()">${isEditing?'Save Changes':(isEntry?'Add Entry':'Add Step')}</button>
+      <button class="btn primary" ${primaryDisabled?'disabled style="opacity:.5;"':''} onclick="${primaryFn}()">${primaryLabel}</button>
     </div>`, 620);
+}
+// "Connect to an Existing Step" — the real fix for the duplication
+// problem two branches hit when they both eventually need to do the same
+// thing (e.g. "wait 3 days, then send a reminder"): point this branch at
+// a step that's already built, instead of rebuilding it. Adds one edge,
+// creates no new node — since it's the SAME node afterward, there's only
+// ever one place to edit it, and editing it updates every path that
+// reaches it.
+function dcEnterConnectMode(){
+  dripWiz._connectMode = true; dripWiz.addingType = null;
+  dripWiz._connectSearch = ''; dripWiz._connectTarget = null;
+  dcRenderAddDrawer();
+}
+function dcConnectExistingHtml(sourceId){
+  const q = (dripWiz._connectSearch||'').toLowerCase();
+  const targets = dcValidMergeTargets(sourceId).filter(nd => !q || nd.label.toLowerCase().includes(q) || DC_NODE_META[nd.type].type.toLowerCase().includes(q));
+  return `
+    <p class="f-hint" style="margin-top:0;">Pick a step already built elsewhere in this campaign. Nothing gets duplicated — this branch will lead into that exact step, and editing it from anywhere updates it everywhere.</p>
+    <div class="f-group"><label class="f-label">Search steps</label>
+      <input class="f-input" type="text" placeholder="Type a step name..." value="${dripWiz._connectSearch||''}" oninput="dripWiz._connectSearch=this.value;dcRenderAddDrawer()">
+    </div>
+    <div style="max-height:280px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;">
+      ${targets.length?targets.map(nd=>`
+        <div onclick="dcSelectConnectTarget('${nd.id}')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--gray-100);${dripWiz._connectTarget===nd.id?'background:var(--info-bg);':''}">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--gray-500);">${DC_NODE_META[nd.type].type}</div>
+          <div style="font-size:12.5px;font-weight:600;">${nd.label}</div>
+        </div>`).join('') : `<div style="padding:14px;color:var(--gray-500);font-size:12.5px;">No matching steps${dripWiz._connectSearch?' for "'+dripWiz._connectSearch+'"':''}.</div>`}
+    </div>`;
+}
+function dcSelectConnectTarget(id){ dripWiz._connectTarget = id; dcRenderAddDrawer(); }
+function dcConfirmConnectExisting(){
+  const targetId = dripWiz._connectTarget;
+  if(!targetId) return;
+  const a = dripWiz.addingAt;
+  if(a.kind==='edge'){ dripWiz.edges.find(e=>e.id===a.edgeId).to = targetId; }
+  else if(a.kind==='growLeaf'){ dripWiz.edges.push({id:dcNewEdgeId(), from:a.nodeId, to:targetId, branchLabel:'', autoGenerated:false}); }
+  dripWiz.addingAt = null; dripWiz._connectMode = false; dripWiz._connectTarget = null;
+  closeSideDrawer();
+  renderDripBuilder();
 }
 // Short readable summary of a condition array for a node's meta line —
 // "Amount = 2000, MCC = 5411" rather than making a reviewer open the
@@ -8788,30 +9209,45 @@ function dcCondSummary(conditions){
     return `${c.attribute} ${c.operator==='Not Equals'?'≠':c.operator==='Equals'?'=':c.operator||'='} ${c.value}`;
   }).join(', ');
 }
+// Short readable summary of one Decision Split branch's own condition —
+// used both for its edge's branchLabel on the canvas and the node's own
+// meta line. "Previous step outcome" branches have no operator concept
+// (always an exact status match), everything else mirrors dcCondSummary's
+// operator formatting.
+function dcDecisionBranchSummary(p, b){
+  if(p.source==='Previous step outcome') return b.value || '(unset)';
+  if(b.operator==='Between') return `${b.value||'?'}–${b.value2||'?'}`;
+  if(b.operator==='Greater than') return `> ${b.value||'?'}`;
+  if(b.operator==='Less than') return `< ${b.value||'?'}`;
+  if(b.operator==='Not Equals') return `≠ ${b.value||'?'}`;
+  return b.value || '(unset)';
+}
+// Builds the new node itself (via dcRecomputeLabelMeta, so label/meta
+// logic lives in exactly one place, shared with editing), then any
+// type-specific auto-children as real graph nodes/edges (a Send's own
+// goal-check, a Wait Until's outcome check, a Split's auto Yes-branch,
+// a Random Split's N open arms), then attaches the whole thing to
+// whichever "+"/drawer this add action started from.
 function dcConfirmAddNode(){
   const t = dripWiz.addingType, p = dripWiz.pendingConfig;
-  let node;
-  if(t==='ENTRY_SEGMENT'){
-    const condSummary = dcCondSummary(p.conditions);
-    node = n('ENTRY_SEGMENT', p.cohortDesc, condSummary ? `${p.entity} · ${condSummary}` : `${p.entity} · no conditions — static snapshot`);
+  const {label, meta} = dcRecomputeLabelMeta(t, p);
+  const id = dcNewNodeId();
+  dripWiz.nodes[id] = {id, type:t, label, meta, _config:JSON.parse(JSON.stringify(p)), autoGenerated:false};
+
+  // Goal check fires after every step that represents either a real send
+  // (Send, Channel Failover) or real time passing (Pause) — not just
+  // after a Send. A customer can convert on their own while a campaign
+  // is mid-wait, and without a check right after the Pause, the next
+  // scheduled action would fire blindly regardless of whether they'd
+  // already hit the goal. Caught directly: "what if in Pause 2 days I
+  // add a Send node — we should add check after every node right?"
+  // Wait Until is the one exception — it already has its own real
+  // outcome check (see below), which is a more precise version of this
+  // same idea, not something to layer a second generic check on top of.
+  if(t==='SEND' || t==='CHANNEL_FAILOVER' || t==='PAUSE'){
+    dcAddAutoGoalCheck(id, (dcGoalLabel(dripWiz.goal)||'Goal')+'?');
   }
-  else if(t==='ENTRY_EVENT'){
-    dripWiz.entryEventCategory = p.eventCategory;
-    const condSummary = dcCondSummary(p.conditions);
-    node = n('ENTRY_EVENT', p.eventType||'Event Trigger', condSummary ? `${p.eventCategory} · ${condSummary}` : p.eventCategory);
-  }
-  else if(t==='ENTRY_SCHEDULED') node = n('ENTRY_SCHEDULED', 'Scheduled entry', dcRecurrenceLabel(p));
-  else if(t==='SEND'){
-    const tmpl = COMMS_TEMPLATES.find(x=>x.id===p.templateId);
-    const timingLabel = p.timing==='Absolute' ? p.absTime : `${p.relativeDuration} ${p.relativeUnit} after ${p.relativeAnchor}`;
-    const meta = `${CHANNEL_CONFIG_LABELS[p.channel]} · ${p.account} · ${timingLabel}${tmpl?' · Template: '+tmpl.name:''}`;
-    node = n('SEND', p.name, meta, [dcEmptyGoalCheck((dcGoalLabel(dripWiz.goal)||'Goal')+'?')]);
-  }
-  else if(t==='CHANNEL_FAILOVER') node = n('CHANNEL_FAILOVER', `${CHANNEL_CONFIG_LABELS[p.primaryChannel]} → ${CHANNEL_CONFIG_LABELS[p.fallbackChannel]}`, 'Retries on fallback if primary delivery fails');
-  else if(t==='PAUSE') node = n('PAUSE', `Wait ${p.duration} ${p.unit}`, '');
   else if(t==='WAIT_UNTIL'){
-    const label = p.eventType||'Wait Until';
-    const condSummary = dcCondSummary(p.conditions);
     // The event firing at all is only "success" when it's unambiguous
     // (Card Activated, RP Redeemed). For anything with a real outcome
     // attribute (EMI Request's New Status — Successful/Failed/Expired/
@@ -8821,73 +9257,71 @@ function dcConfirmAddNode(){
     // instead, same principle as the auto goal-check after every Send.
     const entity = DC_EVENT_ENTITY[p.eventCategory];
     const statusAttr = DC_PROMOTED_ATTR[entity];
-    let yesChild;
     if(statusAttr){
       const goal = dripWiz.goal;
       const goalMatchesThisEvent = goal && goal.eventCategory===p.eventCategory && goal.eventType===p.eventType;
       const goalCond = goalMatchesThisEvent ? (goal.conditions||[]).find(c=>c.attribute===statusAttr) : null;
+      const splitId = dcNewNodeId();
       if(goalCond){
         // This Wait Until is waiting on the exact same event the
         // campaign's Goal is defined against — the outcome check can
         // be built for real: matches the goal's value -> actually the
         // goal; anything else -> an honest, non-success exit.
-        yesChild = {...n('SPLIT', `${statusAttr} = ${goalCond.value}?`, 'Outcome check, auto-inserted after Wait Until', [
-          {...n('GOAL_EXIT', dcGoalLabel(goal), '', [], 'Yes'), autoGenerated:true},
-          n('EXIT', `Resolved, but not to the goal outcome (${statusAttr} ≠ ${goalCond.value})`, '', [], 'No'),
-        ]), autoGenerated:true};
+        dripWiz.nodes[splitId] = {id:splitId, type:'SPLIT', label:`${statusAttr} = ${goalCond.value}?`, meta:'Outcome check, auto-inserted after Wait Until', _config:null, autoGenerated:true};
+        const goalExitId = dcNewNodeId(), exitId = dcNewNodeId();
+        dripWiz.nodes[goalExitId] = {id:goalExitId, type:'GOAL_EXIT', label:dcGoalLabel(goal), meta:'', _config:null, autoGenerated:true};
+        dripWiz.nodes[exitId] = {id:exitId, type:'EXIT', label:`Resolved, but not to the goal outcome (${statusAttr} ≠ ${goalCond.value})`, meta:'', _config:null, autoGenerated:false};
+        dripWiz.edges.push({id:dcNewEdgeId(), from:id, to:splitId, branchLabel:'', autoGenerated:true});
+        dripWiz.edges.push({id:dcNewEdgeId(), from:splitId, to:goalExitId, branchLabel:'Yes', autoGenerated:true});
+        dripWiz.edges.push({id:dcNewEdgeId(), from:splitId, to:exitId, branchLabel:'No', autoGenerated:false});
       } else {
         // Waiting on a multi-outcome event that ISN'T what the Goal is
         // defined against (or no Goal set at all) — there's no correct
         // default here, so don't guess. Leave both branches open and
         // say why, rather than silently assuming success.
-        yesChild = {...n('SPLIT', `${statusAttr}?`, 'Define what counts as success for this outcome — not the campaign Goal, so nothing is auto-filled', [
-          { type:'EMPTY', branchLabel:'Success outcome', children:[] },
-          { type:'EMPTY', branchLabel:'Other outcome', children:[] },
-        ]), autoGenerated:true};
+        dripWiz.nodes[splitId] = {id:splitId, type:'SPLIT', label:`${statusAttr}?`, meta:'Define what counts as success for this outcome — not the campaign Goal, so nothing is auto-filled', _config:null, autoGenerated:true};
+        dripWiz.edges.push({id:dcNewEdgeId(), from:id, to:splitId, branchLabel:'', autoGenerated:true});
+        dripWiz.edges.push({id:dcNewEdgeId(), from:splitId, to:null, branchLabel:'Success outcome', autoGenerated:false});
+        dripWiz.edges.push({id:dcNewEdgeId(), from:splitId, to:null, branchLabel:'Other outcome', autoGenerated:false});
       }
     } else {
-      yesChild = {...n('GOAL_EXIT', label, '', [], 'Yes'), autoGenerated:true};
+      const goalExitId = dcNewNodeId();
+      dripWiz.nodes[goalExitId] = {id:goalExitId, type:'GOAL_EXIT', label, meta:'', _config:null, autoGenerated:true};
+      dripWiz.edges.push({id:dcNewEdgeId(), from:id, to:goalExitId, branchLabel:'Yes', autoGenerated:true});
     }
-    node = n('WAIT_UNTIL', label, `Timeout after ${p.duration} ${p.unit} · ${p.eventCategory}${condSummary?' · '+condSummary:''}`, [
-      yesChild, { type:'EMPTY', branchLabel:'No', children:[] },
-    ]);
+    dripWiz.edges.push({id:dcNewEdgeId(), from:id, to:null, branchLabel:'No', autoGenerated:false});
   }
   else if(t==='SPLIT'){
-    const goalQ = (dcGoalLabel(dripWiz.goal)||'Goal')+'?';
-    const question = p.basis==='Goal reached' ? goalQ : (p.customSource==='Previous step outcome' ? `Previous step: ${p.outcome}?` : (dcCondSummary(p.customConditions)||'Custom condition')+'?');
-    node = n('SPLIT', question, p.basis==='Goal reached'?'Goal check':'Custom condition split', [
-      {...n('GOAL_EXIT', question.replace(/\?$/,''), '', [], 'Yes'), autoGenerated:true}, { type:'EMPTY', branchLabel:'No', children:[] },
-    ]);
+    const goalExitId = dcNewNodeId();
+    dripWiz.nodes[goalExitId] = {id:goalExitId, type:'GOAL_EXIT', label:label.replace(/\?$/,''), meta:'', _config:null, autoGenerated:true};
+    dripWiz.edges.push({id:dcNewEdgeId(), from:id, to:goalExitId, branchLabel:'Yes', autoGenerated:true});
+    dripWiz.edges.push({id:dcNewEdgeId(), from:id, to:null, branchLabel:'No', autoGenerated:false});
+  }
+  else if(t==='DECISION_SPLIT'){
+    // One open edge per real branch, evaluated top-to-bottom on the
+    // canvas the same order they're listed here, plus one final fixed
+    // "Anything else" catch-all edge — a real, always-present slot, not
+    // just implied, so it has somewhere to route to like everything else.
+    p.branches.forEach(b=>{
+      if(!b.id) b.id = dcNewBranchId();
+      dripWiz.edges.push({id:dcNewEdgeId(), from:id, to:null, branchLabel:`${b.label} (${dcDecisionBranchSummary(p,b)})`, branchId:b.id, autoGenerated:false});
+    });
+    dripWiz.edges.push({id:dcNewEdgeId(), from:id, to:null, branchLabel:'Anything else', autoGenerated:false});
   }
   else if(t==='RANDOM_SPLIT'){
-    node = n('RANDOM_SPLIT', p.name, p.branches.map(b=>`${b.label} ${b.pct}%`).join(' / ')+' allocation',
-      p.branches.map(b=>({type:'EMPTY', branchLabel:`${b.label} (${b.pct}%)`, children:[]})));
+    p.branches.forEach(b=>{
+      if(!b.id) b.id = dcNewBranchId();
+      dripWiz.edges.push({id:dcNewEdgeId(), from:id, to:null, branchLabel:`${b.label} (${b.pct}%)`, branchId:b.id, autoGenerated:false});
+    });
   }
-  else if(t==='GOAL_EXIT') node = n('GOAL_EXIT', p.reason, '');
-  else if(t==='EXIT') node = n('EXIT', p.reason, '');
 
-  // Stored so a later edit can round-trip cleanly from real structured
-  // fields instead of trying to reverse-parse a display string like
-  // "WhatsApp · IBL-Karix-Txns · 11:00 · Template: ..." back into
-  // channel/account/templateId, which would be fragile and lossy.
-  node._config = JSON.parse(JSON.stringify(p));
+  if(t==='ENTRY_EVENT') dripWiz.entryEventCategory = p.eventCategory;
 
-  if(dripWiz.root===null){ dripWiz.root = node; }
-  else {
-    const target = dcGetAt(dripWiz.addingAt);
-    if(target && target.type==='EMPTY'){
-      // Filling a branch slot (Yes/No, or a Random Split arm) — replace the
-      // placeholder in place, keeping its branch label.
-      const parent = dcParentOf(dripWiz.addingAt);
-      const idx = dripWiz.addingAt[dripWiz.addingAt.length-1];
-      node.branchLabel = target.branchLabel;
-      parent.children[idx] = node;
-    } else {
-      // Growing a real leaf (incl. root itself once it has an entry but no
-      // children yet) — append as its first/next child, don't replace it.
-      target.children.push(node);
-    }
-  }
+  const a = dripWiz.addingAt;
+  if(a.kind==='root'){ dripWiz.rootId = id; }
+  else if(a.kind==='edge'){ dripWiz.edges.find(e=>e.id===a.edgeId).to = id; }
+  else if(a.kind==='growLeaf'){ dripWiz.edges.push({id:dcNewEdgeId(), from:a.nodeId, to:id, branchLabel:'', autoGenerated:false}); }
+
   dripWiz.addingAt = null; dripWiz.addingType = null;
   closeSideDrawer();
   renderDripBuilder();
@@ -8907,13 +9341,20 @@ function dcRecomputeLabelMeta(type, p){
     const condSummary = dcCondSummary(p.conditions);
     return { label:p.eventType||'Event Trigger', meta: condSummary ? `${p.eventCategory} · ${condSummary}` : p.eventCategory };
   }
-  if(type==='ENTRY_SCHEDULED') return { label:'Scheduled entry', meta:dcRecurrenceLabel(p) };
+  if(type==='ENTRY_SCHEDULED'){
+    const condSummary = dcCondSummary(p.conditions);
+    return { label:'Scheduled entry', meta:`${dcRecurrenceLabel(p)} · ${p.entity}${condSummary?': '+condSummary:' (everyone matching)'}` };
+  }
   if(type==='SEND'){
     const tmpl = COMMS_TEMPLATES.find(x=>x.id===p.templateId);
     const timingLabel = p.timing==='Absolute' ? p.absTime : `${p.relativeDuration} ${p.relativeUnit} after ${p.relativeAnchor}`;
     return { label:p.name, meta:`${CHANNEL_CONFIG_LABELS[p.channel]} · ${p.account} · ${timingLabel}${tmpl?' · Template: '+tmpl.name:''}` };
   }
-  if(type==='CHANNEL_FAILOVER') return { label:`${CHANNEL_CONFIG_LABELS[p.primaryChannel]} → ${CHANNEL_CONFIG_LABELS[p.fallbackChannel]}`, meta:'Retries on fallback if primary delivery fails' };
+  if(type==='CHANNEL_FAILOVER'){
+    const tmpl = COMMS_TEMPLATES.find(x=>x.id===p.templateId);
+    return { label:`${CHANNEL_CONFIG_LABELS[p.primaryChannel]} → ${CHANNEL_CONFIG_LABELS[p.fallbackChannel]}`,
+      meta:`${p.account||''}${tmpl?' · Template: '+tmpl.name:''} · Retries on fallback if primary delivery fails` };
+  }
   if(type==='PAUSE') return { label:`Wait ${p.duration} ${p.unit}`, meta:'' };
   if(type==='WAIT_UNTIL'){
     const condSummary = dcCondSummary(p.conditions);
@@ -8924,99 +9365,197 @@ function dcRecomputeLabelMeta(type, p){
     const question = p.basis==='Goal reached' ? goalQ : (p.customSource==='Previous step outcome' ? `Previous step: ${p.outcome}?` : (dcCondSummary(p.customConditions)||'Custom condition')+'?');
     return { label:question, meta:p.basis==='Goal reached'?'Goal check':'Custom condition split' };
   }
+  if(type==='DECISION_SPLIT'){
+    const label = p.source==='Previous step outcome' ? 'Previous step outcome' : (p.attribute || 'Decision Split');
+    return { label, meta:`${p.branches.length} branch${p.branches.length===1?'':'es'} + catch-all` };
+  }
   if(type==='RANDOM_SPLIT') return { label:p.name, meta:p.branches.map(b=>`${b.label} ${b.pct}%`).join(' / ')+' allocation' };
   if(type==='GOAL_EXIT'||type==='EXIT') return { label:p.reason, meta:'' };
   return { label:'', meta:'' };
 }
-function dcOpenEditNode(path){
-  const node = dcGetAt(path);
-  if(!node || node.type==='EMPTY') return;
-  dripWiz.editingPath = path;
+// Reconciles a Random Split / Decision Split node's real outgoing edges
+// against its edited branch list, by branch IDENTITY (branch.id / edge
+// .branchId) rather than array position or count. A pure "does the count
+// still match" check (the original design) silently did nothing at all
+// once a branch was added or removed mid-edit — the config would claim
+// N branches while the canvas still only had N-1 real edges, with the
+// new branch configured but completely unreachable. Matching by identity
+// instead means an insert-in-the-middle only ever affects the ONE new
+// branch (gets a fresh open edge) and never touches any other branch's
+// existing edge/subtree, regardless of where in the list it landed.
+// catchAllLabel identifies Decision Split's fixed, always-last "Anything
+// else" edge (a real edge, but not one of the real branches) — matched
+// by its own fixed label, not by branchId==null, since legacy branches
+// built before this identity system existed also have a null branchId
+// and would otherwise be indistinguishable from the catch-all.
+function dcReconcileBranchEdges(nodeId, branches, labelFn, catchAllLabel){
+  const allOuts = dripWiz.edges.filter(e=>e.from===nodeId);
+  const catchAllEdge = catchAllLabel ? allOuts.find(e=>e.branchLabel===catchAllLabel) : null;
+  const branchEdges = allOuts.filter(e=>e!==catchAllEdge);
+  const claimed = new Set();
+  // Pass 1: match by stable branch id — every branch created via Add/
+  // Insert since this system existed already carries one.
+  branches.forEach(b=>{
+    if(!b.id) return;
+    const e = branchEdges.find(e2=>e2.branchId===b.id && !claimed.has(e2));
+    if(e) claimed.add(e);
+  });
+  // Pass 2: positional backfill for legacy branches (built before branch
+  // identity existed, so neither the branch nor its edge has an id yet).
+  // Paired up to whichever is shorter — NOT gated on the two counts
+  // matching exactly, since a same-edit add/remove alongside legacy data
+  // is exactly the real scenario this whole fix exists for: pairing only
+  // the still-aligned prefix correctly keeps every legacy branch attached
+  // to its real original edge/subtree, while any genuinely extra branch
+  // or edge past that point falls through to be handled below as a real
+  // add or real removal.
+  const legacyBranches = branches.filter(b=>!b.id);
+  const legacyEdges = branchEdges.filter(e=>!claimed.has(e));
+  const pairCount = Math.min(legacyBranches.length, legacyEdges.length);
+  for(let i=0;i<pairCount;i++){
+    legacyBranches[i].id = dcNewBranchId();
+    legacyEdges[i].branchId = legacyBranches[i].id;
+    claimed.add(legacyEdges[i]);
+  }
+  // Now every branch either has a matching edge (relabel in place, never
+  // touch .to) or genuinely doesn't (a real insert/append — give it a
+  // fresh open slot).
+  branches.forEach(b=>{
+    if(!b.id) b.id = dcNewBranchId();
+    const e = branchEdges.find(e2=>e2.branchId===b.id);
+    if(e){ e.branchLabel = labelFn(b); }
+    else { dripWiz.edges.push({id:dcNewEdgeId(), from:nodeId, to:null, branchLabel:labelFn(b), branchId:b.id, autoGenerated:false}); }
+  });
+  // Anything left over — an edge whose branch is no longer in the list —
+  // was a real removal. Splice it out and cascade-GC whatever was built
+  // under it, same as removing a branch always has.
+  const keepIds = new Set(branches.map(b=>b.id));
+  branchEdges.filter(e=>!keepIds.has(e.branchId)).forEach(e=>{
+    const idx = dripWiz.edges.indexOf(e);
+    if(idx>-1) dripWiz.edges.splice(idx,1);
+    if(e.to) dcGarbageCollect(e.to);
+  });
+  // Reorder this node's own branch edges (+ catch-all last) to match the
+  // real branches array order. Without this, a branch inserted in the
+  // middle would carry the right label but still render AFTER every
+  // sibling branch on the canvas — a brand-new edge is simply appended to
+  // the shared, whole-graph edges array by the code above, which is
+  // exactly what dcOutgoingEdges' plain filter() preserves as visual/
+  // layout order. Only this node's own edges are touched; every other
+  // node's edges keep their existing relative position untouched.
+  const orderedForThisNode = branches.map(b => dripWiz.edges.find(e=>e.from===nodeId && e.branchId===b.id));
+  if(catchAllEdge) orderedForThisNode.push(catchAllEdge);
+  orderedForThisNode.forEach(e=>{
+    const idx = dripWiz.edges.indexOf(e);
+    if(idx>-1) dripWiz.edges.splice(idx,1);
+  });
+  dripWiz.edges.push(...orderedForThisNode);
+}
+function dcOpenEditNode(nodeId){
+  const node = dripWiz.nodes[nodeId];
+  if(!node) return;
+  dripWiz.editingNodeId = nodeId;
   dripWiz.addingType = node.type;
   dripWiz.pendingConfig = node._config ? JSON.parse(JSON.stringify(node._config)) : {};
   dcRenderAddDrawer();
 }
-function dcCancelEdit(){ dripWiz.editingPath = null; dripWiz.addingType = null; closeSideDrawer(); }
+function dcCancelEdit(){ dripWiz.editingNodeId = null; dripWiz.addingType = null; closeSideDrawer(); }
 function dcConfirmEditNode(){
-  const path = dripWiz.editingPath, t = dripWiz.addingType, p = dripWiz.pendingConfig;
-  const node = dcGetAt(path);
+  const nodeId = dripWiz.editingNodeId, t = dripWiz.addingType, p = dripWiz.pendingConfig;
+  const node = dripWiz.nodes[nodeId];
   const prevConfig = node._config ? JSON.stringify(node._config) : null;
   const {label, meta} = dcRecomputeLabelMeta(t, p);
   node.label = label; node.meta = meta; node._config = JSON.parse(JSON.stringify(p));
-  // Random Split's branches are real tree children (whatever's been
-  // built under each arm must survive) — only relabel in place, and
-  // only when the branch count didn't change during the edit.
-  if(t==='RANDOM_SPLIT' && node.children.length===p.branches.length){
-    p.branches.forEach((b,i)=>{ node.children[i].branchLabel = `${b.label} (${b.pct}%)`; });
+  // Random Split / Decision Split branches are real outgoing edges —
+  // whatever's been built under each arm must survive an edit, including
+  // one that adds, removes, or inserts a branch in the middle (not just
+  // appends). Reconciled by stable branch identity (dcReconcileBranchEdges),
+  // not by array position — see that function's own comment for why a
+  // pure index/count match silently broke this.
+  if(t==='RANDOM_SPLIT'){
+    dcReconcileBranchEdges(nodeId, p.branches, b => `${b.label} (${b.pct}%)`, null);
   }
-  // A Split's Yes-child is auto-built as a GOAL_EXIT at creation time
-  // (dcEmptyGoalCheck) meaning "reaching this condition = the campaign's
-  // goal." Editing the Split's own condition away from "Goal reached" (or
-  // to a different custom source/value) changes what "Yes" actually
-  // means — a stale, untouched auto GOAL_EXIT left in place would keep
-  // implying the OLD condition's success is still the campaign goal.
-  // Caught by actually building a real campaign (a coverage/reach drip
-  // with no goal, using Previous-step-outcome checks for channel
-  // waterfalls) — editing the auto goal-check Split into a real
-  // condition left its Yes-branch silently mislabeled as a goal exit.
-  // Reset ONLY when the condition genuinely changed (not just re-saving
-  // an unmodified Split — that would needlessly wipe a still-accurate
-  // auto Yes-branch) AND the Yes-child is still exactly what
-  // dcEmptyGoalCheck produced, genuinely untouched (nothing built under
-  // it). Anything a user actually customized under it is never touched,
-  // same as every other edit in this function.
-  if(t==='SPLIT' && prevConfig!==JSON.stringify(p) && node.children[0] && node.children[0].type==='GOAL_EXIT'
-     && node.children[0].autoGenerated && node.children[0].children.length===0){
-    node.children[0] = {type:'EMPTY', branchLabel:'Yes', children:[]};
+  if(t==='DECISION_SPLIT'){
+    dcReconcileBranchEdges(nodeId, p.branches, b => `${b.label} (${dcDecisionBranchSummary(p,b)})`, 'Anything else');
   }
-  dripWiz.editingPath = null; dripWiz.addingType = null;
+  // A Split's Yes-branch is auto-built as a GOAL_EXIT at creation time
+  // (dcAddAutoGoalCheck / the SPLIT branch of dcConfirmAddNode) meaning
+  // "reaching this condition = the campaign's goal." Editing the Split's
+  // own condition away from "Goal reached" (or to a different custom
+  // source/value) changes what "Yes" actually means — a stale, untouched
+  // auto GOAL_EXIT left in place would keep implying the OLD condition's
+  // success is still the campaign goal. Caught by actually building a
+  // real campaign (a coverage/reach drip with no goal, using Previous-
+  // step-outcome checks for channel waterfalls) — editing the auto
+  // goal-check Split into a real condition left its Yes-branch silently
+  // mislabeled as a goal exit. Reset ONLY when the condition genuinely
+  // changed (not just re-saving an unmodified Split — that would
+  // needlessly wipe a still-accurate auto Yes-branch), the Yes-target is
+  // still exactly what dcConfirmAddNode produced (an untouched auto
+  // GOAL_EXIT with nothing built under it), AND it isn't also reached
+  // from anywhere else (a real, deliberate merge should never be undone
+  // by an unrelated edit). Anything a user actually customized under it
+  // is never touched, same as every other edit in this function.
+  if(t==='SPLIT' && prevConfig!==JSON.stringify(p)){
+    const yesEdge = dripWiz.edges.find(e=>e.from===nodeId && e.branchLabel==='Yes');
+    if(yesEdge && yesEdge.to){
+      const yesNode = dripWiz.nodes[yesEdge.to];
+      const hasNoOutgoing = !dripWiz.edges.some(e=>e.from===yesEdge.to);
+      const singleIncoming = dripWiz.edges.filter(e=>e.to===yesEdge.to).length===1;
+      if(yesNode && yesNode.type==='GOAL_EXIT' && yesNode.autoGenerated && hasNoOutgoing && singleIncoming){
+        const oldTarget = yesEdge.to;
+        yesEdge.to = null;
+        dcGarbageCollect(oldTarget);
+      }
+    }
+  }
+  dripWiz.editingNodeId = null; dripWiz.addingType = null;
   closeSideDrawer();
   renderDripBuilder();
 }
-function dcRemoveNode(path){
-  if(path.length===0){ dripWiz.root = null; renderDripBuilder(); return; }
-  const parent = dcParentOf(path), idx = path[path.length-1];
-  const label = parent.children[idx].branchLabel;
-  // A branch under Split/Random Split can't just vanish — it reverts to an
-  // empty, re-addable slot so the node stays structurally valid; only a
-  // true leaf hanging off a non-branching parent gets fully spliced out.
-  if(['SPLIT','RANDOM_SPLIT','WAIT_UNTIL'].includes(parent.type)) parent.children[idx] = {type:'EMPTY', branchLabel:label, children:[]};
-  else parent.children.splice(idx,1);
+// Only actually deletes a node once NOTHING still points to it — a step
+// reached from more than one branch (a real, deliberate merge) is never
+// lost just because one of its connections was removed elsewhere.
+// Recurses into whatever THIS node's own outgoing edges pointed at,
+// since each of those just lost one more incoming edge too.
+function dcGarbageCollect(nodeId){
+  if(!nodeId || dripWiz.rootId===nodeId || !dripWiz.nodes[nodeId]) return;
+  if(dripWiz.edges.some(e=>e.to===nodeId)) return;
+  const childTargets = dripWiz.edges.filter(e=>e.from===nodeId).map(e=>e.to).filter(Boolean);
+  dripWiz.edges = dripWiz.edges.filter(e=>e.from!==nodeId);
+  delete dripWiz.nodes[nodeId];
+  childTargets.forEach(dcGarbageCollect);
+}
+// Detaches one specific connection, addressed by the edge itself (not
+// the node it happens to point at, since a shared node can be reached by
+// more than one edge and removing "the node" would be ambiguous about
+// which connection to actually take away). A branch under Split/Random
+// Split/Wait Until can't just vanish — it reverts to an open, re-fillable
+// slot so the node stays structurally valid; a plain linear leaf's own
+// next-step edge is fully removed instead, since a linear leaf has no
+// permanent "slot" concept to revert to.
+function dcRemoveEdge(edgeId){
+  const edge = dripWiz.edges.find(e=>e.id===edgeId);
+  if(!edge) return;
+  const parent = dripWiz.nodes[edge.from];
+  const targetId = edge.to;
+  if(parent && ['SPLIT','RANDOM_SPLIT','WAIT_UNTIL'].includes(parent.type)) edge.to = null;
+  else dripWiz.edges = dripWiz.edges.filter(e=>e.id!==edgeId);
+  if(targetId) dcGarbageCollect(targetId);
   renderDripBuilder();
 }
+function dcRemoveRoot(){ dripWiz.nodes = {}; dripWiz.edges = []; dripWiz.rootId = null; renderDripBuilder(); }
 // One click instead of remove-then-find-the-+-then-reconfigure — the
 // two-step version is exactly what caused a real crash while stress-
 // testing this builder (forgot the remove step, tried to add straight
-// onto a still-present auto node). Combines dcRemoveNode + dcSelectAddAt
-// so replacing an auto-generated node is a single, obvious action.
-function dcReplaceAutoNode(path){
-  dcRemoveNode(path);
-  dcSelectAddAt(path);
-}
-
-function dcRenderNodeEditable(node, path){
-  if(node.type==='EMPTY'){
-    return `<div class="dc-subtree"><div class="dc-add-btn" onclick="dcSelectAddAt(${JSON.stringify(path)})" title="Add next step">+</div></div>`;
-  }
-  const meta = DC_NODE_META[node.type];
-  const canGrow = node.children.length===0 && node.type!=='GOAL_EXIT' && node.type!=='EXIT';
-  const isSelected = dripWiz.addingAt && JSON.stringify(dripWiz.addingAt)===JSON.stringify(path);
-  return `
-  <div class="dc-subtree">
-    <div class="dc-node-card editable cat-${meta.cat} ${isSelected?'selected-target':''}" onclick="dcOpenEditNode(${JSON.stringify(path)})" title="Click to edit this step" style="cursor:pointer;">
-      ${path.length>0?`<div class="dc-node-remove" onclick="event.stopPropagation();dcRemoveNode(${JSON.stringify(path)})" title="Remove">✕</div>`:''}
-      <div class="dc-node-type">${meta.type}</div>
-      <div class="dc-node-label">${node.label}</div>
-      ${node.meta?`<div class="dc-node-meta">${node.meta}</div>`:''}
-      ${node.autoGenerated?`<div class="dc-auto-badge" onclick="event.stopPropagation();dcReplaceAutoNode(${JSON.stringify(path)})" title="Auto-added — click to replace with your own step">↻ Auto-added, click to replace</div>`:''}
-    </div>
-    ${canGrow?`<div class="dc-add-btn" onclick="dcSelectAddAt(${JSON.stringify(path)})" title="Add next step">+</div>`:''}
-    ${node.children.length?`
-    <div class="dc-down-stub"></div>
-    <div class="dc-children">
-      ${node.children.map((c,i)=>`<div class="dc-child">${c.branchLabel?`<div class="dc-branch-label">${c.branchLabel}</div>`:''}${dcRenderNodeEditable(c, path.concat(i))}</div>`).join('')}
-    </div>`:''}
-  </div>`;
+// onto a still-present auto node). Combines dcRemoveEdge + dcSelectAddAt
+// so replacing an auto-generated node is a single, obvious action. Safe
+// to reuse the same edgeId afterward — the auto-badge only ever appears
+// on edges from a branching parent (Split/Wait Until's Yes-branch), so
+// dcRemoveEdge always reverts it to an open slot rather than deleting it.
+function dcReplaceAutoNode(edgeId){
+  dcRemoveEdge(edgeId);
+  dcSelectAddAt('edge', edgeId);
 }
 
 function dcDrawerFormFor(type){
@@ -9061,7 +9600,15 @@ function dcDrawerFormFor(type){
       </div>`:''}
     ${p.recurrenceType==='Daily'?`<div class="f-group"><label class="f-label">Every N days</label><input class="f-input" type="number" min="1" value="${p.dayInterval}" oninput="dcConfigField('dayInterval',this.value)"></div>`:''}
     <div class="f-group"><label class="f-label">At</label><input class="f-input" type="time" value="${p.timeOfDay}" onchange="dcConfigField('timeOfDay',this.value)"></div>
-    <p class="f-hint">${dcRecurrenceLabel(p)}</p>`;
+    <p class="f-hint">${dcRecurrenceLabel(p)}</p>
+    <div class="f-group"><label class="f-label">Entity</label>
+      <select class="f-input" onchange="dcConfigField('entity',this.value);dripWiz.pendingConfig.conditions=[]">
+        ${['Customer','Account','Card'].map(e=>`<option ${p.entity===e?'selected':''}>${e}</option>`).join('')}
+      </select></div>
+    <div class="f-group"><label class="f-label">Conditions <span style="font-weight:400;color:var(--gray-500);">(optional — everyone matching the entity if none set)</span></label>
+      ${dcCondRowsHtml(p.conditions, p.entity, 'segment')}
+    </div>
+    <p class="f-hint">Who this pulls in each time the schedule fires — re-evaluated fresh every run, not a one-time snapshot like Entry · Segment.</p>`;
   if(type==='SEND'){
     const accounts = [...new Set(COMMS_TEMPLATES.filter(x=>x.channelType===p.channel).map(x=>x.accountName))];
     const templates = COMMS_TEMPLATES.filter(x=>x.channelType===p.channel && (!p.account || x.accountName===p.account));
@@ -9095,16 +9642,37 @@ function dcDrawerFormFor(type){
     </div>
     <p class="f-hint">A goal-check step is auto-inserted right after this Send — same "define once, check everywhere" pattern used across this campaign.</p>`;
   }
-  if(type==='CHANNEL_FAILOVER') return `
+  if(type==='CHANNEL_FAILOVER'){
+    // Same Account/Template cascade as SEND, scoped to the fallback
+    // channel — this is a real send too (just conditional on the
+    // primary one failing), and had no way to configure what it
+    // actually sends before this, a real gap caught while auditing
+    // every drawer form for genuinely missing fields.
+    const accounts = [...new Set(COMMS_TEMPLATES.filter(x=>x.channelType===p.fallbackChannel).map(x=>x.accountName))];
+    const templates = COMMS_TEMPLATES.filter(x=>x.channelType===p.fallbackChannel && (!p.account || x.accountName===p.account));
+    return `
     <div class="f-row2">
       <div class="f-group"><label class="f-label">Primary Channel</label><select class="f-input" onchange="dcConfigField('primaryChannel',this.value);if(dripWiz.pendingConfig.fallbackChannel===this.value)dcConfigField('fallbackChannel','')">${Object.keys(CHANNEL_CONFIG_LABELS).map(c=>`<option value="${c}" ${p.primaryChannel===c?'selected':''}>${CHANNEL_CONFIG_LABELS[c]}</option>`).join('')}</select></div>
-      <div class="f-group"><label class="f-label">Fallback Channel</label><select class="f-input" onchange="dcConfigField('fallbackChannel',this.value)">${Object.keys(CHANNEL_CONFIG_LABELS).filter(c=>c!==p.primaryChannel).map(c=>`<option value="${c}" ${p.fallbackChannel===c?'selected':''}>${CHANNEL_CONFIG_LABELS[c]}</option>`).join('')}</select></div>
+      <div class="f-group"><label class="f-label">Fallback Channel</label><select class="f-input" onchange="dcConfigField('fallbackChannel',this.value);dcConfigField('account','');dcConfigField('templateId','')">${Object.keys(CHANNEL_CONFIG_LABELS).filter(c=>c!==p.primaryChannel).map(c=>`<option value="${c}" ${p.fallbackChannel===c?'selected':''}>${CHANNEL_CONFIG_LABELS[c]}</option>`).join('')}</select></div>
     </div>
-    <p class="f-hint">If the primary channel's delivery fails, this retries once on the fallback channel before continuing the sequence.</p>`;
+    <div class="f-group"><label class="f-label">Account</label>
+      <select class="f-input" onchange="dcConfigField('account',this.value);dcConfigField('templateId','')">
+        <option value="">Select account</option>${accounts.map(a=>`<option ${p.account===a?'selected':''}>${a}</option>`).join('')}
+      </select></div>
+    <div class="f-group"><label class="f-label">Template</label>
+      <select class="f-input" onchange="dcConfigField('templateId',this.value)">
+        <option value="">Select template</option>${templates.map(x=>`<option value="${x.id}" ${p.templateId===x.id?'selected':''}>${x.name}</option>`).join('')}
+      </select>
+      ${!templates.length?`<div class="f-hint">No ${CHANNEL_CONFIG_LABELS[p.fallbackChannel]} templates exist yet${p.account?' for this account':''}.
+        <a href="#" onclick="event.preventDefault();dcGoCreateTemplate('${p.fallbackChannel}')">Save this campaign as a draft and create one in Comms. Templates →</a></div>`:''}
+    </div>
+    <p class="f-hint">If the primary channel's delivery fails, this sends the above once on the fallback channel before continuing the sequence. A goal-check step is auto-inserted right after, same as after any Send.</p>`;
+  }
   if(type==='PAUSE') return `<div class="f-row2">
       <div class="f-group"><label class="f-label">Duration</label><input class="f-input" type="number" min="1" value="${p.duration}" oninput="dcConfigField('duration',this.value)"></div>
       <div class="f-group"><label class="f-label">Unit</label><select class="f-input" onchange="dcConfigField('unit',this.value)"><option ${p.unit==='days'?'selected':''}>days</option><option ${p.unit==='hours'?'selected':''}>hours</option></select></div>
-    </div>`;
+    </div>
+    <p class="f-hint">A goal-check step is auto-inserted right after the wait ends — if the customer already converted while this was waiting, the campaign catches that before doing anything else.</p>`;
   if(type==='WAIT_UNTIL') return `
     <div class="f-group"><label class="f-label">Event Category</label>
       <select class="f-input" onchange="dcConfigField('eventCategory',this.value);dcConfigField('eventType','')">
@@ -9172,12 +9740,87 @@ function dcDrawerFormFor(type){
     ${basisHtml}
     <p class="f-hint">Bounded to three sources: the previous step's engagement outcome, a live account attribute checked right now, or an attribute of the entry event — not arbitrary attributes anywhere in the flow.</p>`;
   }
+  if(type==='DECISION_SPLIT'){
+    // Same 3 bounded sources as Conditional Split, and the same real
+    // ELIGIBILITY_META-driven operator/value-widget logic dcCondRowsHtml
+    // uses elsewhere — but one attribute is picked ONCE, and each branch
+    // below defines its own operator+value(s) against that same
+    // attribute, evaluated top-to-bottom with an implicit catch-all at
+    // the end. Built straight from a real gap: a plain Conditional Split
+    // can only ever express one Yes/No condition, so routing "5-20 to
+    // one path, 21-50 to another, everything else to a third" had no
+    // way to be expressed at all — stacking two conditions on one Split
+    // just ANDs them together, which doesn't even mean what it looks
+    // like it means for two different ranges of the same number.
+    const sourceEntity = DC_EVENT_ENTITY[dripWiz.entryEventCategory];
+    const attrEntity = p.source==='Account attribute' ? 'Account' : (p.source==='Entry event attribute' ? sourceEntity : null);
+    const attrMeta = attrEntity && p.attribute ? ELIGIBILITY_META[attrEntity][p.attribute] : null;
+    let sourceBodyHtml;
+    if(p.source==='Previous step outcome'){
+      const prevChannel = dcPreviousStepChannel();
+      const outcomeOptions = prevChannel ? deliveryStatusOptionsFor(prevChannel) : deliveryStatusOptionsAll();
+      sourceBodyHtml = `<div class="f-group"><label class="f-label">Branches</label>
+        ${p.branches.map((b,i)=>`
+          ${dcBranchInsertRowHtml('dcInsertDecisionBranch', i-1)}
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <input class="f-input" type="text" style="flex:1;" placeholder="Label" value="${b.label}" oninput="dcDecisionBranchField(${i},'label',this.value)">
+            <select class="f-input" style="flex:2;" onchange="dcDecisionBranchField(${i},'value',this.value)">
+              <option value="">Select outcome</option>${outcomeOptions.map(o=>`<option ${b.value===o?'selected':''}>${o}</option>`).join('')}
+            </select>
+            ${p.branches.length>1?`<div class="cond-remove" onclick="dcRemoveDecisionBranch(${i})">✕</div>`:''}
+          </div>`).join('')}
+        <div class="add-link" onclick="dcAddDecisionBranch()">${ic('workflow')} Add branch</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;padding:9px 12px;background:var(--gray-50);border-radius:8px;color:var(--gray-500);font-size:12.5px;">Anything else <span style="margin-left:auto;">Catch-all</span></div>
+      </div>`;
+    } else if(!attrEntity){
+      sourceBodyHtml = `<p class="f-hint" style="margin:0;">Entry isn't an Event Trigger, so there's no entry-event attribute to branch on.</p>`;
+    } else {
+      const attrOptions = Object.keys(ELIGIBILITY_META[attrEntity]);
+      const opOptions = attrMeta?.type==='number'||attrMeta?.type==='date' ? ['Equals','Greater than','Less than','Between'] : ['Equals','Not Equals'];
+      const valueField = (b,i) => {
+        if(!attrMeta) return `<input class="f-input" type="text" style="flex:1;" placeholder="Attribute" disabled>`;
+        if(attrMeta.type==='select') return `<select class="f-input" style="flex:1;" onchange="dcDecisionBranchField(${i},'value',this.value)"><option value="">Value</option>${attrMeta.options.map(o=>`<option ${b.value===o?'selected':''}>${o}</option>`).join('')}</select>`;
+        if(attrMeta.type==='bool') return `<select class="f-input" style="flex:1;" onchange="dcDecisionBranchField(${i},'value',this.value)"><option value="">Value</option><option ${b.value==='true'?'selected':''}>true</option><option ${b.value==='false'?'selected':''}>false</option></select>`;
+        if(attrMeta.type==='number' && b.operator==='Between') return `<div style="display:flex;gap:6px;flex:1;"><input class="f-input" type="number" placeholder="From" value="${b.value||''}" oninput="dcDecisionBranchField(${i},'value',this.value)"><input class="f-input" type="number" placeholder="To" value="${b.value2||''}" oninput="dcDecisionBranchField(${i},'value2',this.value)"></div>`;
+        if(attrMeta.type==='number') return `<input class="f-input" type="number" style="flex:1;" placeholder="Value" value="${b.value||''}" oninput="dcDecisionBranchField(${i},'value',this.value)">`;
+        if(attrMeta.type==='date') return `<input class="f-input" type="date" style="flex:1;" value="${b.value||''}" onchange="dcDecisionBranchField(${i},'value',this.value)">`;
+        return `<input class="f-input" type="text" style="flex:1;" placeholder="Value" value="${b.value||''}" oninput="dcDecisionBranchField(${i},'value',this.value)">`;
+      };
+      sourceBodyHtml = `
+        <div class="f-group"><label class="f-label">Attribute</label>
+          <select class="f-input" onchange="dcConfigField('attribute',this.value)">
+            <option value="">Select attribute</option>${attrOptions.map(a=>`<option value="${a}" ${p.attribute===a?'selected':''}>${a}</option>`).join('')}
+          </select>
+        </div>
+        ${p.attribute ? `<div class="f-group"><label class="f-label">Branches</label>
+          ${p.branches.map((b,i)=>`
+            ${dcBranchInsertRowHtml('dcInsertDecisionBranch', i-1)}
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+              <input class="f-input" type="text" style="width:110px;flex-shrink:0;" placeholder="Label" value="${b.label}" oninput="dcDecisionBranchField(${i},'label',this.value)">
+              <select class="f-input" style="width:110px;flex-shrink:0;" onchange="dcDecisionBranchField(${i},'operator',this.value)">${opOptions.map(o=>`<option ${b.operator===o?'selected':''}>${o}</option>`).join('')}</select>
+              ${valueField(b,i)}
+              ${p.branches.length>1?`<div class="cond-remove" onclick="dcRemoveDecisionBranch(${i})">✕</div>`:''}
+            </div>`).join('')}
+          <div class="add-link" onclick="dcAddDecisionBranch()">${ic('workflow')} Add branch</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:10px;padding:9px 12px;background:var(--gray-50);border-radius:8px;color:var(--gray-500);font-size:12.5px;">Anything else <span style="margin-left:auto;">Catch-all</span></div>
+        </div>` : ''}`;
+    }
+    return `
+    <div class="f-group"><label class="f-label">Step name</label><input class="f-input" type="text" value="${p.name}" oninput="dcConfigField('name',this.value)"></div>
+    <div class="f-group"><label class="f-label">Source</label><select class="f-input" onchange="dcConfigField('source',this.value);dcConfigField('attribute','')">
+      <option ${p.source==='Previous step outcome'?'selected':''}>Previous step outcome</option>
+      <option ${p.source==='Account attribute'?'selected':''}>Account attribute</option>
+      <option ${p.source==='Entry event attribute'?'selected':''}>Entry event attribute</option></select></div>
+    ${sourceBodyHtml}
+    <p class="f-hint">Branches are checked top to bottom — the customer follows the first one that matches. Anything that matches none of them falls into the catch-all at the end.</p>`;
+  }
   if(type==='RANDOM_SPLIT'){
     const total = p.branches.reduce((s,b)=>s+Number(b.pct||0),0);
     return `
     <div class="f-group"><label class="f-label">Step name</label><input class="f-input" type="text" value="${p.name}" oninput="dcConfigField('name',this.value)"></div>
     <div class="f-group"><label class="f-label">Branches</label>
       ${p.branches.map((b,i)=>`
+        ${dcBranchInsertRowHtml('dcInsertRandomBranch', i-1)}
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
           <input class="f-input" type="text" style="flex:2;" placeholder="Label" value="${b.label}" oninput="dcRandomBranchField(${i},'label',this.value)">
           <input class="f-input" type="number" min="1" max="99" style="flex:1;" value="${b.pct}" oninput="dcRandomBranchField(${i},'pct',this.value)">
@@ -9282,62 +9925,93 @@ function renderDripBuildStep(){
     </div>
     <hr style="border:none;border-top:1px solid var(--gray-200);margin:14px 0;">`;
 
-  if(dripWiz.root===null){
+  if(dripWiz.rootId===null){
     railHtml += `<p class="f-hint">Click <b>+ Add Entry</b> on the canvas to choose how customers enter this campaign.</p>`;
   } else {
-    const open = dcTreeHasOpenBranches(dripWiz.root);
+    const graph = {nodes:dripWiz.nodes, edges:dripWiz.edges, rootId:dripWiz.rootId};
+    const open = dcGraphHasOpenBranches(graph);
     railHtml += `<p class="f-hint">Click any <b>+</b> on the canvas to add the next step. Every branch needs to end in a Goal-Based Exit or Exit before this campaign is ready to submit for approval — saving as a draft has no such requirement.</p>
       ${open?`<p class="f-hint" style="color:var(--warning-text);font-weight:600;">⚠ Open branches remaining — fine to save as a draft, blocks submission.</p>`:''}
-      ${dcStepsOutlineHtml(dripWiz.root)}`;
+      ${dcStepsOutlineHtml(graph)}`;
   }
   // Save as Draft is always available once there's a name — you should
   // never be blocked from saving in-progress work. Submitting for
   // approval is the point completeness actually gets enforced.
-  const canSubmit = dripWiz.name && dripWiz.issuer && dripWiz.root!==null && !dcTreeHasOpenBranches(dripWiz.root);
+  const canSubmit = dripWiz.name && dripWiz.issuer && dripWiz.rootId!==null && !dcGraphHasOpenBranches({nodes:dripWiz.nodes, edges:dripWiz.edges, rootId:dripWiz.rootId});
   railHtml += `
     <div style="display:flex;gap:8px;margin-top:14px;">
       <button class="btn secondary" style="flex:1;" ${!dripWiz.name?'disabled style="opacity:.5;"':''} onclick="saveDripCampaign('draft')">Save as Draft</button>
       <button class="btn primary" style="flex:1;" ${!canSubmit?'disabled style="opacity:.5;"':''} onclick="saveDripCampaign('submit')">Submit for Approval</button>
     </div>`;
   document.getElementById('dcbRail').innerHTML = railHtml;
-  document.getElementById('dcbCanvas').innerHTML = dripWiz.root===null
-    ? `<div class="dc-add-entry-placeholder" onclick="dcSelectAddAt([])">+ Add Entry</div>`
+  document.getElementById('dcbCanvas').innerHTML = dripWiz.rootId===null
+    ? `<div class="dc-add-entry-placeholder" onclick="dcSelectAddAt('root','')">+ Add Entry</div>`
     : `${dcZoomControlsHtml(dripWiz._zoom||1, 'dripWiz._zoom', 'renderDripBuilder')}
-       <div class="dc-tree-root" style="justify-content:flex-start;padding-left:24px;transform:scale(${dripWiz._zoom||1});transform-origin:top left;">${dcRenderNodeEditable(dripWiz.root, [])}</div>`;
+       <div class="dc-tree-root" style="transform:scale(${dripWiz._zoom||1});transform-origin:top left;">${dcRenderGraphCanvas({nodes:dripWiz.nodes, edges:dripWiz.edges, rootId:dripWiz.rootId}, true)}</div>`;
 }
-// A running outline of every Send in the tree, in order — genuinely
+// A running outline of every Send in the graph, in visit order — genuinely
 // useful (a quick read of what this campaign sends without visually
-// parsing the canvas), and fills the rail proportionally to real
-// content as the tree grows, instead of leaving a fixed dead void
-// below the buttons for a short campaign and doing nothing for a
-// long one either.
-function dcStepsOutlineHtml(node, steps){
-  const isRoot = !steps;
-  if(isRoot) steps = [];
-  if(node.type==='SEND' || node.type==='CHANNEL_FAILOVER') steps.push(node.label);
-  (node.children||[]).forEach(c => { if(c.type!=='EMPTY') dcStepsOutlineHtml(c, steps); });
-  if(!isRoot) return '';
+// parsing the canvas), and fills the rail proportionally to real content
+// as the graph grows. A shared step (reached from more than one branch)
+// is only ever walked, and listed, once — a visited-set, not a simple
+// recursive tree walk, since the same node can now be reachable more
+// than one way.
+function dcStepsOutlineHtml(graph){
+  if(!graph.rootId) return '';
+  const steps = [], visited = new Set();
+  (function walk(nodeId){
+    if(visited.has(nodeId)) return;
+    visited.add(nodeId);
+    const node = graph.nodes[nodeId];
+    if(!node) return;
+    if(node.type==='SEND' || node.type==='CHANNEL_FAILOVER') steps.push(node.label);
+    graph.edges.filter(e=>e.from===nodeId && e.to).forEach(e=>walk(e.to));
+  })(graph.rootId);
   if(!steps.length) return '';
   return `<div class="wiz-group-label" style="padding-left:0;margin:16px 0 6px;">Steps so far</div>
     <ol style="margin:0;padding-left:18px;font-size:12.5px;color:var(--neutral-800);line-height:1.9;">
       ${steps.map(s=>`<li>${s}</li>`).join('')}
     </ol>`;
 }
-function dcTypePickerHtml(types){
-  return `<div class="dc-type-picker">${types.map(t=>`
-    <div class="dc-type-opt cat-${DC_NODE_META[t].cat} ${dripWiz.addingType===t?'active':''}" onclick="dcPickType('${t}')">
+// Grouped by category (Actions/Waits/Logic), not one flat grid — a direct,
+// convergent finding from researching Adobe Campaign and MoEngage: both
+// independently group their equivalent node picker by semantic category
+// (2026-09-25). "Reuse" (Connect to an Existing Step — the real fix for
+// two branches needing to do the same thing later, instead of each
+// rebuilding it) gets its own section, appended only when there's at
+// least one real node to connect to.
+function dcTypePickerHtml(types, canConnect){
+  const isEntryPicker = types===DC_ENTRY_TYPES;
+  const tileHtml = t => `<div class="dc-type-opt cat-${DC_NODE_META[t].cat} ${dripWiz.addingType===t?'active':''}" onclick="dcPickType('${t}')">
       ${DC_NODE_META[t].type}<div class="dc-type-opt-sub">${DC_TYPE_SUB[t]}</div>
-    </div>`).join('')}</div>`;
+    </div>`;
+  let html;
+  if(isEntryPicker){
+    html = `<div class="dc-type-picker">${types.map(tileHtml).join('')}</div>`;
+  } else {
+    html = DC_TYPE_CATEGORIES.map(g=>{
+      const groupTypes = g.types.filter(t=>types.includes(t));
+      if(!groupTypes.length) return '';
+      return `<div class="dc-type-group-label">${g.label}</div><div class="dc-type-picker">${groupTypes.map(tileHtml).join('')}</div>`;
+    }).join('');
+  }
+  if(canConnect){
+    html += `<div class="dc-type-group-label">Reuse</div><div class="dc-type-picker" style="grid-template-columns:1fr;">
+      <div class="dc-type-opt cat-link ${dripWiz._connectMode?'active':''}" onclick="dcEnterConnectMode()">
+        🔗 Connect to an Existing Step<div class="dc-type-opt-sub">Point this branch at a step you've already built, instead of duplicating it</div>
+      </div></div>`;
+  }
+  return html;
 }
 // A branch is "open" if it's a real node with room to grow (a leaf that
-// isn't a terminal Goal/Exit) or an unfilled EMPTY slot — either way the
-// campaign can't go live with it hanging, since there's no defined next
-// action for a customer who reaches it.
-function dcTreeHasOpenBranches(node){
-  if(!node) return true;
-  if(node.type==='EMPTY') return true;
-  if(node.children.length===0) return node.type!=='GOAL_EXIT' && node.type!=='EXIT';
-  return node.children.some(dcTreeHasOpenBranches);
+// isn't a terminal Goal/Exit) or an unfilled edge (edge.to === null) —
+// either way the campaign can't go live with it hanging, since there's
+// no defined next action for a customer who reaches it.
+function dcGraphHasOpenBranches(graph){
+  if(!graph.rootId) return true;
+  const leafOpen = Object.values(graph.nodes).some(nd => !graph.edges.some(e=>e.from===nd.id) && nd.type!=='GOAL_EXIT' && nd.type!=='EXIT');
+  const slotOpen = graph.edges.some(e=>e.to===null);
+  return leafOpen || slotOpen;
 }
 // mode: 'draft' (always allowed, no completeness check — in-progress
 // work should never be blocked from saving) or 'submit' (requires a
@@ -9345,13 +10019,13 @@ function dcTreeHasOpenBranches(node){
 function saveDripCampaign(mode){
   if(!dripWiz.name){ showToast('Campaign needs a name before it can be saved.','error'); return; }
   if(mode==='submit'){
-    if(dripWiz.root===null){ showToast('Add at least an Entry step before submitting for approval.','error'); return; }
-    if(dcTreeHasOpenBranches(dripWiz.root)){ showToast('Every branch needs to end in a Goal-Based Exit or Exit before this can be submitted for approval.','error'); return; }
+    if(dripWiz.rootId===null){ showToast('Add at least an Entry step before submitting for approval.','error'); return; }
+    if(dcGraphHasOpenBranches({nodes:dripWiz.nodes, edges:dripWiz.edges, rootId:dripWiz.rootId})){ showToast('Every branch needs to end in a Goal-Based Exit or Exit before this can be submitted for approval.','error'); return; }
   }
   const status = mode==='submit' ? 'PENDING_REVIEW' : 'DRAFT';
   const payload = { name:dripWiz.name, goal:dripWiz.goal, controlPct:Number(dripWiz.controlPct),
     issuer:dripWiz.issuer||'', programs:dripWiz.programs?[...dripWiz.programs]:[],
-    startDate:dripWiz.startDate||'', endDate:dripWiz.endDate||'', status, root:dripWiz.root };
+    startDate:dripWiz.startDate||'', endDate:dripWiz.endDate||'', status, root:{nodes:dripWiz.nodes, edges:dripWiz.edges, rootId:dripWiz.rootId} };
 
   if(dripWiz.isDraftContinuation){
     // Never went live — edited in place, no versioning needed.
@@ -9381,7 +10055,7 @@ function dcGoCreateTemplate(channel){
   if(!dripWiz.name){ showToast('Name your campaign first (top of Setup), then this can save as a draft before you leave.','error'); return; }
   const payload = { name:dripWiz.name, goal:dripWiz.goal, controlPct:Number(dripWiz.controlPct),
     issuer:dripWiz.issuer||'', programs:dripWiz.programs?[...dripWiz.programs]:[],
-    startDate:dripWiz.startDate||'', endDate:dripWiz.endDate||'', status:'DRAFT', root:dripWiz.root };
+    startDate:dripWiz.startDate||'', endDate:dripWiz.endDate||'', status:'DRAFT', root:{nodes:dripWiz.nodes, edges:dripWiz.edges, rootId:dripWiz.rootId} };
   if(dripWiz.isDraftContinuation){
     Object.assign(DRIP_CAMPAIGNS.find(x=>x.id===dripWiz.id), payload);
   } else if(dripWiz.isEdit){
