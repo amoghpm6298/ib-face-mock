@@ -5246,7 +5246,7 @@ const OPERATORS_BY_TYPE = {
 };
 const SMART_TAG_OPTIONS = ['High EMI Propensity','Dormant 60d','Recent Complaint'];
 
-function condRow(c, idx, entityOptions, containerKey){
+function condRow(c, idx, entityOptions, containerKey, opts){
   const meta = (ELIGIBILITY_META[c.entity]||{})[c.attribute];
   // Real attribute lists per entity.
   const attrOptions = c.entity && ELIGIBILITY_META[c.entity] ? Object.keys(ELIGIBILITY_META[c.entity]) : ({
@@ -5259,9 +5259,17 @@ function condRow(c, idx, entityOptions, containerKey){
   // "Transaction" or "EMI Request" on every single row said nothing a
   // section heading doesn't already say once. `c.entity` still drives the
   // ELIGIBILITY_META lookup underneath, it's just not rendered as a column.
-  const showEntity = entityOptions.length > 1;
+  // forceEntity: show the Entity column even for a single-entity list. Used
+  // by the event-based User Base block, where Account is the only entity
+  // today but more are expected (the same set System Nudge already offers).
+  // Hiding the column there would make the dimension look absent rather
+  // than not-yet-filled-in. Kept a real, enabled select — same reasoning as
+  // EXTERNAL_SOURCE_ATTRIBUTES' single-option picker, so it doesn't read as
+  // a dead end once a second entity exists. The empty placeholder is
+  // dropped when there's only one option, since it isn't a real choice.
+  const showEntity = entityOptions.length > 1 || !!(opts && opts.forceEntity);
   const entitySelect = showEntity ? `<select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'entity',this.value)">
-        <option value="">Entity Type</option>
+        ${entityOptions.length > 1 ? '<option value="">Entity Type</option>' : ''}
         ${entityOptions.map(e=>`<option value="${e}" ${c.entity===e?'selected':''}>${e}</option>`).join('')}
       </select>` : '';
   // A mandatory condition (e.g. EMI Events' Product Type) can't be retargeted
@@ -5296,6 +5304,13 @@ function condRow(c, idx, entityOptions, containerKey){
   const ops = meta ? (OPERATORS_BY_TYPE[meta.type]||[]) : [];
 
   let valueWidget = '';
+  // Between is the one operator that emits TWO widgets into the value
+  // column. A date input has an intrinsic ~144px floor it will not shrink
+  // past, so on a wide row (where the row doesn't wrap) a 140px basis left
+  // the second input spilling ~150px past its own column, over the remove
+  // button and out of the card. Measured, not guessed. Flagged here so the
+  // column can ask for what its contents actually need.
+  let wideValue = false;
   if(showSecond){
     if(meta.type==='select'){
       // disabledOptions (optional) — a real value that's documented and
@@ -5318,6 +5333,7 @@ function condRow(c, idx, entityOptions, containerKey){
       </select>`;
     } else if(meta.type==='date'){
       if(c.operator==='Between'){
+        wideValue = true;
         valueWidget = `<input type="date" class="f-input" value="${c.value||''}" onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
           <input type="date" class="f-input" value="${c.value2||''}" onchange="wizCondUpdate('${containerKey}',${idx},'value2',this.value)">`;
       } else if(c.operator==='Difference in days'){
@@ -5383,7 +5399,7 @@ function condRow(c, idx, entityOptions, containerKey){
         <option value="">Operator</option>
         ${ops.map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}
       </select></div>` : ''}
-      ${showSecond ? `<div style="flex:1 1 140px;min-width:0;display:flex;gap:8px;">${valueWidget}</div>` : ''}
+      ${showSecond ? `<div style="${wideValue?'flex:2 1 296px;min-width:296px;':'flex:1 1 140px;min-width:0;'}display:flex;gap:8px;">${valueWidget}</div>` : ''}
       ${c.mandatory ? `<div style="width:24px;flex-shrink:0;"></div>` : `<div class="cond-remove" onclick="wizCondRemove('${containerKey}',${idx})" style="align-self:center;">✕</div>`}
     </div>`;
 }
@@ -5719,7 +5735,7 @@ function renderWizStep(stepId){
       <div class="f-group">
         <label class="f-label">Additional Conditions <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
         <div class="f-hint" style="margin:0 0 6px;">Narrow the user base further. Every condition here is AND'd with the choice above.</div>
-        ${d.conditions.map((c,i)=>`${i>0?'<div class="cond-and">AND</div>':''}${condRow(c,i,['Account'],'conditions')}`).join('')}
+        ${d.conditions.map((c,i)=>`${i>0?'<div class="cond-and">AND</div>':''}${condRow(c,i,['Account'],'conditions',{forceEntity:true})}`).join('')}
         <div class="add-link" onclick="wizCondAdd('conditions')">${ic('workflow')} Add Condition</div>
       </div>
       ${wizFooter()}`;
