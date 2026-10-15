@@ -5135,15 +5135,12 @@ const ELIGIBILITY_META = {
   'Account': {
     'Status':{type:'select', options:['Active','Charge off','Pending closure','Closed','Dormant','Suspended','Forced suspended']},
     'Smart Tag':{type:'smartTag'}, 'Statement Due Date':{type:'date'},
-    // Added 2026-09-24 for Drip Campaigns' Conditional Split — a Spend
-    // Milestone campaign needs to re-check a customer's live progress
-    // toward their milestone target at several points across a 30-day
-    // journey (Day 10, 15, 20, 25, 30), not just once at entry. Both
-    // real Account-level attributes, same as Status/Smart Tag above —
-    // not a Drip-specific concept, so any future condition builder that
-    // targets Account can use them too.
-    'Milestone Progress %':{type:'number'},
-    'Engagement Tier':{type:'multiSelect', options:['Dormant','Engaged','Highly Engaged']},
+    // Every attribute here traces to the real eligibilityTotalList in
+    // ironbank-face-main's smartNudgesConstants.ts. The comment that used
+    // to sit above this line described 'Milestone Progress %' and
+    // 'Engagement Tier', both removed 2026-10-10 once confirmed to have
+    // no backing there — it was left pointing at the three real
+    // attributes below, which it never described.
     'Created On':{type:'date'}, 'Last Updated On':{type:'date'}, 'Account Block Codes':{type:'list'},
   },
   'Card': {
@@ -5675,6 +5672,26 @@ function renderWizStep(stepId){
     }
   }
   else if(stepId==='ELIGIBILITY' && wiz.triggerType==='event-based'){
+    // Additional Account conditions, AND'd on top of whichever mode is
+    // picked below. Reuses the standard flow's own condition component
+    // (condRow + wizCondUpdate/wizCondAdd/wizCondRemove) rather than a
+    // second implementation. Entity list is a single entry, so condRow
+    // hides the Entity column by itself — same treatment Transaction/EMI
+    // Events already get in Event Trigger.
+    //
+    // Every row's entity is force-set to 'Account' because condRow
+    // resolves its attribute list through ELIGIBILITY_META[c.entity]: a
+    // row seeded blank (wizCondAdd, or openNudgeEdit's fallback) would
+    // otherwise fall through to the untyped free-text path. Attribute/
+    // operator/value are cleared only when the existing attribute isn't
+    // a real Account one, so a Status or Smart Tag row survives.
+    if(!Array.isArray(d.conditions) || !d.conditions.length) d.conditions = [{entity:'Account',attribute:'',operator:'',value:''}];
+    d.conditions.forEach(c=>{
+      if(c.entity!=='Account'){
+        c.entity='Account';
+        if(!ELIGIBILITY_META['Account'][c.attribute]){ c.attribute=''; c.operator=''; c.value=''; delete c.values; delete c.value2; }
+      }
+    });
     html = `
       <h1 class="wiz-heading">Set Up Nudge User Base</h1>
       <p class="wiz-sub">Who should be eligible to receive this nudge once the event fires.</p>
@@ -5699,6 +5716,12 @@ function renderWizStep(stepId){
           <div><label class="f-label">Journey</label><select class="f-input" onchange="fieldUpdate('eventJourney',this.value)"><option value="">Select</option>${JOURNEY_OPTIONS.map(j=>`<option ${d.eventJourney===j?'selected':''}>${j}</option>`).join('')}</select></div>
           <div><label class="f-label">Batch</label><select class="f-input" onchange="fieldUpdate('eventBatch',this.value)"><option value="">Select</option>${BATCH_OPTIONS.map(b=>`<option ${d.eventBatch===b?'selected':''}>${b}</option>`).join('')}</select></div>
         </div>` : ''}
+      <div class="f-group">
+        <label class="f-label">Additional Conditions <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
+        <div class="f-hint" style="margin:0 0 6px;">Narrow the user base further. Every condition here is AND'd with the choice above.</div>
+        ${d.conditions.map((c,i)=>`${i>0?'<div class="cond-and">AND</div>':''}${condRow(c,i,['Account'],'conditions')}`).join('')}
+        <div class="add-link" onclick="wizCondAdd('conditions')">${ic('workflow')} Add Condition</div>
+      </div>
       ${wizFooter()}`;
   }
   else if(stepId==='DISPLAY_ELEMENTS'){
@@ -6336,7 +6359,29 @@ function reviewSections(){
   }
   // Real step order (and Review/View section order) is User Base BEFORE
   // Timing for the event-based flow — matches getEventSampleData().
-  if(d.nudgeType==='EXTERNAL_SOURCE'){
+  // Branch order mirrors renderWizStep's own ELIGIBILITY gating, which
+  // tests triggerType FIRST — an event-based nudge always renders the
+  // event-based User Base step whatever its nudgeType. This block used to
+  // test nudgeType first, so an event-based nudge whose type happened to
+  // be JOURNEY (EV-41028) or FILE_UPLOAD reviewed as if it had been built
+  // on the standard step, listing rows the user was never shown.
+  if(wiz.triggerType==='event-based'){
+    const ubRows = d.userBaseMode==='Smart Tag'
+      ? [['Mode','Smart Tag'],['Smart Tag', d.smartTag||'—'],['Access', d.smartTagMode||'Allowed']]
+      : d.userBaseMode==='Journey/Batch'
+      ? [['Mode','Journey / Batch'],['Journey', d.eventJourney||'—'],['Batch', d.eventBatch||'—']]
+      : [['Mode','All Customers']];
+    // Reads .values (Smart Tag / Account Block Codes pick a set) and
+    // Between's second bound, not just .value — a row of either kind
+    // would otherwise summarise as blank.
+    ubRows.push(['Additional Conditions', (d.conditions||[]).filter(c=>c.attribute).map(c=>{
+      const v = (c.values&&c.values.length) ? c.values.join(', ')
+        : (c.operator==='Between' && c.value2) ? `${c.value||'—'} and ${c.value2}`
+        : c.value;
+      return `${c.attribute} ${c.operator||''} ${v||''}`.replace(/\s+/g,' ').trim();
+    }).join(' AND ')||'—']);
+    sections.push({title:'User Base', stepId:'ELIGIBILITY', rows: ubRows});
+  } else if(d.nudgeType==='EXTERNAL_SOURCE'){
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:[
       ['Eligibility Condition', `${d.externalSourceAttribute||EXTERNAL_SOURCE_ATTRIBUTES[0]} Equals ${d.eligibilityCode||'—'}`],
     ]});
@@ -6345,12 +6390,6 @@ function reviewSections(){
       ['Journey Name', d.journey||'—'], ['Batch Name', d.batch||'—'],
       ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(c=>`${c.attribute} ${c.operator} ${c.value}`).join(', ')||'—'],
     ]});
-  } else if(wiz.triggerType==='event-based'){
-    sections.push({title:'User Base', stepId:'ELIGIBILITY', rows: d.userBaseMode==='Smart Tag'
-      ? [['Mode','Smart Tag'],['Smart Tag', d.smartTag||'—'],['Access', d.smartTagMode||'Allowed']]
-      : d.userBaseMode==='Journey/Batch'
-      ? [['Mode','Journey / Batch'],['Journey', d.eventJourney||'—'],['Batch', d.eventBatch||'—']]
-      : [['Mode','All Customers']] });
   } else {
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows: d.nudgeType==='FILE_UPLOAD' ? [
       ['Uploaded File', d.fileUploaded ? 'user_base_q3.csv' : '—'],
@@ -9243,8 +9282,8 @@ function dcConfirmConnectExisting(){
 // drawer again to see what was actually configured.
 function dcCondSummary(conditions){
   // Handles both a plain scalar .value (every existing condition type)
-  // and a .values array (multiSelect, e.g. Engagement Tier "Any of
-  // Engaged, Highly Engaged") — without this, a Split whose only
+  // and a .values array (multiSelect, e.g. Transaction Status "Any of
+  // SETTLED, EXPIRED") — without this, a Split whose only
   // condition is a multiSelect attribute would silently summarize to an
   // empty string, since .value is never set on those rows.
   return (conditions||[]).filter(c=>c.attribute&&((c.values&&c.values.length)||c.value)).map(c=>{
