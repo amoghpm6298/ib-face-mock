@@ -5142,6 +5142,33 @@ const ELIGIBILITY_META = {
     // no backing there — it was left pointing at the three real
     // attributes below, which it never described.
     'Created On':{type:'date'}, 'Last Updated On':{type:'date'}, 'Account Block Codes':{type:'list'},
+    // Added 2026-10-15 on Amogh's request, from a real targeting query:
+    //   AND account_metadata.lpcDpd = '0'
+    //   AND account_metadata.npaFlag NOT IN ('1','2')
+    //
+    // Confirmed by Amogh as a NEW feature, not a mirror of something the
+    // dashboard already offers — checked first: neither is in
+    // ironbank-face-main's eligibilityTotalList.ACCOUNT, which is where
+    // the six attributes above all come from. (The closest real thing is
+    // DPD_STATUS in authorizationRulesConstants.js — a different feature's
+    // attribute, carrying no value set, so its name wasn't reused. NPA
+    // exists elsewhere in this product only as a Drip Campaigns guardrail,
+    // i.e. an exclusion list, not a condition attribute.)
+    //
+    // Hence isNew, the same treatment Transaction/EMI/Card Events and the
+    // External Source Nudge already get: flagged in the UI as not-yet-built
+    // rather than blended in as if it were audited, current behaviour.
+    //
+    // NPA Flag is 'list' rather than 'multiSelect' on purpose. The query
+    // needs NOT IN over a set, and list's Allowed/Denied operator pair
+    // already means exactly in-set/not-in-set (same as Account Block
+    // Codes). multiSelect would have needed an invented value vocabulary —
+    // nobody has stated the real npaFlag values, only that 1 and 2 are
+    // excluded — plus a new 'Not any of' operator on every existing
+    // multiSelect field. Swap it to a real dropdown once the flag's actual
+    // values are decided.
+    'LPC DPD':{type:'number', placeholder:'Days', isNew:true},
+    'NPA Flag':{type:'list', isNew:true},
   },
   'Card': {
     'Status':{type:'select', options:['Active','Inactive']}, 'Smart Tag':{type:'smartTag'},
@@ -5279,7 +5306,14 @@ function condRow(c, idx, entityOptions, containerKey, opts){
     ? `<input class="f-input" type="text" value="${c.attribute}" disabled>`
     : `<select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'attribute',this.value)">
         <option value="">Attribute</option>
-        ${attrOptions.map(a=>`<option value="${a}" ${c.attribute===a?'selected':''}>${a}</option>`).join('')}
+        ${attrOptions.map(a=>{
+          // isNew attributes are suffixed in the option TEXT only — value=
+          // stays the bare name, so nothing downstream (c.attribute, the
+          // ELIGIBILITY_META lookup, review summaries) sees the suffix.
+          // Same convention as disabledOptions' "(Coming soon)" below.
+          const am = (ELIGIBILITY_META[c.entity]||{})[a];
+          return `<option value="${a}" ${c.attribute===a?'selected':''}>${a}${am&&am.isNew?' (New)':''}</option>`;
+        }).join('')}
       </select>`;
 
   // Not-yet-typed entities (e.g. JOURNEY's custom attribute list) keep the
@@ -5344,7 +5378,10 @@ function condRow(c, idx, entityOptions, containerKey, opts){
     } else if(meta.type==='highestTxnEMI'){
       valueWidget = `<input type="number" class="f-input" placeholder="Amount" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
     } else if(meta.type==='number'){
-      valueWidget = `<input type="number" class="f-input" placeholder="₹ Amount" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
+      // Placeholder was hardcoded to "₹ Amount", which is wrong for a
+      // number attribute that isn't money (LPC DPD is a day count).
+      // Overridable per attribute, defaulting to the old text.
+      valueWidget = `<input type="number" class="f-input" placeholder="${meta.placeholder||'₹ Amount'}" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
     } else if(meta.type==='list'){
       valueWidget = `<input type="text" class="f-input" placeholder="Comma-separated codes" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
     } else if(meta.type==='smartTag'){
