@@ -5167,7 +5167,7 @@ const ELIGIBILITY_META = {
     // excluded — plus a new 'Not any of' operator on every existing
     // multiSelect field. Swap it to a real dropdown once the flag's actual
     // values are decided.
-    'LPC DPD':{type:'number', placeholder:'Days', isNew:true},
+    'Days Past Due (LPC)':{type:'number', placeholder:'Days', isNew:true},
     'NPA Flag':{type:'list', isNew:true},
   },
   'Card': {
@@ -5276,10 +5276,15 @@ const SMART_TAG_OPTIONS = ['High EMI Propensity','Dormant 60d','Recent Complaint
 function condRow(c, idx, entityOptions, containerKey, opts){
   const meta = (ELIGIBILITY_META[c.entity]||{})[c.attribute];
   // Real attribute lists per entity.
-  const attrOptions = c.entity && ELIGIBILITY_META[c.entity] ? Object.keys(ELIGIBILITY_META[c.entity]) : ({
+  // excludeAttrs (optional) — drop attributes the caller has already asked
+  // for elsewhere on the same screen, so the same question isn't posed
+  // twice. Used by the event-based User Base block, where picking the
+  // Smart Tag mode already has its own Smart Tag field above.
+  const excludeAttrs = (opts && opts.excludeAttrs) || [];
+  const attrOptions = (c.entity && ELIGIBILITY_META[c.entity] ? Object.keys(ELIGIBILITY_META[c.entity]) : ({
     'Transaction EMI':['Highest Value Eligible EMI Transaction','Latest Eligible EMI Transaction'],
     'Total Outstanding EMI':['Total Outstanding EMI Eligibility'],
-  }[c.entity] || ['Attribute']);
+  }[c.entity] || ['Attribute'])).filter(a=>!excludeAttrs.includes(a));
 
   // A single-option entity list (Transaction Events / EMI Events, which only
   // ever have one meaningful entity) isn't shown at all — repeating
@@ -5379,7 +5384,7 @@ function condRow(c, idx, entityOptions, containerKey, opts){
       valueWidget = `<input type="number" class="f-input" placeholder="Amount" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
     } else if(meta.type==='number'){
       // Placeholder was hardcoded to "₹ Amount", which is wrong for a
-      // number attribute that isn't money (LPC DPD is a day count).
+      // number attribute that isn't money (Days Past Due is a day count).
       // Overridable per attribute, defaulting to the old text.
       valueWidget = `<input type="number" class="f-input" placeholder="${meta.placeholder||'₹ Amount'}" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
     } else if(meta.type==='list'){
@@ -5745,6 +5750,17 @@ function renderWizStep(stepId){
         if(!ELIGIBILITY_META['Account'][c.attribute]){ c.attribute=''; c.operator=''; c.value=''; delete c.values; delete c.value2; }
       }
     });
+    // Smart Tag mode asks for a Smart Tag in its own field above, so it is
+    // dropped from the Additional Conditions picker — the same question
+    // twice on one screen, with two answers that could disagree. A row
+    // already set to it (picked under another mode, then the mode changed)
+    // is reset to a blank attribute rather than deleted: the select would
+    // otherwise display a value it no longer offers, and silently removing
+    // a row someone built is worse than leaving it to re-pick.
+    const ubExclude = d.userBaseMode==='Smart Tag' ? ['Smart Tag'] : [];
+    if(ubExclude.length) d.conditions.forEach(c=>{
+      if(ubExclude.includes(c.attribute)){ c.attribute=''; c.operator=''; c.value=''; c.values=[]; c.value2=''; }
+    });
     html = `
       <h1 class="wiz-heading">Set Up Nudge User Base</h1>
       <p class="wiz-sub">Who should be eligible to receive this nudge once the event fires.</p>
@@ -5772,7 +5788,7 @@ function renderWizStep(stepId){
       <div class="f-group">
         <label class="f-label">Additional Conditions <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
         <div class="f-hint" style="margin:0 0 6px;">Narrow the user base further. Every condition here is AND'd with the choice above.</div>
-        ${d.conditions.map((c,i)=>`${i>0?'<div class="cond-and">AND</div>':''}${condRow(c,i,['Account'],'conditions',{forceEntity:true})}`).join('')}
+        ${d.conditions.map((c,i)=>`${i>0?'<div class="cond-and">AND</div>':''}${condRow(c,i,['Account'],'conditions',{forceEntity:true, excludeAttrs:ubExclude})}`).join('')}
         <div class="add-link" onclick="wizCondAdd('conditions')">${ic('workflow')} Add Condition</div>
       </div>
       ${wizFooter()}`;
