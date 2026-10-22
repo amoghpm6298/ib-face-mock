@@ -1047,9 +1047,36 @@ Verified: 117 unit, 39 e2e, clean build — no test touched icons, so the
 suite passing confirms this changed presentation only.
 
 
-## Where the Campaign Designer is documented
+## The Campaign Designer has moved out — 2026-10-22
 
-The agentic Campaign Designer is a separate application that shares this
-app's campaign model, reducers, canvas and validators but none of its UI
-shell. It has its own Vite config, entry point and port. Its history and
-its standing design decisions live in `server/CLAUDE.md`, not here.
+The agentic Campaign Designer lived in this folder for a while and does not
+any more. It is its own repository:
+**https://github.com/amoghpm6298/campaign-designer-ag**, branch
+`designer-standalone`, where the designer is the root rather than a
+subdirectory. Its history and standing design decisions are in that repo's
+`server/CLAUDE.md`.
+
+**Why it left.** Nothing in this builder imported it, and it could not be
+deployed with this app in any case: the agent's API is served by a Vite
+DEV-SERVER plugin, so the static Vercel build published a designer whose
+first message always failed. The only thing tying them together was a build
+script that copied one into the other's output.
+
+**What went with it:** `server/`, `src/designer/`, `src/designer-app/`,
+`agent-proto/`, `eval/`, `designer.html`, `vite.designer.config.ts`, the
+agent docs, and 55 of the 58 unit test files. `src/data/knowledgeShape.ts`
+and `src/data/conditionValidation.ts` went too — both existed only so the
+agent's server could share them, and nothing here read either one.
+
+**THE ONE THING TO KNOW IF YOU CHANGE THE CAMPAIGN MODEL.** The designer
+carries its OWN COPY of this app's reducer, canvas, node drawer and campaign
+types — about 4,900 lines across 26 files — because it builds campaigns
+through `dcConfirmAddNode` and draws them with `DripCanvas`. That was a
+deliberate choice (2026-10-22) over a shared dependency, on the grounds that
+this builder has been stable since 12 October while all the work has been on
+the agent. The cost is real and is stated rather than hidden: **a change to
+`campaignReducer`, `graphTypes`, `sharedConstants`, `nodeMeta`,
+`defaultConfig`, `idGen`, `DripCanvas` or `AddEditDrawer` here does not reach
+the designer.** If this builder starts moving again, that copy has to be
+reconciled, or the designer's central claim — that it produces the same kind
+of object a person would build by hand — stops being true.
