@@ -242,18 +242,4 @@ select:focus { outline: 2px solid var(--info-bg); }
 .add-link.quiet { color: var(--gray-500); font-weight: 500; }
 .add-link.quiet:hover { color: var(--blue-cta); }
 
-/* Agent-suggested message on a Send, shown read-only in the drawer. Styled
-   as a quiet aside rather than a form field, because nothing in it is
-   editable and none of it is bank-approved configuration. */
-.agent-msg {
-  border: 1px dashed var(--gray-300);
-  border-radius: 8px;
-  padding: 12px 14px;
-  background: var(--gray-50);
-}
-.agent-msg-dl { margin: 10px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; }
-.agent-msg-dl dt {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--gray-500); white-space: nowrap;
-}
-.agent-msg-dl dd { margin: 0; font-size: 13px; color: var(--gray-800); }
+

@@ -311,12 +311,10 @@ export function dcNormalizeOperator(op: string | undefined): string {
   return LEGACY_OPERATORS[op] ?? op;
 }
 
-// Which operators a condition row may use for a given attribute. Extracted
-// verbatim from ConditionRows.tsx, where it had been inline, because the
-// agent's own capability tool needs the SAME answer the builder gives. Two
-// copies of this rule would drift, and the agent proposing an operator the
-// drawer does not offer is exactly the class of defect that forces a person
-// to correct the campaign by hand.
+// Which operators a condition row may use for a given attribute. Lives here
+// rather than inline in ConditionRows.tsx so there is exactly one answer to
+// "what can this attribute be compared with" — two copies of this rule would
+// drift.
 // Comparisons are lowercase so "what + comparison + value" reads as one
 // sentence on the row and again on Review: "Current OS amount is greater
 // than or equal to ₹20,000". Numbers get the full six; dates keep the same

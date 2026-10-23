@@ -1368,3 +1368,27 @@ updated entry reads "Card control updated, Domestic online, turned on" on
 canvas before and after save/reopen; and the Card Activation Reminder sample
 opens on Virtual card issued with the goal Virtual card activated. 153 unit
 (13 new), 45 e2e (3 new), clean build. App activity untouched.
+
+## 2026-10-23 (cont'd) — The Campaign Designer's residue removed from the app
+
+`200175e` moved the Campaign Designer out to its own repo, but a few things
+it had added to files the manual builder shares survived the removal:
+
+- `DripAgentMessaging` in `graphTypes.ts`
+- `AgentMessagingPanel` and its mount at the bottom of the Send form
+- `.agent-msg` / `.agent-msg-dl` in `index.css`
+- a carry-forward exception in `dcConfirmEditNode` that preserved
+  `agentMessaging` across an edit, which existed only to stop that panel
+  being wiped
+- two comments explaining a rule by what the agent's capability tool needed
+
+All gone. The reducer's rule is back to the simple one it should be: the
+form owns every field it renders, its config replaces the old one wholesale,
+and a stale value no form owns is a bug rather than a feature. These are
+different products and the app should carry nothing of the other one.
+
+Left alone: two mentions of the *propensity* agent in `tokens.css`, which
+are about where this app's visual design came from, not the Campaign
+Designer.
+
+Verified: 153 unit, 45 e2e, clean build — nothing referenced any of it.

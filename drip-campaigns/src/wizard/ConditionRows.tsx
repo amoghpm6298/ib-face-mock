@@ -127,8 +127,8 @@ export function ConditionRows({
     <>
       {conditions.map((c, i) => {
         const attrMeta = meta ? meta[c.attribute] : null;
-        // The rule itself lives in sharedConstants so the agent's capability
-        // tool answers exactly what this drawer offers.
+        // The rule itself lives in sharedConstants, so there is one answer
+        // to what an attribute can be compared with.
         const opOptions: string[] = dcOperatorsForAttribute(attrMeta, { locked: Boolean(lockedAttribute) });
         // multiSelect only has one real operator — rendered as already
         // selected rather than making someone pick from a 1-option list,
