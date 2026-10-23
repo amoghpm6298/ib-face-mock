@@ -5261,8 +5261,49 @@ const ELIGIBILITY_META = {
     'Source':       {type:'select', options:EVENT_SOURCE_OPTIONS},
   },
 };
+// Date conditions are split by ATTRIBUTE, not by nudge type: a birthday is a
+// different question from a record timestamp, so Date of Birth gets age and
+// birthday rules while every other date gets relative-day rules. The old
+// generic list (Equals / Greater than / ... / Between / Difference in days)
+// is gone for dates entirely — it never read as a sentence and "Difference
+// in days" never said which direction it meant.
+const CURRENT_DAY_TOKEN = '{current-day}';
+const DATE_OPERATORS_SHARED = ['Is','Is before','Is on or before','Is after','Is on or after','Is between'];
+// The two "exactly N days" birthday rules ignore the year: they take this
+// year's birthday and count days from {current-day}. Birthday 22 October
+// with N = 30 means the nudge matches on 22 September (in exactly N days)
+// or on 21 November (was exactly N days ago), each matching one single day.
+// N = 0 matches the birthday itself.
+//
+// They are deliberately NOT the same question as DATE_OPERATORS_GENERAL's
+// 'Is exactly N days before/after {current-day}', which compares the whole
+// birth date including the year, so N = 30 there would mean the customer
+// was born 30 days ago. That is why these two live only on this list.
+// 'Birthday is within the next N days' stays a window, not a single day.
+const DATE_OPERATORS_DOB = [...DATE_OPERATORS_SHARED,
+  'Birthday is ' + CURRENT_DAY_TOKEN,
+  'Birthday is in exactly N days', 'Birthday was exactly N days ago',
+  'Birthday is within the next N days',
+  'Age is','Age is at least','Age is at most'];
+const DATE_OPERATORS_GENERAL = [...DATE_OPERATORS_SHARED,
+  'Is exactly N days before ' + CURRENT_DAY_TOKEN, 'Is exactly N days after ' + CURRENT_DAY_TOKEN,
+  'Is within the last N days','Is within the next N days'];
+function dateOperatorsFor(attribute){
+  return attribute==='Date of Birth' ? DATE_OPERATORS_DOB : DATE_OPERATORS_GENERAL;
+}
+// Which value widget a date operator needs. One function, read by both the
+// row renderer and the review summary, so the two can't disagree about what
+// a given operator stores.
+function dateOpKind(op){
+  if(!op) return '';
+  if(op==='Is between') return 'two-dates';
+  if(op==='Birthday is ' + CURRENT_DAY_TOKEN) return 'fixed-token';
+  if(/\bN days\b/.test(op)) return 'days';
+  if(op==='Age is' || op==='Age is at least' || op==='Age is at most') return 'years';
+  return 'one-date';
+}
 const OPERATORS_BY_TYPE = {
-  select:['Equals'], bool:['Equals'], date:['Equals','Greater than','Greater than or equal to','Less than','Less than or equal to','Between','Difference in days'],
+  select:['Equals'], bool:['Equals'], date:DATE_OPERATORS_GENERAL,
   list:['Allowed','Denied'], smartTag:['Allowed','Denied'], highestTxnEMI:['Greater than','Greater than or equal to'],
   number:['Equals','Greater than','Greater than or equal to','Less than','Less than or equal to'],
   // A real, fixed enum where more than one value can legitimately apply at
@@ -5340,7 +5381,8 @@ function condRow(c, idx, entityOptions, containerKey, opts){
   // canRenderSecondSection: entity + attribute must both be picked, and the
   // one no-filter attribute (Latest Eligible EMI Transaction) never shows one.
   const showSecond = c.entity && c.attribute && meta && meta.type!=='none';
-  const ops = meta ? (OPERATORS_BY_TYPE[meta.type]||[]) : [];
+  // Dates resolve per attribute; every other type keeps its flat list.
+  const ops = meta ? (meta.type==='date' ? dateOperatorsFor(c.attribute) : (OPERATORS_BY_TYPE[meta.type]||[])) : [];
 
   let valueWidget = '';
   // Between is the one operator that emits TWO widgets into the value
@@ -5371,14 +5413,43 @@ function condRow(c, idx, entityOptions, containerKey, opts){
         <option ${c.value==='False'?'selected':''}>False</option>
       </select>`;
     } else if(meta.type==='date'){
-      if(c.operator==='Between'){
+      // One date slot = a mode select plus, only in Specific date mode, the
+      // date input itself. The select doubles as the token display, so
+      // picking {current-day} hides the input and the row still reads as a
+      // sentence. Nobody ever types the braces.
+      // Each slot is its own flex group so a mode select and its date input
+      // stay paired on one line. .f-input is width:100%, which in a wrapping
+      // flex row makes every widget claim a full line on its own — an
+      // explicit flex-basis overrides that and lets two slots sit side by
+      // side, so "Is between" still reads as one sentence.
+      const dateSlot = (field)=>{
+        const v = (field==='value2' ? c.value2 : c.value) || '';
+        const isToken = v===CURRENT_DAY_TOKEN;
+        return `<div style="flex:1 1 ${isToken?'150px':'250px'};min-width:0;display:flex;gap:6px;">
+            <select class="f-input" style="flex:1 1 130px;min-width:0;" onchange="wizCondSetDateMode('${containerKey}',${idx},'${field}',this.value)">
+              <option value="date" ${isToken?'':'selected'}>Specific date</option>
+              <option value="token" ${isToken?'selected':''}>${CURRENT_DAY_TOKEN}</option>
+            </select>
+            ${isToken ? '' : `<input type="date" class="f-input" style="flex:1 1 130px;min-width:0;" value="${v}" onchange="wizCondUpdate('${containerKey}',${idx},'${field}',this.value)">`}
+          </div>`;
+      };
+      const countSlot = (unit)=>`<input type="number" min="0" step="1" class="f-input" style="flex:0 1 110px;min-width:0;" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
+          <span style="align-self:center;font-size:13.5px;color:var(--gray-600);white-space:nowrap;">${unit}</span>`;
+      const kind = dateOpKind(c.operator);
+      if(kind==='two-dates'){
         wideValue = true;
-        valueWidget = `<input type="date" class="f-input" value="${c.value||''}" onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
-          <input type="date" class="f-input" value="${c.value2||''}" onchange="wizCondUpdate('${containerKey}',${idx},'value2',this.value)">`;
-      } else if(c.operator==='Difference in days'){
-        valueWidget = `<input type="number" class="f-input" placeholder="Days" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
-      } else {
-        valueWidget = `<input type="date" class="f-input" value="${c.value||''}" onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
+        valueWidget = `${dateSlot('value')}${dateSlot('value2')}`;
+      } else if(kind==='fixed-token'){
+        // The operator already names the day. Shown disabled, the same way a
+        // mandatory attribute renders, so it reads as fixed rather than empty.
+        valueWidget = `<input class="f-input" type="text" value="${CURRENT_DAY_TOKEN}" disabled>`;
+      } else if(kind==='days'){
+        valueWidget = countSlot('days');
+      } else if(kind==='years'){
+        valueWidget = countSlot('years');
+      } else if(kind==='one-date'){
+        wideValue = true;
+        valueWidget = dateSlot('value');
       }
     } else if(meta.type==='highestTxnEMI'){
       valueWidget = `<input type="number" class="f-input" placeholder="Amount" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
@@ -5441,7 +5512,7 @@ function condRow(c, idx, entityOptions, containerKey, opts){
         <option value="">Operator</option>
         ${ops.map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}
       </select></div>` : ''}
-      ${showSecond ? `<div style="${wideValue?'flex:2 1 296px;min-width:296px;':'flex:1 1 140px;min-width:0;'}display:flex;gap:8px;">${valueWidget}</div>` : ''}
+      ${showSecond ? `<div style="${wideValue?'flex:2 1 296px;min-width:296px;flex-wrap:wrap;':'flex:1 1 140px;min-width:0;'}display:flex;gap:8px;">${valueWidget}</div>` : ''}
       ${c.mandatory ? `<div style="width:24px;flex-shrink:0;"></div>` : `<div class="cond-remove" onclick="wizCondRemove('${containerKey}',${idx})" style="align-self:center;">✕</div>`}
     </div>`;
 }
@@ -5450,6 +5521,21 @@ function wizCondUpdate(key, idx, field, val){
   c[field] = val;
   if(field==='entity'){ c.attribute=''; c.operator=''; c.value=''; c.value2=''; c.values=[]; }
   if(field==='attribute'){ c.operator=''; c.value=''; c.value2=''; c.values=[]; }
+  // A date's operators each want a different value shape (a date, a day
+  // count, an age), so switching between them must not leave the old value
+  // sitting in the new widget. Scoped to date attributes on purpose:
+  // clearing on EVERY operator change would wipe typed values that are
+  // still valid, e.g. flipping Account Block Codes or NPA Flag between
+  // Allowed and Denied, where the value means the same thing either way.
+  if(field==='operator'){
+    const opMeta = (ELIGIBILITY_META[c.entity]||{})[c.attribute];
+    if(opMeta && opMeta.type==='date'){
+      c.value=''; c.value2='';
+      // This operator names the day itself, so it carries the token as its
+      // stored value rather than asking for one.
+      if(val==='Birthday is ' + CURRENT_DAY_TOKEN) c.value = CURRENT_DAY_TOKEN;
+    }
+  }
   // Initiated By gates Transaction Type's available options (2026-09-23,
   // same day, later round) — when it changes, clear the sibling
   // Transaction Type row's stale selection (a value valid under the old
@@ -5466,6 +5552,14 @@ function wizCondUpdate(key, idx, field, val){
   // widget shows next); free-text value/value2 typing must not re-render on
   // every keystroke or the input loses focus.
   if(['entity','attribute','operator'].includes(field) || (field==='value' && c.attribute==='Initiated By')) renderWizStep(wizSteps()[wiz.stepIdx].id);
+}
+// Switches one date slot between a real date and the {current-day} token.
+// The token is stored as the literal string, so a saved condition keeps
+// meaning "whenever this runs" rather than freezing today's date into it.
+function wizCondSetDateMode(key, idx, field, mode){
+  const c = wiz.draft[key][idx];
+  c[field] = mode==='token' ? CURRENT_DAY_TOKEN : '';
+  renderWizStep(wizSteps()[wiz.stepIdx].id);
 }
 function condToggleSmartTag(key, idx, tag){
   const c = wiz.draft[key][idx];
@@ -6393,6 +6487,28 @@ function retryReviewRows(commBlocks){
   });
   return rows;
 }
+// Renders one eligibility condition as a sentence. Every eligibility
+// summary goes through this, so the three of them can't drift: each used to
+// print attribute + operator + value and drop value2 entirely, which would
+// have shown a bare "Date of Birth is between" for the new date rows.
+function dateCondPhrase(op, value, value2){
+  const lower = op.charAt(0).toLowerCase() + op.slice(1);
+  const kind = dateOpKind(op);
+  if(kind==='fixed-token') return lower;                                  // the operator already names the day
+  if(kind==='two-dates') return `${lower} ${value||''} and ${value2||''}`;
+  if(kind==='days') return lower.replace(' N days', ` ${value||''} days`); // the unit is already in the label
+  if(kind==='years') return `${lower} ${value||''} years`;
+  return `${lower} ${value||''}`;
+}
+function condSummary(c){
+  const attr = c.attribute||'';
+  const tidy = (str)=>str.replace(/\s+/g,' ').trim();
+  if(c.values && c.values.length) return tidy(`${attr} ${c.operator||''} ${c.values.join(', ')}`);
+  const am = (ELIGIBILITY_META[c.entity]||{})[attr];
+  if(am && am.type==='date' && c.operator) return tidy(`${attr} ${dateCondPhrase(c.operator, c.value, c.value2)}`);
+  const v = c.value2 ? `${c.value||''} and ${c.value2}` : (c.value||'');
+  return tidy(`${attr} ${c.operator||''} ${v}`);
+}
 function reviewSections(){
   const d = wiz.draft;
   const sections = [];
@@ -6440,15 +6556,7 @@ function reviewSections(){
       : d.userBaseMode==='Journey/Batch'
       ? [['Mode','Journey / Batch'],['Journey', d.eventJourney||'—'],['Batch', d.eventBatch||'—']]
       : [['Mode','All Customers']];
-    // Reads .values (Smart Tag / Account Block Codes pick a set) and
-    // Between's second bound, not just .value — a row of either kind
-    // would otherwise summarise as blank.
-    ubRows.push(['Additional Conditions', (d.conditions||[]).filter(c=>c.attribute).map(c=>{
-      const v = (c.values&&c.values.length) ? c.values.join(', ')
-        : (c.operator==='Between' && c.value2) ? `${c.value||'—'} and ${c.value2}`
-        : c.value;
-      return `${c.attribute} ${c.operator||''} ${v||''}`.replace(/\s+/g,' ').trim();
-    }).join(' AND ')||'—']);
+    ubRows.push(['Additional Conditions', (d.conditions||[]).filter(c=>c.attribute).map(condSummary).join(' AND ')||'—']);
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows: ubRows});
   } else if(d.nudgeType==='EXTERNAL_SOURCE'){
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:[
@@ -6457,14 +6565,14 @@ function reviewSections(){
   } else if(d.nudgeType==='FILE_UPLOAD' || d.nudgeType==='JOURNEY'){
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:[
       ['Journey Name', d.journey||'—'], ['Batch Name', d.batch||'—'],
-      ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(c=>`${c.attribute} ${c.operator} ${c.value}`).join(', ')||'—'],
+      ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(condSummary).join(', ')||'—'],
     ]});
   } else {
     sections.push({title:'User Base', stepId:'ELIGIBILITY', rows: d.nudgeType==='FILE_UPLOAD' ? [
       ['Uploaded File', d.fileUploaded ? 'user_base_q3.csv' : '—'],
     ] : [
       ['Eligibility Entity', (ELIGIBILITY_ENTITY_BY_TYPE[d.nudgeType]||[]).join(', ')||'—'],
-      ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(c=>`${c.attribute} ${c.operator} ${c.value}`).join(', ')||'—'],
+      ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(condSummary).join(', ')||'—'],
     ]});
   }
   if(wiz.triggerType==='event-based'){
