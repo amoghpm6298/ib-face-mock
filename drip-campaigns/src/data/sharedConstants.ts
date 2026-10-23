@@ -78,7 +78,21 @@ export const EVENT_CATEGORIES: Record<string, EventCategoryMeta> = {
   // behavior.
   'Transaction Events': { events: ['Transaction'], isNew: true },
   'EMI Events': { events: ['EMI_STATUS_CHANGED'], isNew: true },
-  'Card Events': { events: ['Card Issued', 'Card Activated', 'Card Loaded', 'Card Inactive'], isNew: true },
+  'Card Events': {
+    events: [
+      'Virtual card issued',
+      'Physical card issued',
+      'Virtual card activated',
+      'Physical card activated',
+      'PIN set',
+      'First transaction done',
+      'Card hotlisted',
+      'Card locked',
+      'Card unlocked',
+      'Card control updated',
+    ],
+    isNew: true,
+  },
 };
 
 // Which flow a customer completed a triggering action through.
@@ -98,10 +112,26 @@ export const TRANSACTION_SUBTYPE_OPTIONS = [
   'EFT_WITHDRAWAL_REVERSAL', 'SURCHARGE', 'SURCHARGE_REVERSAL', 'TAX', 'TAX_REVERSAL',
 ];
 
-export type AttrType = 'date' | 'select' | 'bool' | 'number' | 'list' | 'smartTag' | 'multiSelect' | 'highestTxnEMI' | 'none';
+// 'bool' is a yes/no question and reads as Yes / No, on the row and on
+// Review. 'onoff' is the same shape worded for a card control, so a row
+// reads "Domestic online is turned on" rather than "... is Yes".
+export type AttrType = 'date' | 'select' | 'bool' | 'onoff' | 'number' | 'list' | 'smartTag' | 'multiSelect' | 'highestTxnEMI' | 'none';
+export const YES_NO = ['Yes', 'No'];
+export const ON_OFF = ['turned on', 'turned off'];
+
+// The four card-control channels, and the three limits each one carries.
+// The amount already spent against a limit is deliberately not here: it is
+// not something a campaign filters on.
+export const CARD_CONTROL_CHANNELS = ['Domestic chip', 'Domestic contactless', 'Domestic online', 'Domestic card swipe'];
+export const CARD_CONTROL_LIMITS = ['single payment limit', 'daily limit', 'monthly limit'];
+export const CARD_CONTROL_CHANGES = ['turned on', 'turned off', ...CARD_CONTROL_LIMITS];
+export const HOTLIST_REASONS = ['Damaged'];
 export interface AttrMeta {
   type: AttrType;
   options?: string[];
+  // How this number reads in a sentence. Only affects display: '20000'
+  // stays '20000' in storage, and shows as '₹20,000' or '70%'.
+  unit?: 'rupees' | 'percent';
 }
 export const ELIGIBILITY_META: Record<string, Record<string, AttrMeta>> = {
   Customer: {
@@ -113,6 +143,20 @@ export const ELIGIBILITY_META: Record<string, Record<string, AttrMeta>> = {
     'Last Updated On': { type: 'date' },
   },
   Account: {
+    'Current OS amount': { type: 'number', unit: 'rupees' },
+    'Current limit': { type: 'number', unit: 'rupees' },
+    // The limit the bank sanctioned, which is NOT the unused/available
+    // limit. Named in full so the two can't be confused in the picker.
+    'Assigned limit': { type: 'number', unit: 'rupees' },
+    // Current outstanding divided by current limit, as a whole percent. A
+    // current limit of 0 matches nothing — there is no percentage of zero.
+    // Nothing here is computed by the prototype; these are the campaign's
+    // words for columns the platform already holds.
+    Utilization: { type: 'number', unit: 'percent' },
+    Interest: { type: 'number', unit: 'rupees' },
+    // Yes means the stored status is success.
+    'eSign completed': { type: 'bool' },
+    'eNACH completed': { type: 'bool' },
     Status: { type: 'select', options: ['Active', 'Charge off', 'Pending closure', 'Closed', 'Dormant', 'Suspended', 'Forced suspended'] },
     'Smart Tag': { type: 'smartTag' },
     'Statement Due Date': { type: 'date' },
@@ -135,7 +179,24 @@ export const ELIGIBILITY_META: Record<string, Record<string, AttrMeta>> = {
     'Created On': { type: 'date' },
     'Last Updated On': { type: 'date' },
     'Card Block Codes': { type: 'list' },
+    Hotlisted: { type: 'bool' },
+    'Hotlist reason': { type: 'select', options: HOTLIST_REASONS },
+    'First transaction done': { type: 'bool' },
+    'First purchase done': { type: 'bool' },
+    'First repayment done': { type: 'bool' },
+    'PIN set': { type: 'bool' },
+    'Primary card': { type: 'bool' },
   },
+  // The card's controls as they stand right now. One row is one channel and
+  // one thing about it: whether it is on, or one of its three limits. A
+  // limit row only matches when that limit is turned on; the channel's own
+  // on/off is its own separate row.
+  'Card controls': Object.fromEntries(
+    CARD_CONTROL_CHANNELS.flatMap((ch) => [
+      [ch, { type: 'onoff' as AttrType }],
+      ...CARD_CONTROL_LIMITS.map((lim) => [`${ch} ${lim}`, { type: 'number' as AttrType, unit: 'rupees' as const }]),
+    ])
+  ),
   Transaction: {
     'Transaction Type': { type: 'multiSelect', options: TRANSACTION_SUBTYPE_OPTIONS },
     'Transaction Status': { type: 'multiSelect', options: ['APPROVED', 'SETTLED', 'PARTIALLY_SETTLED', 'EXPIRED', 'CANCELED'] },
@@ -164,35 +225,32 @@ export const ELIGIBILITY_META: Record<string, Record<string, AttrMeta>> = {
 // replacement mechanism, reused across Entry · Audience (entity =
 // 'Milestone'), Condition (customSource = 'Milestone'), and Branch
 // (source = 'Milestone').
-export interface MilestoneBenefit {
+// The milestone OFFERS configured for this campaign's program.
+//
+// A milestone is an offer the program already has, not a spend ladder. The
+// four entries that used to sit here ("Spend ₹25,000 in first 30 days" and
+// three like it) were invented: they baked a target amount and a day count
+// into the name, which is the offer's own configuration, not its identity.
+// They were removed outright rather than renamed, and a saved campaign that
+// still points at one of them opens with its offer cleared.
+//
+// This list stands in for whatever the program has configured, and lives in
+// one place so there is only ever one to change. Names carry no amount and
+// no day count. It is legitimately EMPTY for a program with no milestone
+// offers, and the picker handles that rather than being filled with an
+// invented rule.
+export interface MilestoneOffer {
   id: string;
   name: string;
 }
-export const MILESTONE_BENEFITS: MilestoneBenefit[] = [
-  { id: 'MS-1001', name: 'Spend ₹25,000 in first 30 days' },
-  { id: 'MS-1002', name: 'Spend ₹75,000 in first 90 days' },
-  { id: 'MS-1003', name: 'Spend ₹1,50,000 in first 180 days' },
-  { id: 'MS-1004', name: 'Spend ₹3,00,000 in first 365 days' },
+export const MILESTONE_OFFERS: MilestoneOffer[] = [
+  { id: 'MO-1', name: 'Welcome Milestone' },
+  { id: 'MO-2', name: 'Quarterly Spend Milestone' },
+  { id: 'MO-3', name: 'Annual Fee Waiver Milestone' },
 ];
-export function milestoneBenefitName(id: string | undefined): string {
-  return MILESTONE_BENEFITS.find((b) => b.id === id)?.name || '';
+export function milestoneOfferName(id: string | undefined): string {
+  return MILESTONE_OFFERS.find((o) => o.id === id)?.name || '';
 }
-// Same 8 real operator values as the real app's `deliveryValueListSuperSet`
-// (GT/GTE/LT/LTE/BETWEEN/GTE_PCT/LTE_PCT/IS) — not invented labels.
-export interface MilestoneOperatorMeta {
-  value: string;
-  label: string;
-}
-export const MILESTONE_OPERATORS: MilestoneOperatorMeta[] = [
-  { value: 'GT', label: 'Greater than' },
-  { value: 'GTE', label: 'Greater than or equal to' },
-  { value: 'LT', label: 'Less than' },
-  { value: 'LTE', label: 'Less than or equal to' },
-  { value: 'BETWEEN', label: 'Between' },
-  { value: 'GTE_PCT', label: 'Greater than or equal to percentage' },
-  { value: 'LTE_PCT', label: 'Less than or equal to percentage' },
-  { value: 'IS', label: 'Is' },
-];
 
 // Which entity Drip's Entry Event / Wait Until / Split "Entry event
 // attribute" condition builder resolves to per Event Category.
@@ -232,7 +290,26 @@ export const EVENT_ATTR_BY_TYPE: Record<string, string> = {
   'Button Click': 'Button Name',
   'Outcome Issuance': 'Outcome Status',
 };
-export const LOCKED_ATTR_OPERATORS = ['Equals', 'Not Equals', 'Greater than', 'Less than', 'Is'];
+// The source list had both 'Equals' and 'Is', which are the same question;
+// lowercased they collapse to one, so this is four rather than five.
+export const LOCKED_ATTR_OPERATORS = ['is', 'is not', 'is more than', 'is less than'];
+// Every operator this app has ever stored, mapped onto the wording above, so
+// a campaign saved before the rewrite still reads correctly.
+export const LEGACY_OPERATORS: Record<string, string> = {
+  Equals: 'is',
+  Is: 'is',
+  'Not Equals': 'is not',
+  'Greater than': 'is more than',
+  'Greater than or equal to': 'is at least',
+  'Less than': 'is less than',
+  'Less than or equal to': 'is at most',
+  Between: 'is between',
+  'Any of': 'is any of',
+};
+export function dcNormalizeOperator(op: string | undefined): string {
+  if (!op) return '';
+  return LEGACY_OPERATORS[op] ?? op;
+}
 
 // Which operators a condition row may use for a given attribute. Extracted
 // verbatim from ConditionRows.tsx, where it had been inline, because the
@@ -240,11 +317,35 @@ export const LOCKED_ATTR_OPERATORS = ['Equals', 'Not Equals', 'Greater than', 'L
 // copies of this rule would drift, and the agent proposing an operator the
 // drawer does not offer is exactly the class of defect that forces a person
 // to correct the campaign by hand.
+// Comparisons are lowercase so "what + comparison + value" reads as one
+// sentence on the row and again on Review: "Current OS amount is greater
+// than or equal to ₹20,000". Numbers get the full six; dates keep the same
+// four they always had, just worded to read.
+export const NUMBER_COMPARISONS = ['is', 'is more than', 'is at least', 'is less than', 'is at most', 'is between'];
+export const DATE_COMPARISONS = ['is', 'is after', 'is before', 'is between'];
 export function dcOperatorsForAttribute(meta: AttrMeta | null | undefined, opts?: { locked?: boolean }): string[] {
   if (opts?.locked) return LOCKED_ATTR_OPERATORS;
-  if (meta?.type === 'multiSelect') return ['Any of'];
-  if (meta?.type === 'number' || meta?.type === 'date') return ['Equals', 'Greater than', 'Less than', 'Between'];
-  return ['Equals', 'Not Equals'];
+  // Two-valued fields get one comparison. "is not Yes" is just "is No", and
+  // offering both would be a choice with no meaning behind it.
+  if (meta?.type === 'bool' || meta?.type === 'onoff') return ['is'];
+  if (meta?.type === 'multiSelect') return ['is any of'];
+  if (meta?.type === 'number') return NUMBER_COMPARISONS;
+  if (meta?.type === 'date') return DATE_COMPARISONS;
+  return ['is', 'is not'];
+}
+// Formats a stored value the way its filter reads in a sentence.
+export function dcFormatValue(meta: AttrMeta | null | undefined, raw: string | undefined): string {
+  const v = (raw ?? '').toString().trim();
+  if (!v) return '';
+  // Campaigns saved before yes/no filters read as Yes and No stored
+  // 'true'/'false'; they still read correctly.
+  if (meta?.type === 'bool') return v === 'true' ? 'Yes' : v === 'false' ? 'No' : v;
+  if (meta?.unit === 'percent') return `${v}%`;
+  if (meta?.unit === 'rupees') {
+    const n = Number(v);
+    return Number.isFinite(n) ? `₹${n.toLocaleString('en-IN')}` : `₹${v}`;
+  }
+  return v;
 }
 
 // Journey Events' own scoping selects (shown above its Event Conditions
@@ -279,6 +380,13 @@ export function resolveEntryEventAttrSource(eventCategory: string | null, eventT
   if (!eventCategory) return { entity: null, lockedAttr: null };
   const entity = DC_EVENT_ENTITY[eventCategory] || null;
   if (entity) return { entity, lockedAttr: null };
+  // A card event that carries details resolves to its own detail set, so
+  // Condition and Branch offer exactly those and nothing else. A card event
+  // with no details resolves neither, and the group stays hidden.
+  if (eventCategory === 'Card Events') {
+    const valid = dcValidEventType(eventCategory, eventType);
+    return { entity: valid && CARD_EVENT_DETAIL_ENTITIES[valid] ? valid : null, lockedAttr: null };
+  }
   const lockedAttr = eventType ? EVENT_ATTR_BY_TYPE[eventType] || null : null;
   return { entity: null, lockedAttr };
 }
@@ -318,4 +426,280 @@ export function deliveryStatusOptionsForSend(send: PrevStepSend): string[] {
   if (!send.fallbackChannel) return primary;
   const fallback = deliveryStatusOptionsFor(send.fallbackChannel);
   return [...new Set([...primary, ...fallback])];
+}
+
+// ---------------------------------------------------------------------------
+// The one "what" list
+//
+// Entry · Audience, Condition and Branch used to each ask a different
+// up-front question before you could state a filter: Entry asked for an
+// Entity, Condition asked for a Source, Branch asked for a Source and then
+// an Attribute. Three controls for the same job, and the available filters
+// differed depending on which one you picked. They are now a single grouped
+// list, so a filter row is just what / comparison / value everywhere.
+//
+// Transactions, Milestone and Previous message are groups in this same list
+// rather than a separate kind of form. They keep the questions they always
+// asked: Transactions is still "does a matching transaction exist in a
+// lookback window", Milestone is still one benefit and a progress
+// comparison, Previous message is still the previous send's outcome.
+// ---------------------------------------------------------------------------
+export type FilterGroup = 'Account' | 'Card' | 'Card controls' | 'Customer' | 'Transactions' | 'Milestone' | 'App activity' | 'Entry event' | 'Previous message';
+export const TXN_EXISTS = 'a matching transaction exists';
+export const TXN_NONE = 'no matching transaction exists';
+export const PREV_MESSAGE_FIELD = 'Outcome';
+
+export interface FilterOption {
+  group: FilterGroup;
+  field: string;
+  label: string;
+}
+export interface FilterOptionGroup {
+  group: FilterGroup;
+  options: FilterOption[];
+}
+
+// Previous message only exists once there is a message to have an outcome,
+// so it is offered on Condition and Branch and never on Entry. Entry event
+// is the same: it needs a triggering event to read, so it appears only when
+// entry is an Event Trigger, and only with whatever that event resolves to
+// (a real entity for Transaction/EMI Events, one locked attribute for
+// Journey/Offer Events, nothing for Card Events).
+export function dcFilterOptionGroups(opts?: { previousMessage?: boolean; entryEventEntity?: string | null; entryEventLockedAttr?: string | null }): FilterOptionGroup[] {
+  const fromEntity = (g: FilterGroup, entity: string): FilterOptionGroup => ({
+    group: g,
+    options: Object.keys(ELIGIBILITY_META[entity] || {}).map((field) => ({ group: g, field, label: field })),
+  });
+  const groups: FilterOptionGroup[] = [
+    fromEntity('Account', 'Account'),
+    fromEntity('Card', 'Card'),
+    // Sits next to Card because it is the same card, just its controls.
+    fromEntity('Card controls', 'Card controls'),
+    fromEntity('Customer', 'Customer'),
+    { group: 'Transactions', options: [{ group: 'Transactions', field: '', label: 'Transactions' }] },
+  ];
+  // Omitted entirely when the program has no milestone offers configured —
+  // an empty group would read as a dead end, and there is nothing honest to
+  // put in it.
+  if (MILESTONE_OFFERS.length) {
+    groups.push({ group: 'Milestone', options: MILESTONE_OFFERS.map((o) => ({ group: 'Milestone' as FilterGroup, field: o.id, label: o.name })) });
+  }
+  // One entry, not forty: the event itself is picked by search on the row,
+  // because a plain dropdown of every event the app fires is unscannable.
+  // Omitted when the program emits no events at all.
+  if (APP_EVENTS.length) {
+    groups.push({ group: 'App activity', options: [{ group: 'App activity', field: '', label: 'App activity' }] });
+  }
+  if (opts?.entryEventEntity) {
+    groups.push({
+      group: 'Entry event',
+      options: Object.keys(ELIGIBILITY_META[opts.entryEventEntity] || {}).map((field) => ({ group: 'Entry event' as FilterGroup, field, label: field })),
+    });
+  } else if (opts?.entryEventLockedAttr) {
+    groups.push({ group: 'Entry event', options: [{ group: 'Entry event', field: opts.entryEventLockedAttr, label: opts.entryEventLockedAttr }] });
+  }
+  if (opts?.previousMessage) {
+    groups.push({ group: 'Previous message', options: [{ group: 'Previous message', field: PREV_MESSAGE_FIELD, label: 'Previous message outcome' }] });
+  }
+  return groups;
+}
+
+// The entity whose attribute metadata backs a group, for the three groups
+// that are plain attribute lookups. The other three carry their own shape.
+export function dcEntityForGroup(group: string): string | null {
+  return group === 'Account' || group === 'Card' || group === 'Card controls' || group === 'Customer' ? group : null;
+}
+export function dcFilterAttrMeta(group: string, field: string, entryEventEntity?: string | null): AttrMeta | null {
+  if (group === 'Entry event') return entryEventEntity ? ELIGIBILITY_META[entryEventEntity]?.[field] ?? null : null;
+  const entity = dcEntityForGroup(group);
+  return entity ? ELIGIBILITY_META[entity]?.[field] ?? null : null;
+}
+
+// Progress against a milestone offer is a number, so it takes the same
+// words as every other number filter. There is no bare "is": progress is a
+// threshold question, and "is at least 100%" is how completed is expressed.
+export const MILESTONE_COMPARISONS = ['is more than', 'is at least', 'is less than', 'is at most', 'is between'];
+// The typed progress is a percent by default and can be switched to a rupee
+// amount on the same row.
+export type MilestoneValueUnit = 'percent' | 'rupees';
+
+export function dcComparisonsForFilter(group: string, field: string, entryEventEntity?: string | null): string[] {
+  if (group === 'App activity') return APP_ACTIVITY_DIRECTIONS;
+  if (group === 'Transactions') return [TXN_EXISTS, TXN_NONE];
+  if (group === 'Milestone') return MILESTONE_COMPARISONS;
+  if (group === 'Previous message') return ['is any of'];
+  if (group === 'Entry event') {
+    const meta = entryEventEntity ? ELIGIBILITY_META[entryEventEntity]?.[field] : null;
+    // No entity means a locked attribute, which has its own shorter list.
+    return entryEventEntity ? dcOperatorsForAttribute(meta) : LOCKED_ATTR_OPERATORS;
+  }
+  return dcOperatorsForAttribute(dcFilterAttrMeta(group, field));
+}
+
+// ---------------------------------------------------------------------------
+// App activity — something the customer did, or did not do, in the bank's app
+//
+// One place, standing in for the events the program emits. Each entry keeps
+// the RAW event name the app actually fires and a short label a campaign
+// manager reads; the picker searches both and shows only the label.
+//
+// Session id, account id, customer id, card id and the raw timestamps are
+// deliberately absent: they identify an occurrence, they are not something
+// anyone filters on, so they are not details either.
+//
+// `details` lists only what that event genuinely carries. Most events carry
+// none, and a detail left empty means any value.
+// ---------------------------------------------------------------------------
+export type AppEventDetail = 'offer';
+export interface AppEvent {
+  id: string;
+  raw: string;
+  label: string;
+  category: 'Authentication' | 'Cards' | 'Payments' | 'Offers';
+  details?: AppEventDetail[];
+}
+
+export const APP_EVENTS: AppEvent[] = [
+  // Authentication
+  { id: 'AE-001', raw: 'Authentication Transaction OTP Button Click', label: 'Enter OTP', category: 'Authentication' },
+  { id: 'AE-002', raw: 'Authentication Transaction Verify OTP Button Click', label: 'Verify OTP', category: 'Authentication' },
+  { id: 'AE-003', raw: 'Authentication Transaction Success Continue Button Click', label: 'Continue after OTP', category: 'Authentication' },
+  { id: 'AE-004', raw: 'Authentication Transaction Resend OTP Button Click', label: 'Resend OTP', category: 'Authentication' },
+  { id: 'AE-005', raw: 'Authentication Login Screen Load', label: 'Login screen opened', category: 'Authentication' },
+  { id: 'AE-006', raw: 'Authentication Login Success', label: 'Logged in', category: 'Authentication' },
+  { id: 'AE-007', raw: 'Authentication Login Failure', label: 'Login failed', category: 'Authentication' },
+  { id: 'AE-008', raw: 'Authentication Biometric Enable Button Click', label: 'Biometric turned on', category: 'Authentication' },
+  { id: 'AE-009', raw: 'Authentication MPIN Reset Button Click', label: 'MPIN reset started', category: 'Authentication' },
+  { id: 'AE-010', raw: 'Authentication Logout Button Click', label: 'Logged out', category: 'Authentication' },
+  // Cards
+  { id: 'AE-011', raw: 'Cards Card Details Screen Load', label: 'Card details viewed', category: 'Cards' },
+  { id: 'AE-012', raw: 'Cards Activate Card Button Click', label: 'Card activation started', category: 'Cards' },
+  { id: 'AE-013', raw: 'Cards Activate Card Success', label: 'Card activated', category: 'Cards' },
+  { id: 'AE-014', raw: 'Cards Set PIN Button Click', label: 'Set card PIN', category: 'Cards' },
+  { id: 'AE-015', raw: 'Cards Block Card Button Click', label: 'Card blocked', category: 'Cards' },
+  { id: 'AE-016', raw: 'Cards Unblock Card Button Click', label: 'Card unblocked', category: 'Cards' },
+  { id: 'AE-017', raw: 'Cards Replace Card Button Click', label: 'Replacement requested', category: 'Cards' },
+  { id: 'AE-018', raw: 'Cards Card Controls Screen Load', label: 'Card controls viewed', category: 'Cards' },
+  { id: 'AE-019', raw: 'Cards International Usage Toggle Click', label: 'International usage changed', category: 'Cards' },
+  { id: 'AE-020', raw: 'Cards Contactless Toggle Click', label: 'Contactless changed', category: 'Cards' },
+  { id: 'AE-021', raw: 'Cards Limit Change Button Click', label: 'Limit change requested', category: 'Cards' },
+  { id: 'AE-022', raw: 'Cards Statement Download Button Click', label: 'Statement downloaded', category: 'Cards' },
+  // Payments
+  { id: 'AE-023', raw: 'Payments Pay Bill Screen Load', label: 'Pay bill opened', category: 'Payments' },
+  { id: 'AE-024', raw: 'Payments Pay Bill Button Click', label: 'Bill payment started', category: 'Payments' },
+  { id: 'AE-025', raw: 'Payments Pay Bill Success', label: 'Bill paid', category: 'Payments' },
+  { id: 'AE-026', raw: 'Payments Pay Bill Failure', label: 'Bill payment failed', category: 'Payments' },
+  { id: 'AE-027', raw: 'Payments Autopay Setup Button Click', label: 'Autopay set up', category: 'Payments' },
+  { id: 'AE-028', raw: 'Payments Autopay Cancel Button Click', label: 'Autopay cancelled', category: 'Payments' },
+  { id: 'AE-029', raw: 'Payments EMI Conversion Screen Load', label: 'EMI conversion opened', category: 'Payments' },
+  { id: 'AE-030', raw: 'Payments EMI Conversion Button Click', label: 'EMI conversion started', category: 'Payments' },
+  { id: 'AE-031', raw: 'Payments EMI Conversion Success', label: 'EMI converted', category: 'Payments' },
+  { id: 'AE-032', raw: 'Payments Transaction History Screen Load', label: 'Transactions viewed', category: 'Payments' },
+  { id: 'AE-033', raw: 'Payments Dispute Raise Button Click', label: 'Dispute raised', category: 'Payments' },
+  { id: 'AE-034', raw: 'Payments Rewards Redeem Button Click', label: 'Rewards redeemed', category: 'Payments' },
+  // Offers
+  { id: 'AE-035', raw: 'Offers Offer Card Click', label: 'Offer clicked', category: 'Offers', details: ['offer'] },
+  { id: 'AE-036', raw: 'Offers Offer List Screen Load', label: 'Offers list viewed', category: 'Offers' },
+  { id: 'AE-037', raw: 'Offers Offer Detail Screen Load', label: 'Offer details viewed', category: 'Offers', details: ['offer'] },
+  { id: 'AE-038', raw: 'Offers Offer Apply Button Click', label: 'Offer applied', category: 'Offers', details: ['offer'] },
+  { id: 'AE-039', raw: 'Offers Offer Dismiss Button Click', label: 'Offer dismissed', category: 'Offers', details: ['offer'] },
+  { id: 'AE-040', raw: 'Offers Offer Terms Link Click', label: 'Offer terms opened', category: 'Offers', details: ['offer'] },
+];
+
+// The program's own offers, as names. No target amount and no day count —
+// that is the offer's configuration, not its identity. Deliberately NOT the
+// removed spend ladder, and separate from MILESTONE_OFFERS, which is a
+// different thing.
+export interface ProgramOffer {
+  id: string;
+  name: string;
+}
+export const PROGRAM_OFFERS: ProgramOffer[] = [
+  { id: 'OF-1', name: 'Welcome Offer' },
+  { id: 'OF-2', name: 'Fuel Surcharge Waiver' },
+  { id: 'OF-3', name: 'Dining Cashback' },
+  { id: 'OF-4', name: 'Travel Partner Offer' },
+  { id: 'OF-5', name: 'EMI Processing Fee Waiver' },
+];
+export function programOfferName(id: string | undefined): string {
+  return PROGRAM_OFFERS.find((o) => o.id === id)?.name || '';
+}
+
+export function appEventById(id: string | undefined): AppEvent | undefined {
+  return APP_EVENTS.find((e) => e.id === id);
+}
+export function appEventLabel(id: string | undefined): string {
+  return appEventById(id)?.label || '';
+}
+// Which events this campaign's program emits. The stand-in catalogue is the
+// same for every program, so this is the single place to narrow once real
+// per-program events exist — and it is what the program-change rule below
+// checks against.
+export function dcAppEventsForPrograms(_programs: string[]): AppEvent[] {
+  return APP_EVENTS;
+}
+export const APP_ACTIVITY_DIRECTIONS = ['happened', 'did not happen'];
+
+// ---------------------------------------------------------------------------
+// Card event details
+//
+// Two card events carry something worth narrowing on. Registered as entities
+// keyed by the event's own name so every existing attribute path — the
+// condition rows, the Entry event group on Condition and Branch, the value
+// widgets — works on them unchanged, instead of a parallel mechanism.
+//
+// Leaving a detail empty means any value. The other card events have none,
+// and the Entry event group stays hidden for them.
+// ---------------------------------------------------------------------------
+export const CARD_EVENT_DETAIL_ENTITIES: Record<string, Record<string, AttrMeta>> = {
+  'Card hotlisted': {
+    Reason: { type: 'select', options: HOTLIST_REASONS },
+  },
+  'Card control updated': {
+    Channel: { type: 'select', options: CARD_CONTROL_CHANNELS },
+    Change: { type: 'select', options: CARD_CONTROL_CHANGES },
+    // Only meaningful when Change is one of the three limits, and it
+    // matches only when that limit is turned on.
+    'Limit amount': { type: 'number', unit: 'rupees' },
+  },
+};
+Object.assign(ELIGIBILITY_META, CARD_EVENT_DETAIL_ENTITIES);
+
+export function cardEventDetailFields(eventType: string | null | undefined): Record<string, AttrMeta> | null {
+  return (eventType && CARD_EVENT_DETAIL_ENTITIES[eventType]) || null;
+}
+
+// A stored event type that the category no longer lists reads as unset, so
+// the row stays in place waiting to be picked again rather than silently
+// claiming an event that no longer exists. This is what clears the four
+// removed Card Events anywhere they were saved; nothing is repointed at a
+// different event.
+export function dcValidEventType(category: string | null | undefined, eventType: string | null | undefined): string {
+  if (!category || !eventType) return '';
+  return (EVENT_CATEGORIES[category]?.events || []).includes(eventType) ? eventType : '';
+}
+
+// A card event as one sentence: the event, then whatever detail was filled
+// in. "Card hotlisted, Damaged", or "Card control updated, Domestic online,
+// turned on". A limit reads as a rupee amount and only matches when that
+// limit is turned on. An empty detail means any value and is simply absent
+// from the sentence.
+export function dcCardEventPhrase(eventType: string | null | undefined, details: Record<string, string> | undefined): string {
+  const valid = dcValidEventType('Card Events', eventType);
+  if (!valid) return '';
+  const fields = cardEventDetailFields(valid);
+  if (!fields || !details) return valid;
+  const parts: string[] = [];
+  for (const [name, meta] of Object.entries(fields)) {
+    if (name === 'Limit amount') continue; // carried on Change below
+    const v = details[name];
+    if (!v) continue;
+    if (name === 'Change' && CARD_CONTROL_LIMITS.includes(v)) {
+      const amount = dcFormatValue(fields['Limit amount'], details['Limit amount']);
+      parts.push(amount ? `${v} ${amount}` : v);
+    } else {
+      parts.push(dcFormatValue(meta, v));
+    }
+  }
+  return parts.length ? `${valid}, ${parts.join(', ')}` : valid;
 }

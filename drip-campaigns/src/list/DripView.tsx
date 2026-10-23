@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { DRIP_STATUS_META } from '../data/statusMeta';
 import { dcCountSends } from '../reducer/graphOps';
 import { dcGoalLabel } from '../reducer/labelMeta';
+import { FilterReadback } from '../components/FilterReadback';
 import { DripCanvas } from '../canvas/DripCanvas';
 import { DripAnalytics } from './DripAnalytics';
 import { Modal } from '../components/Modal';
@@ -119,9 +120,14 @@ export function DripView({
       )}
 
       {tab === 'overview' ? (
-        <div className="card" style={{ padding: 0, marginTop: 16, height: '70vh', border: '1px solid var(--gray-200)', borderRadius: 10, overflow: 'hidden' }}>
-          <DripCanvas graph={c.root!} goal={c.goal} editable={false} />
-        </div>
+        <>
+          <div className="card" style={{ padding: 0, marginTop: 16, height: '70vh', border: '1px solid var(--gray-200)', borderRadius: 10, overflow: 'hidden' }}>
+            <DripCanvas graph={c.root!} goal={c.goal} editable={false} />
+          </div>
+          {/* The canvas has room for one short label per step; this is the
+              full read-back, one sentence per filter. */}
+          <FilterReadback graph={c.root} />
+        </>
       ) : (
         <div style={{ marginTop: 16 }}>
           <DripAnalytics campaign={c} />

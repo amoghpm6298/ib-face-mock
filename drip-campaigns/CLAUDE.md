@@ -1080,3 +1080,291 @@ the agent. The cost is real and is stated rather than hidden: **a change to
 the designer.** If this builder starts moving again, that copy has to be
 reconciled, or the designer's central claim — that it produces the same kind
 of object a person would build by hand — stops being true.
+
+## 2026-10-23 — One filter row everywhere: what, comparison, value
+
+Entry · Audience, Condition and Branch each used to ask a different
+question before you could state a filter. Entry asked for an Entity,
+Condition asked for a Source, Branch asked for a Source and then an
+Attribute — three controls for one job, and which filters you could reach
+depended on which one you picked. All three now take the same row: **what,
+comparison, value**, with the "what" coming from one grouped list.
+
+**The list, in order**: Account, Card, Customer, Transactions, Milestone,
+then Entry event and Previous message on Condition and Branch only. There
+is no Source control and no Entity control left anywhere.
+
+**Transactions, Milestone, Entry event and Previous message are groups in
+that list, not a second kind of form.** They keep the questions they always
+asked — Transactions is still fields + exists/none + a lookback (its fields
+nest under the row they belong to), Milestone is still one benefit and a
+progress comparison (the benefit *is* the what, so it stopped being a
+separate control), Previous message is still the previous send's outcome
+including a fallback channel. Nothing was dropped.
+
+**Four new Account filters**, listed ahead of the six that were already
+there: Current OS amount, Current limit, Assigned limit (the sanctioned
+limit, deliberately *not* the unused limit, named in full so the picker
+can't blur them), and Utilization. `AttrMeta` gained `unit`, which only
+affects display: `20000` is stored and reads as `₹20,000`, `70` reads as
+`70%`.
+
+**Comparison wording is now one vocabulary.** Numbers get is / is more than
+/ is at least / is less than / is at most / is between. Everything else is
+lowercased to match, so a row reads as a sentence and Review repeats it
+word for word. Milestone keeps its real operator codes (IS/GT/GTE_PCT/…
+from the real Promotional Nudge form) and only borrows the wording; the two
+percent codes are told apart by a "(%)" marker in the dropdown and by the
+percent sign on the value.
+
+**Three questions were genuinely ambiguous in the brief and were asked
+rather than guessed**, because each would have meant hours of rework:
+1. *Branch.* It routes N ways on one question, so "add more rows, all AND'd"
+   does not fit it. Decided: Branch shares **one** row's what across its
+   arms, and each arm keeps its own comparison and value. Entry and
+   Condition keep the repeatable AND'd list.
+2. *Entry event attribute.* The group list did not include it, but the brief
+   also said not to drop any existing filter. Decided: it becomes a sixth
+   group, after Milestone and before Previous message, and appears only when
+   entry is an Event Trigger and that event resolves something (Card Events
+   still resolve neither, so the group is absent rather than empty).
+3. *Wording.* The operator list said "is greater than or equal to" while an
+   example sentence said "is at least". Decided: "is at least" / "is at
+   most", in the dropdown and in Review both, so the two never diverge.
+
+**Nothing migrates on disk.** `dcFiltersOf` reads the new shape when there
+is one and the old entity blocks / sources when there isn't, so an untouched
+campaign opens with its filters already listed as rows and only writes the
+new shape once saved. Old operator spellings map through `LEGACY_OPERATORS`,
+so a saved "Greater than or equal to" still reads "is at least". The six
+seed campaigns are all still on the old shape and are covered by a test that
+walks every seeded node and asserts each sentence is real.
+
+**Validation changed on purpose.** An incomplete row is ignored: it reaches
+no sentence, no canvas label and no Review, and it does not block saving,
+because a half-typed row is a normal intermediate state. Entry · Audience
+therefore never blocks at all — an audience with no filters targets
+everyone, which is a real answer. Condition still needs one complete row,
+since a Yes/No fork that checks nothing is meaningless. Branch needs a what
+plus a complete comparison on every arm, checked by the *same*
+`dcFilterRowComplete` an Entry row is checked by, so the two cannot drift.
+
+**Four near-duplicate branch renderers collapsed into one.** Decision Split
+had a separate block for Previous-step-outcome, locked-attribute, Milestone
+and entity-attribute sources, each re-implementing label + operator + value +
+insert + catch-all. One shared what plus one arm list replaced all four, and
+`dcMilestoneConditionValid` went with them — Milestone completeness is now
+the same rule every other row uses.
+
+**Review and the saved campaign both read the filters back**, one sentence
+per filter in the order added, from one shared `FilterReadback`. Review had
+never shown conditions at all before this.
+
+**A real React bug caught before it shipped**: the comparison cell
+auto-filled a single-option vocabulary by calling `onPatch` *during render*,
+which is a side effect in render and an infinite-loop risk. Moved to the
+pick handler.
+
+**A verification note worth keeping**: `npx tsc --noEmit` checks nothing in
+this repo. The root `tsconfig.json` is solution-style with `files: []`, so
+the command exits clean no matter what is broken. The real check is
+`tsc -b` (what `npm run build` runs) or `tsc -p tsconfig.app.json --noEmit`.
+Several "clean" typechecks early in this round were meaningless because of
+it.
+
+Verified: 133 unit (119 → 133, a new `filters.test.ts` covering group order
+and placement, the four money filters leading Account, the comparison
+vocabulary, unit formatting, the spec's own example sentences, incomplete
+rows being ignored, and legacy configs for all three node types), 40 e2e
+(10 rewritten for the new UI plus a new walkthrough of the brief's own
+verification steps: two Account money filters on entry, the same one on a
+Condition, Card/Customer/Previous-message present there, Previous message
+absent on Entry, and both sentences read back on Review after save and
+reopen), clean production build.
+
+## 2026-10-23 (cont'd) — The milestone filter was wrong: it is an offer plus
+a threshold, not a named spend ladder
+
+The four benefits behind the Milestone filter — "Spend ₹25,000 in first 30
+days" and three like it — were invented. They baked a target amount and a
+day count into the *name*, which is the offer's own configuration, not its
+identity. Removed outright, not renamed.
+
+**What a milestone filter actually is**: an offer the program already has,
+then a threshold the manager types.
+- **Offer** — `MILESTONE_OFFERS`, one place, standing in for whatever the
+  program has configured. Names carry no amount and no day count. The list
+  is legitimately empty for a program with none, and the picker omits the
+  group entirely in that case rather than being filled with an invented
+  rule — an empty group reads as a dead end.
+- **Comparison** — the same words as every other number filter: is more
+  than, is at least, is less than, is at most, is between. No bare "is":
+  progress is a threshold question.
+- **Progress** — a number the manager types, as a **percent by default**,
+  switchable to a rupee amount on the same row. "Is at least 100%" is how
+  completed is expressed, so the Completed / Not Completed dropdown is
+  gone, and with it `statusChoice`, `MILESTONE_OPERATORS`' eight codes,
+  `MilestoneFields.tsx` and `dcDefaultMilestone`.
+
+**Old campaigns open with the offer cleared, never remapped.** A saved
+filter pointing at one of the four removed benefits keeps the threshold the
+manager typed and loses only the offer, so they pick a real one. Silently
+mapping those names onto a different offer would quietly change who the
+campaign targets. The same rule applies on Branch, where one remapped offer
+would redirect every arm. The old operator codes do map (GTE → is at least,
+GTE_PCT → is at least, and so on) since those are the same questions in new
+words; `IS` resolves to **no** comparison rather than a guessed threshold,
+because the question it asked no longer exists.
+
+The six seed campaigns all still carry the old benefits, so DRIP-003's
+milestone checks now open with their offers cleared. That is the intended
+behaviour and is what the seed test asserts: no sentence anywhere still
+reads "Spend ₹…".
+
+**On a Branch** the offer is chosen once and each arm carries its own
+comparison and value, plus the catch-all — the shared-what shape from the
+previous round, unchanged. Edge chips shorten to `≥ 80%` / `< 40%`, with the
+unit following whichever the arm is set to.
+
+Verified: 131 unit (the milestone block rewritten: the invented names are
+absent from the offer list, a removed benefit clears on both Condition and
+Branch, the old Completed choice resolves to no comparison, percent is the
+default and rupees reads as ₹, is between needs both bounds and carries the
+unit on each, a row with no offer is ignored, and a two-arm Branch against
+one offer), 40 e2e (the three milestone specs rewritten to pick a real
+offer, set 80%, switch to a rupee amount, and route two arms at ≥ 80% and
+< 40%), clean build.
+
+## 2026-10-23 (cont'd) — App activity: something the customer did, or did
+not do, in the app
+
+A sixth group on the same filter row, not a new source control. A row reads
+as one sentence: "Verify OTP happened in the last 1 day", or with a detail
+filled in, "Offer clicked, Welcome Offer, happened in the last 7 days".
+
+**The event control is a search, not a dropdown.** Forty seeded events
+across Authentication, Cards, Payments and Offers make that obvious rather
+than theoretical. Each entry keeps the RAW name the app fires and a short
+label a manager reads; the search matches **both**, and the closed field
+shows **only** the label. New `SearchSelect` component — built rather than
+reusing `MultiSelectDropdown`, which is a checkbox list with no search and
+the wrong shape for "pick one out of forty", though it borrows its chrome so
+the two read as one family.
+
+**Session id, account id, customer id, card id and the raw timestamps are
+absent on purpose.** They identify an occurrence; nobody filters on them, so
+they are not events and not details either. A test asserts none of them ever
+appears as a detail kind.
+
+**Details follow the event.** `details` on an event lists only what it
+actually carries — Offer clicked has Offer, Verify OTP and Enter OTP have
+none and show no extra field. A detail left empty means any value, so the
+offer list carries an explicit "Any offer" entry rather than leaving blank
+ambiguous. Changing the event drops any detail the new one does not have
+(`dcDetailsForEvent`), so a value can never leak under a question that no
+longer asks it.
+
+**Offers are their own short stand-in list** (`PROGRAM_OFFERS`), names only,
+no amounts and no day counts. Deliberately NOT the removed spend ladder, and
+separate from `MILESTONE_OFFERS`, which is a different thing.
+
+**Direction and window are both the manager's.** happened / did not happen,
+and a whole number of days typed, defaulting to 7 on a new row but fixed at
+nothing.
+
+**On a Branch the event is chosen once** and each arm sets its own
+direction, window and details — so two arms can name two different offers
+against the one event. Arms start blank, the same as every other group's
+arms, which is why an arm's direction has to be picked rather than assumed.
+
+**Changing the program clears an event the new program does not emit**
+(`dcPruneGraphForEvents`). The ROW stays, with its direction and window
+intact and its event blank, because those were real choices and a row
+visibly waiting to be re-picked beats one that silently vanished. Lives in
+`reducer/programChange.ts` rather than `data/filters.ts` because it also
+recomputes the affected node's canvas label, and labelMeta already depends
+on filters — putting it in filters would have made that circular.
+
+**Honest limit worth stating**: the stand-in catalogue is the same for every
+program, so `dcAppEventsForPrograms` currently returns the whole list
+whatever is passed. The clearing rule is real and wired to the program
+picker, and is unit-tested against an explicitly restricted event set, but
+it cannot fire from the UI until real per-program events exist. That one
+function is the single place to narrow when they do.
+
+Verified live, 0 console errors: 40 events listed, typing "otp" narrows to
+four and shows short labels only, searching the raw name
+("Authentication Transaction Success") finds Continue after OTP, Verify OTP
+shows no Offer field and Offer clicked does, and the entry filter reads back
+as "Offer clicked, Welcome Offer, happened in the last 7 days" on Review
+both before and after save/reopen. 140 unit (9 new), 42 e2e (2 new: the
+search/details/round-trip walkthrough and the two-arm Branch), clean build.
+
+## 2026-10-23 (cont'd) — Campaign words on Account and Card, a Card controls
+group, and a real Card Events list
+
+**Names are the campaign's, not the column's.** Current OS amount, Current
+limit, Assigned limit and Utilization stay exactly as they are, with what
+each one means written down beside it: amount owed now, the limit in force
+now, the sanctioned limit, and current outstanding over current limit as a
+whole percent. Current limit is a separate filter from Assigned limit and
+from Total Account Balance, which is not here at all. A current limit of 0
+matches nothing — there is no percentage of zero. The prototype computes
+none of this.
+
+**Added**: Interest as a rupee amount, and eSign completed / eNACH completed
+as yes or no, where Yes means the stored status is success.
+
+**Yes/no filters read Yes and No**, on the row and on Review. Rather than a
+new type, `bool` itself now renders that way, so every existing yes/no field
+on Card gained it too. A campaign saved when these stored `true`/`false`
+still reads correctly — the formatter maps them. Two-valued fields offer one
+comparison, because "is not Yes" is just "is No" and offering both is a
+choice with nothing behind it.
+
+**Card keeps everything it had** and gains Hotlisted, Hotlist reason (a
+choice, Damaged, compared with is and is not), First transaction done, First
+purchase done, First repayment done, PIN set and Primary card.
+
+**New Card controls group**, sitting next to Card because it is the same
+card. Four channels — Domestic chip, contactless, online, card swipe — each
+with the channel itself and its three limits. One row is one channel and one
+thing about it: `Domestic online is turned on`, or `Domestic online daily
+limit is ₹10,000`. The channel's own on/off is its own row; a limit row only
+matches when that limit is turned on. The amount already spent against a
+limit is deliberately absent — nobody filters on it. The `onoff` type exists
+so the row reads as a sentence instead of "... is Yes".
+
+**Card Events replaced.** Card Issued / Card Activated / Card Loaded / Card
+Inactive are gone; ten real ones take their place. Two of them carry
+details: Card hotlisted a reason, Card control updated a channel, what
+changed, and a rupee amount when what changed is a limit. They read as one
+sentence — "Card hotlisted, Damaged", "Card control updated, Domestic
+online, turned on", "Card control updated, Domestic online, daily limit
+₹10,000". An empty detail means any value and is simply absent from the
+sentence.
+
+The detail sets are registered **into `ELIGIBILITY_META` keyed by the event
+name**, so every existing attribute path works on them unchanged — the
+condition rows, the value widgets, and the Entry event group on Condition
+and Branch, which now offers exactly that event's details and nothing else.
+A card event with no details resolves nothing and the group stays hidden, as
+it always did for Card Events.
+
+**Removed event names clear rather than repoint.** `dcValidEventType` reads
+a stored type that its category no longer lists as unset, which is what
+blanks the four old names anywhere they were saved while leaving the row in
+place. Nothing is pointed at a substitute: Card Loaded and Card Inactive
+have no successor and get none. The two sample campaigns that entered on
+Card Issued and completed on Card Activated were hand-edited in the seed
+data to Virtual card issued and Virtual card activated, which is the one
+place a rename was intended.
+
+Verified live, 0 console errors: the Event Type list is exactly the ten new
+names with none of the four old ones; PIN set shows no detail block and Card
+control updated does; two entry filters read back as "Domestic online is
+turned on" and "Domestic online daily limit is ₹10,000"; a Card control
+updated entry reads "Card control updated, Domestic online, turned on" on
+canvas before and after save/reopen; and the Card Activation Reminder sample
+opens on Virtual card issued with the goal Virtual card activated. 153 unit
+(13 new), 45 e2e (3 new), clean build. App activity untouched.

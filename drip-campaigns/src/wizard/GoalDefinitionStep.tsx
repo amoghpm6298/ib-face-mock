@@ -20,8 +20,8 @@
 // scope for this pass), so changing just this screen's labels would
 // create a second, inconsistent vocabulary rather than fix one.
 import { ConditionsSection } from './ConditionRows';
-import { EventScopingFields } from './EventScopingFields';
-import { EVENT_CATEGORIES, resolveEntryEventAttrSource } from '../data/sharedConstants';
+import { EventScopingFields, CardEventDetailFields } from './EventScopingFields';
+import { EVENT_CATEGORIES, dcValidEventType, resolveEntryEventAttrSource } from '../data/sharedConstants';
 import type { DripGoal } from '../data/graphTypes';
 
 const BLANK_GOAL: DripGoal = { eventCategory: Object.keys(EVENT_CATEGORIES)[0], eventType: '', conditions: [] };
@@ -59,7 +59,7 @@ export function GoalDefinitionStep({
         </div>
         <div className="f-group" style={{ marginBottom: 6 }}>
           <label className="f-label">Event Type</label>
-          <select className="f-input" value={draft.eventType} onChange={(e) => onGoalChange({ ...draft, eventType: e.target.value })}>
+          <select className="f-input" value={dcValidEventType(draft.eventCategory, draft.eventType)} onChange={(e) => onGoalChange({ ...draft, eventType: e.target.value, cardDetails: {} })}>
             <option value="">No goal — leave unset</option>
             {(EVENT_CATEGORIES[draft.eventCategory]?.events || []).map((e) => (
               <option key={e} value={e}>
@@ -71,6 +71,7 @@ export function GoalDefinitionStep({
         <p className="f-hint" style={{ margin: 0 }}>Not every firing is success. For example, EMI_STATUS_CHANGED also fires on Failed. Narrow it below if needed.</p>
       </div>
 
+      <CardEventDetailFields eventCategory={draft.eventCategory} eventType={draft.eventType} value={draft.cardDetails} onChange={(cardDetails) => onGoalChange({ ...draft, cardDetails })} />
       <EventScopingFields
         eventCategory={draft.eventCategory}
         value={draft}

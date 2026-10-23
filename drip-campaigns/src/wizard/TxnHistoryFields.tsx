@@ -1,7 +1,6 @@
-// Shared by Condition's "Transaction history" source and, indirectly, by
-// Entry · Audience's entity blocks (NodeForms.tsx's EntityConditionBlock
-// renders TxnLookbackFields directly whenever a block's entity is
-// 'Transaction') — one lookback/existence component, so neither drifts.
+// The lookback/existence pair behind a Transactions filter. Branch shares
+// one lookback across its arms and lets each arm pick its own direction, so
+// it renders this with hideExistence.
 import { ConditionRows } from './ConditionRows';
 import type { DripTxnHistoryCriteria } from '../data/graphTypes';
 
@@ -9,11 +8,13 @@ export function TxnLookbackFields({
   lookbackDuration,
   lookbackUnit,
   existence,
+  hideExistence,
   onChange,
 }: {
   lookbackDuration: number;
   lookbackUnit: 'days' | 'hours';
   existence: 'exists' | 'none';
+  hideExistence?: boolean;
   onChange: (patch: { lookbackDuration?: number; lookbackUnit?: 'days' | 'hours'; existence?: 'exists' | 'none' }) => void;
 }) {
   return (
@@ -31,7 +32,7 @@ export function TxnLookbackFields({
           </select>
         </div>
       </div>
-      <div className="f-group" style={{ marginBottom: 0 }}>
+      <div className="f-group" style={{ marginBottom: 0, display: hideExistence ? 'none' : undefined }}>
         <label className="f-label">Match</label>
         <select className="f-input" value={existence} onChange={(e) => onChange({ existence: e.target.value as 'exists' | 'none' })}>
           <option value="exists">At least one matching transaction exists</option>

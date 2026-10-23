@@ -5,6 +5,7 @@
 // Approval, which moved here from the Builder step's old top bar.
 import { dcGoalLabel } from '../reducer/labelMeta';
 import { DC_NODE_META } from '../data/nodeMeta';
+import { FilterReadback } from '../components/FilterReadback';
 import type { DripGoal, DripGraph } from '../data/graphTypes';
 
 export function ReviewStep({
@@ -112,6 +113,8 @@ export function ReviewStep({
           </div>
         )}
       </div>
+
+      <FilterReadback graph={graph} />
 
       <div className="wiz-section">
         <div className="wiz-group-label">Guardrails</div>

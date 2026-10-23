@@ -14,6 +14,8 @@ import type { PrevStepSend } from '../data/sharedConstants';
 import { dcConfirmAddNode, dcConfirmEditNode, dcRemoveEdge, dcRemoveGoalCheck, dcRemoveRoot, dcRenameEdge, type DcAddingAt } from '../reducer/campaignReducer';
 import { dcGraphHasOpenBranches } from '../reducer/graphOps';
 import { dcDefaultConfig, dcDefaultExitReason } from '../reducer/defaultConfig';
+import { dcPruneGraphForEvents } from '../reducer/programChange';
+import { dcAppEventsForPrograms } from '../data/sharedConstants';
 import { BasicDetailsStep } from './BasicDetailsStep';
 import { GoalDefinitionStep } from './GoalDefinitionStep';
 import { BuilderStep } from './BuilderStep';
@@ -107,6 +109,17 @@ export function DripBuilder({
     setHistory((h) => [...h.slice(0, historyIndex + 1), next]);
     setHistoryIndex((i) => i + 1);
   }
+  // Changing the program changes which events the app emits, so an
+  // app-activity filter pointing at an event the new program does not have
+  // is cleared. The row stays put, visibly waiting for a new event, rather
+  // than disappearing along with the window and direction already set on it.
+  function changePrograms(next: string[]) {
+    setPrograms(next);
+    const available = dcAppEventsForPrograms(next).map((e) => e.id);
+    const pruned = dcPruneGraphForEvents(graph, available, goal);
+    if (pruned !== graph) pushGraph(pruned);
+  }
+
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
@@ -332,7 +345,7 @@ export function DripBuilder({
               applyToAllPrograms={applyToAllPrograms}
               onApplyToAllProgramsChange={setApplyToAllPrograms}
               programs={programs}
-              onProgramsChange={setPrograms}
+              onProgramsChange={changePrograms}
               controlPct={controlPct}
               onControlPctChange={setControlPct}
               allowReEntry={allowReEntry}

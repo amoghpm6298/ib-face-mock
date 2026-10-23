@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { DRIP_CAMPAIGNS } from '../../src/data/seedCampaigns';
 import { dcGraphHasOpenBranches } from '../../src/reducer/graphOps';
+import { dcFilterSentences, dcFiltersOf } from '../../src/data/filters';
 
 describe('Seed campaign data integrity', () => {
   it('has exactly the 6 real campaigns', () => {
@@ -49,5 +50,30 @@ describe('Seed campaign data integrity', () => {
   it('DRAFT campaign (DRIP-003, Spend Milestone) has no shared campaign-level Goal — independent checkpoints', () => {
     const draft = DRIP_CAMPAIGNS.find((c) => c.id === 'DRIP-003')!;
     expect(draft.goal).toBeNull();
+  });
+});
+
+describe('seed campaigns migrate onto filter rows with nothing dropped', () => {
+  it('every seeded Condition and Entry reads back as a real sentence', () => {
+    const sentences: string[] = [];
+    for (const c of DRIP_CAMPAIGNS) {
+      if (!c.root) continue;
+      for (const n of Object.values(c.root.nodes)) {
+        sentences.push(...dcFilterSentences(dcFiltersOf(n.type, n._config)));
+      }
+    }
+    // Nothing renders as an empty or half-built phrase.
+    expect(sentences.length).toBeGreaterThan(0);
+    for (const s of sentences) {
+      expect(s.trim()).not.toBe('');
+      expect(s).not.toContain('undefined');
+      expect(s).not.toMatch(/\s{2,}/);
+    }
+    // The invented spend-ladder benefits are gone, so the seeded milestone
+    // checks open with their offer cleared and read back as nothing at all
+    // until a real offer is picked. Nothing silently remaps onto a new one.
+    expect(sentences.join(' | ')).not.toMatch(/Spend ₹/);
+    // The seeded previous-message checks are untouched.
+    expect(sentences).toContain('Previous message outcome is any of READ');
   });
 });

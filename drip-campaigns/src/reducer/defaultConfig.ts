@@ -1,11 +1,12 @@
 // Ported from journeysnudgesemi/emi-conversions-prototype.html's
 // dcPickType (the default pendingConfig per node type) and dcAddFormValid.
 import { EVENT_CATEGORIES } from '../data/sharedConstants';
-import type { DripGoal, DripGraph, DripMilestoneCondition, DripTxnHistoryCriteria } from '../data/graphTypes';
+import type { DripGoal, DripGraph, DripTxnHistoryCriteria } from '../data/graphTypes';
 import type { DcNodeType } from '../data/nodeMeta';
 import type { DcAddingAt } from './campaignReducer';
 import { dcGoalLabel } from './labelMeta';
 import { dcNewBranchId } from './idGen';
+import { dcBranchWhatOf, dcCompleteFilters, dcFilterRowComplete, dcFiltersOf } from '../data/filters';
 
 // Shared default for Condition's "Transaction history" source and Entry ·
 // Audience's own optional block — same starting shape for both, so neither
@@ -16,36 +17,13 @@ export function dcDefaultTxnHistory(): DripTxnHistoryCriteria {
   return { filters: [], lookbackDuration: 90, lookbackUnit: 'days', existence: 'exists' };
 }
 
-// Shared by Entry · Audience (entity = 'Milestone'), Condition
-// (customSource = 'Milestone'), and Branch (source = 'Milestone') — same
-// starting shape everywhere, same reasoning as dcDefaultTxnHistory above.
-// Defaults to "Is Completed", the single most natural starting question
-// for a milestone check, matching the real form's own default behavior
-// of writing value: "100" the moment a status is picked.
-export function dcDefaultMilestone(): DripMilestoneCondition {
-  return { benefitId: '', operator: 'IS', statusChoice: 'COMPLETED', value: '100' };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
   const map: Record<DcNodeType, unknown> = {
     ENTRY_SEGMENT: {
-      // No conditions by default, on purpose — Entity only has a visible
-      // effect once a real condition exists to scope (see
-      // EntrySegmentForm), so there's nothing for it to do yet either.
-      cohortDesc: 'All eligible customers', entity: 'Customer', conditions: [],
+      // No filters by default: an audience with none targets everyone.
+      // Rows are added one at a time and AND'd together.
+      cohortDesc: 'All eligible customers', filters: [],
       repeat: false, recurrenceType: 'Monthly', dayOfMonth: '1', weekInterval: '1', dayOfWeek: 'Monday', dayInterval: '1', timeOfDay: '09:00',
-      // Only meaningful once entity = 'Transaction' (see EntityConditionBlock
-      // in NodeForms.tsx) — pre-defaulted anyway, same convention as the
-      // recurrence fields above, which are pre-defaulted despite being
-      // hidden until repeat is true.
-      lookbackDuration: 90, lookbackUnit: 'days', existence: 'exists',
-      // Additional entity-scoped filter blocks, all AND'd with the
-      // primary entity/conditions above and with each other (e.g. "Account
-      // = Dormant AND Card = Active", or two Transaction blocks each with
-      // their own filters/window/direction). Empty by default; existing
-      // campaigns without this key behave exactly as before.
-      extraEntityGroups: [],
     },
     // journey/batch/offerType/offerName: Journey/Offer Events' own
     // scoping, same optional-field pattern as everything else added this
@@ -66,12 +44,12 @@ export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
     // separate GOAL_CHECK node type, which has no config of its own).
     // outcome (singular) kept only for back-compat with journeys saved
     // before multi-outcome matching — new picks always write `outcomes`.
-    SPLIT: { customSource: 'Previous step outcome', outcome: '', outcomes: [], customConditions: [], txnHistory: dcDefaultTxnHistory() },
+    SPLIT: { filters: [] },
     DECISION_SPLIT: {
-      name: 'Decision', source: 'Account attribute', attribute: '', outcome: '',
+      name: 'Decision', what: { group: 'Account', field: '' },
       branches: [
-        { id: dcNewBranchId(), label: 'Branch 1', operator: 'Equals', value: '', value2: '' },
-        { id: dcNewBranchId(), label: 'Branch 2', operator: 'Equals', value: '', value2: '' },
+        { id: dcNewBranchId(), label: 'Branch 1', operator: '', value: '', value2: '', values: [] },
+        { id: dcNewBranchId(), label: 'Branch 2', operator: '', value: '', value2: '', values: [] },
       ],
     },
     RANDOM_SPLIT: {
@@ -91,16 +69,6 @@ export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
   return map[type];
 }
 
-// Shared by SPLIT's "Milestone" source and ENTRY_SEGMENT's entity =
-// 'Milestone' block. 'IS' is covered by the generic `!!m.value` check
-// since picking a status writes value: "100" (see dcDefaultMilestone) —
-// 'BETWEEN' is the only operator needing a second value.
-function dcMilestoneConditionValid(m: DripMilestoneCondition | undefined): boolean {
-  if (!m?.benefitId) return false;
-  if (m.operator === 'BETWEEN') return !!(m.value && m.value2);
-  return !!m.value;
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function dcAddFormValid(t: DcNodeType, p: any): boolean {
   if (t === 'ENTRY_EVENT' || t === 'WAIT_UNTIL') return !!p.eventType;
@@ -111,57 +79,26 @@ export function dcAddFormValid(t: DcNodeType, p: any): boolean {
   }
   if (t === 'RANDOM_SPLIT') return p.branches.reduce((s: number, b: { pct: number }) => s + Number(b.pct || 0), 0) === 100;
   if (t === 'DECISION_SPLIT') {
-    // Milestone's "pick one thing" field is milestoneBenefitId, not
-    // attribute — same requirement, different key, since a benefit
-    // identity isn't an entity attribute.
-    if (p.source === 'Milestone') {
-      if (!p.milestoneBenefitId) return false;
-    } else if (p.source !== 'Previous step outcome' && !p.attribute) {
-      return false;
-    }
-    // multiSelect branches store their pick in `values[]`, not `value` —
-    // a branch is "filled in" if either representation is populated.
-    // Milestone's 'IS' operator writes value: "100" the moment a status
-    // is picked (see dcDefaultMilestone), so it's covered by the same
-    // `b.value !== ''` check without a separate branch here. 'BETWEEN'
-    // is spelled both ways across this app's two operator vocabularies
-    // (generic 'Between' vs. Milestone's real 'BETWEEN') — checked for
-    // both rather than normalizing one into the other.
+    // One shared question, then every arm needs a complete comparison
+    // against it. Each arm is checked as a filter row carrying the shared
+    // what, so a Branch arm and an Entry filter are judged by the same rule.
+    const what = dcBranchWhatOf(p);
+    if (what.group !== 'Transactions' && what.group !== 'Previous message' && !what.field) return false;
     return (
       p.branches.length > 0 &&
-      p.branches.every(
-        (b: { value: string; operator: string; value2: string; values?: string[] }) =>
-          ((b.value !== '' && b.value != null) || (b.values && b.values.length > 0)) &&
-          ((b.operator !== 'Between' && b.operator !== 'BETWEEN') || (b.value2 !== '' && b.value2 != null))
+      p.branches.every((b: any) =>
+        dcFilterRowComplete({ ...what, operator: b.operator, value: b.value, value2: b.value2, values: b.values, details: b.details, txn: p.txn })
       )
     );
   }
   // A Condition has to actually check something — otherwise Yes/No is
-  // meaningless. Each source needs its own real input before it's valid.
-  if (t === 'SPLIT') {
-    if (p.customSource === 'Previous step outcome') return !!(p.outcomes && p.outcomes.length) || !!p.outcome;
-    // Filters are optional (zero filters = "any transaction at all" is a
-    // meaningful question on its own) — only the lookback window is
-    // required, same as Pause's duration.
-    if (p.customSource === 'Transaction history') return Number(p.txnHistory?.lookbackDuration) > 0;
-    if (p.customSource === 'Milestone') return dcMilestoneConditionValid(p.milestone);
-    return (p.customConditions || []).some((c: { attribute: string }) => c.attribute);
-  }
-  // Entry · Audience: a lookback window is only required of a block
-  // whose entity is 'Transaction', and a complete milestone condition is
-  // only required of a block whose entity is 'Milestone' — same rule
-  // Condition's own Transaction history / Milestone sources use, just
-  // applied per-block instead of once, since the primary block and every
-  // extra group can independently be either. Every other entity needs no
-  // such check.
-  if (t === 'ENTRY_SEGMENT') {
-    const groups = [{ entity: p.entity, lookbackDuration: p.lookbackDuration, milestone: p.milestone }, ...(p.extraEntityGroups || [])];
-    return groups.every((g: { entity: string; lookbackDuration?: number; milestone?: DripMilestoneCondition }) => {
-      if (g.entity === 'Transaction') return Number(g.lookbackDuration) > 0;
-      if (g.entity === 'Milestone') return dcMilestoneConditionValid(g.milestone);
-      return true;
-    });
-  }
+  // meaningless. One complete filter row is enough; incomplete rows are
+  // ignored here exactly as they are on Review.
+  if (t === 'SPLIT') return dcCompleteFilters(dcFiltersOf('SPLIT', p)).length > 0;
+  // Entry · Audience stays valid with no filters at all: an audience with
+  // none targets everyone, which is a real answer. A half-typed row is a
+  // normal intermediate state, so it is ignored rather than blocking.
+  if (t === 'ENTRY_SEGMENT') return true;
   return true;
 }
 

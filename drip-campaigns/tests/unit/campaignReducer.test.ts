@@ -9,16 +9,17 @@ import type { DripGraph, DripGoal } from '../../src/data/graphTypes';
 import { dcResetIdCounters } from '../../src/reducer/idGen';
 import { dcGraphHasOpenBranches } from '../../src/reducer/graphOps';
 import { dcConfirmAddNode, dcConfirmEditNode, dcRemoveEdge, dcRemoveGoalCheck, dcRenameEdge, type DcAddingAt } from '../../src/reducer/campaignReducer';
-import { dcDefaultConfig, dcAddFormValid, dcDefaultMilestone } from '../../src/reducer/defaultConfig';
-import { resolveEntryEventAttrSource, EVENT_ATTR_BY_TYPE } from '../../src/data/sharedConstants';
+import { dcDefaultConfig, dcAddFormValid } from '../../src/reducer/defaultConfig';
+import { resolveEntryEventAttrSource, EVENT_ATTR_BY_TYPE, MILESTONE_OFFERS } from '../../src/data/sharedConstants';
 import { dcMilestoneSummary } from '../../src/reducer/labelMeta';
+import { dcFilterRowComplete, dcFilterSentence, dcFilterSentences, dcFiltersOf } from '../../src/data/filters';
 import { dcCanFanOut, dcIsRoutingNode, DC_STEP_TYPES } from '../../src/data/nodeMeta';
 
 const EMPTY_GRAPH: DripGraph = { nodes: {}, edges: [], rootId: null };
 // A real goal — the auto goal-check Split after Send/Pause is only
 // inserted when one is actually defined (a goal-less campaign gets a
 // plain open slot instead, since there'd be nothing real to check).
-const TEST_GOAL: DripGoal = { eventCategory: 'Card Events', eventType: 'Card Activated', conditions: [] };
+const TEST_GOAL: DripGoal = { eventCategory: 'Card Events', eventType: 'Virtual card activated', conditions: [] };
 
 function addEntryEvent(graph: DripGraph, overrides: Record<string, unknown> = {}): DripGraph {
   const p = { ...dcDefaultConfig('ENTRY_EVENT', null), eventCategory: 'Journey Events', eventType: 'Pageload', ...overrides };
@@ -250,7 +251,7 @@ describe('Transaction history condition', () => {
     const p = { customSource: 'Transaction history', txnHistory: { filters: [], lookbackDuration: 90, lookbackUnit: 'days', existence: 'none' } };
     g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
-    expect(split.label).toBe('No transaction in 90 days?');
+    expect(split.label).toBe('No transaction in the last 90 days?');
   });
 
   it('label stays readable for exactly one filter', () => {
@@ -261,7 +262,7 @@ describe('Transaction history condition', () => {
     };
     g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
-    expect(split.label).toBe('A transaction (Transaction Type any of AUTHORIZE) in 60 days?');
+    expect(split.label).toBe('A transaction matching 1 filter in the last 60 days?');
   });
 
   it('2+ filters collapse to a count, same convention as other Condition sources', () => {
@@ -280,7 +281,7 @@ describe('Transaction history condition', () => {
     };
     g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
-    expect(split.label).toBe('A transaction matching 2 filters in 90 days?');
+    expect(split.label).toBe('A transaction matching 2 filters in the last 90 days?');
   });
 
   it('dcAddFormValid: Transaction history requires only a positive lookback — filters are optional', () => {
@@ -289,17 +290,29 @@ describe('Transaction history condition', () => {
     expect(dcAddFormValid('SPLIT', { customSource: 'Transaction history', txnHistory: undefined })).toBe(false);
   });
 
-  it('dcAddFormValid: Entry · Audience only requires a lookback when the primary entity is Transaction', () => {
-    expect(dcAddFormValid('ENTRY_SEGMENT', { entity: 'Account', conditions: [], lookbackDuration: 0 })).toBe(true);
-    expect(dcAddFormValid('ENTRY_SEGMENT', { entity: 'Transaction', conditions: [], lookbackDuration: 0 })).toBe(false);
-    expect(dcAddFormValid('ENTRY_SEGMENT', { entity: 'Transaction', conditions: [], lookbackDuration: 90 })).toBe(true);
+  it('dcAddFormValid: Entry · Audience never blocks — an audience with no filters targets everyone', () => {
+    expect(dcAddFormValid('ENTRY_SEGMENT', { filters: [] })).toBe(true);
+    // A half-typed row is a normal intermediate state, not an error.
+    expect(dcAddFormValid('ENTRY_SEGMENT', { filters: [{ group: 'Account', field: 'Current OS amount', operator: '' }] })).toBe(true);
   });
 
-  it('dcAddFormValid: the same lookback rule applies independently to each extra entity group', () => {
-    const base = { entity: 'Account', conditions: [], lookbackDuration: 90 };
-    expect(dcAddFormValid('ENTRY_SEGMENT', { ...base, extraEntityGroups: [{ entity: 'Card', conditions: [] }] })).toBe(true);
-    expect(dcAddFormValid('ENTRY_SEGMENT', { ...base, extraEntityGroups: [{ entity: 'Transaction', conditions: [], lookbackDuration: 0 }] })).toBe(false);
-    expect(dcAddFormValid('ENTRY_SEGMENT', { ...base, extraEntityGroups: [{ entity: 'Transaction', conditions: [], lookbackDuration: 90 }] })).toBe(true);
+  it('an incomplete Transactions row is ignored rather than blocking, and a complete one reads back', () => {
+    const incomplete = { filters: [{ group: 'Transactions', field: '', operator: 'a matching transaction exists', txn: { filters: [], lookbackDuration: 0, lookbackUnit: 'days', existence: 'exists' } }] };
+    expect(dcFilterSentences(dcFiltersOf('ENTRY_SEGMENT', incomplete))).toEqual([]);
+    const complete = { filters: [{ group: 'Transactions', field: '', operator: 'a matching transaction exists', txn: { filters: [], lookbackDuration: 90, lookbackUnit: 'days', existence: 'exists' } }] };
+    expect(dcFilterSentences(dcFiltersOf('ENTRY_SEGMENT', complete))).toEqual(['A transaction in the last 90 days']);
+  });
+
+  it('legacy entity blocks migrate into rows, including each extra group, with nothing dropped', () => {
+    const legacy = {
+      entity: 'Account',
+      conditions: [{ attribute: 'Status', operator: 'Equals', value: 'Dormant' }],
+      extraEntityGroups: [
+        { entity: 'Card', conditions: [{ attribute: 'Status', operator: 'Equals', value: 'Active' }] },
+        { entity: 'Transaction', conditions: [], lookbackDuration: 90, lookbackUnit: 'days', existence: 'none' },
+      ],
+    };
+    expect(dcFilterSentences(dcFiltersOf('ENTRY_SEGMENT', legacy))).toEqual(['Status is Dormant', 'Status is Active', 'No transaction in the last 90 days']);
   });
 
   it('backward compatibility: a config predating this field (lookbackDuration absent entirely) stays valid as long as entity is not Transaction', () => {
@@ -330,7 +343,7 @@ describe('Journey/Offer Events condition narrowing (locked attribute)', () => {
   });
 
   it('resolveEntryEventAttrSource: Card Events resolve neither — confirmed as a genuine gap in the original source too, not just this port', () => {
-    expect(resolveEntryEventAttrSource('Card Events', 'Card Activated')).toEqual({ entity: null, lockedAttr: null });
+    expect(resolveEntryEventAttrSource('Card Events', 'Virtual card activated')).toEqual({ entity: null, lockedAttr: null });
   });
 
   it('resolveEntryEventAttrSource: no category at all resolves neither', () => {
@@ -343,7 +356,7 @@ describe('Journey/Offer Events condition narrowing (locked attribute)', () => {
     g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
     expect(split).toBeTruthy();
-    expect(split.label).toBe('Page Name = EMI Offer Page?');
+    expect(split.label).toBe('Page Name is EMI Offer Page?');
     expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'Yes')).toBe(true);
     expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'No')).toBe(true);
   });
@@ -400,9 +413,9 @@ describe('Journey/Offer Events condition narrowing (locked attribute)', () => {
 });
 
 describe('Entry · Audience — additional entity filters, and Transaction as a real entity choice', () => {
-  it('dcDefaultConfig starts with an empty extraEntityGroups list', () => {
+  it('dcDefaultConfig starts with an empty filter list', () => {
     const p = dcDefaultConfig('ENTRY_SEGMENT', null);
-    expect(p.extraEntityGroups).toEqual([]);
+    expect(p.filters).toEqual([]);
   });
 
   it('extra entity groups persist into _config untouched, alongside the primary entity/conditions, and stay out of canvas meta', () => {
@@ -620,94 +633,72 @@ describe('dcGraphHasOpenBranches validation', () => {
   });
 });
 
-// Milestone — the real replacement for the fabricated Account fields this
-// project briefly had (Milestone Progress %/Engagement Tier, removed
-// outright). Confirmed against ironbank-face-main's own Promotional
-// Nudge eligibility form: pick one specific benefit, then either
-// Completed/Not Completed or a numeric/percentage comparator.
-describe('Milestone — Condition (SPLIT) source', () => {
-  it('is invalid with no benefit picked, valid once one is and "Is" auto-writes value "100"', () => {
-    const empty = dcDefaultMilestone();
-    expect(dcAddFormValid('SPLIT', { customSource: 'Milestone', milestone: { ...empty, benefitId: '' } })).toBe(false);
-    const filled = { ...empty, benefitId: 'MS-1001' };
-    expect(filled.value).toBe('100');
-    expect(dcAddFormValid('SPLIT', { customSource: 'Milestone', milestone: filled })).toBe(true);
+// Milestone — an offer the program already has, plus a threshold the
+// manager types. The four "Spend ₹X in first Y days" benefits that used to
+// back this were invented and were removed outright, not renamed.
+describe('Milestone — offer plus a typed threshold', () => {
+  it('the invented spend-ladder benefits are gone from the offer list', () => {
+    const names = MILESTONE_OFFERS.map((o) => o.name);
+    for (const n of names) {
+      expect(n).not.toMatch(/Spend ₹/);
+      expect(n).not.toMatch(/first \d+ days/);
+    }
+    expect(MILESTONE_OFFERS.map((o) => o.id)).not.toContain('MS-1001');
   });
 
-  it('"Between" requires both bounds', () => {
-    const base = { benefitId: 'MS-1002', operator: 'BETWEEN', value: '', value2: '' };
-    expect(dcAddFormValid('SPLIT', { customSource: 'Milestone', milestone: base })).toBe(false);
-    expect(dcAddFormValid('SPLIT', { customSource: 'Milestone', milestone: { ...base, value: '25', value2: '75' } })).toBe(true);
+  it('a campaign still pointing at a removed benefit opens with the offer cleared, not remapped', () => {
+    const rows = dcFiltersOf('SPLIT', { customSource: 'Milestone', milestone: { benefitId: 'MS-1001', operator: 'GTE', value: '80' } });
+    expect(rows[0].field).toBe(''); // the manager picks a real offer
+    expect(rows[0].operator).toBe('is at least'); // the typed threshold survives
+    expect(rows[0].value).toBe('80');
+    expect(dcFilterSentences(rows)).toEqual([]); // incomplete, so it is ignored
   });
 
-  it('builds a real Yes/No pair, same as every other Condition source', () => {
-    let g = addEntryEvent(EMPTY_GRAPH);
-    const p = { customSource: 'Milestone', milestone: { benefitId: 'MS-1001', operator: 'IS', statusChoice: 'COMPLETED', value: '100' } };
-    g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
-    const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
-    expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'Yes')).toBe(true);
-    expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'No')).toBe(true);
+  it("the old Completed choice resolves to no comparison rather than a guessed threshold", () => {
+    const rows = dcFiltersOf('SPLIT', { customSource: 'Milestone', milestone: { benefitId: 'MS-1001', operator: 'IS', statusChoice: 'COMPLETED', value: '100' } });
+    expect(rows[0].operator).toBe('');
+    expect(dcFilterSentences(rows)).toEqual([]);
   });
 
-  it('dcMilestoneSummary renders a real business question per operator', () => {
-    expect(dcMilestoneSummary({ benefitId: 'MS-1001', operator: 'IS', statusChoice: 'COMPLETED', value: '100' })).toBe('Spend ₹25,000 in first 30 days — Completed');
-    expect(dcMilestoneSummary({ benefitId: 'MS-1002', operator: 'GTE_PCT', value: '75' })).toBe('Spend ₹75,000 in first 90 days ≥ 75%');
-    expect(dcMilestoneSummary({ benefitId: 'MS-1003', operator: 'BETWEEN', value: '25', value2: '75' })).toBe('Spend ₹1,50,000 in first 180 days between 25 and 75');
-  });
-});
-
-describe('Milestone — Branch (DECISION_SPLIT) source', () => {
-  it('requires milestoneBenefitId, same "pick one thing" rule as Account/Entry event attribute', () => {
-    const p = { source: 'Milestone', milestoneBenefitId: '', branches: [{ id: 'b1', label: 'B1', operator: 'IS', statusChoice: 'COMPLETED', value: '100' }] };
-    expect(dcAddFormValid('DECISION_SPLIT', p)).toBe(false);
-    expect(dcAddFormValid('DECISION_SPLIT', { ...p, milestoneBenefitId: 'MS-1001' })).toBe(true);
+  it('reads back as offer, comparison, typed value — percent by default', () => {
+    const offer = MILESTONE_OFFERS[0];
+    const row = { group: 'Milestone', field: offer.id, operator: 'is at least', value: '80' };
+    expect(dcFilterSentence(row)).toBe(`${offer.name} is at least 80%`);
+    expect(dcFilterSentence({ ...row, valueUnit: 'rupees' as const, value: '20000' })).toBe(`${offer.name} is at least ₹20,000`);
   });
 
-  it("'BETWEEN' (Milestone's own real spelling) is checked alongside the generic 'Between'", () => {
-    const p = {
-      source: 'Milestone',
-      milestoneBenefitId: 'MS-1002',
-      branches: [{ id: 'b1', label: 'Band', operator: 'BETWEEN', value: '25', value2: '' }],
-    };
-    expect(dcAddFormValid('DECISION_SPLIT', p)).toBe(false);
-    expect(dcAddFormValid('DECISION_SPLIT', { ...p, branches: [{ ...p.branches[0], value2: '75' }] })).toBe(true);
+  it('is between needs both bounds, and both carry the unit', () => {
+    const offer = MILESTONE_OFFERS[1];
+    expect(dcFilterRowComplete({ group: 'Milestone', field: offer.id, operator: 'is between', value: '25' })).toBe(false);
+    const both = { group: 'Milestone', field: offer.id, operator: 'is between', value: '25', value2: '75' };
+    expect(dcFilterRowComplete(both)).toBe(true);
+    expect(dcFilterSentence(both)).toBe(`${offer.name} is between 25% and 75%`);
   });
 
-  it('builds one open edge per branch plus a catch-all, labeled with the real summary', () => {
+  it('a row with no offer picked is ignored however complete the rest is', () => {
+    expect(dcFilterRowComplete({ group: 'Milestone', field: '', operator: 'is at least', value: '80' })).toBe(false);
+  });
+
+  it('Branch: one offer, two arms with their own comparisons, plus a catch-all', () => {
+    const offer = MILESTONE_OFFERS[2];
     let g = addEntryEvent(EMPTY_GRAPH);
     const p = {
-      name: 'Milestone band', source: 'Milestone', milestoneBenefitId: 'MS-1002',
+      name: 'Milestone routing',
+      what: { group: 'Milestone', field: offer.id },
       branches: [
-        { id: 'b1', label: 'Needs a nudge', operator: 'LTE_PCT', value: '25' },
-        { id: 'b2', label: 'On track', operator: 'BETWEEN', value: '25', value2: '75' },
-        { id: 'b3', label: 'Reward now', operator: 'IS', statusChoice: 'COMPLETED', value: '100' },
+        { id: 'b1', label: 'On track', operator: 'is at least', value: '80', valueUnit: 'percent' },
+        { id: 'b2', label: 'Needs a nudge', operator: 'is less than', value: '40', valueUnit: 'percent' },
       ],
     };
+    expect(dcAddFormValid('DECISION_SPLIT', p)).toBe(true);
     g = dcConfirmAddNode(g, 'DECISION_SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const ds = Object.values(g.nodes).find((n) => n.type === 'DECISION_SPLIT')!;
-    expect(ds.label).toBe('Spend ₹75,000 in first 90 days');
-    const labels = g.edges.filter((e) => e.from === ds.id).map((e) => e.branchLabel);
-    expect(labels).toEqual(['Needs a nudge (≤ 25%)', 'On track (25–75)', 'Reward now (Completed)', 'Anything else']);
-  });
-});
-
-describe('Milestone — Entry · Audience entity', () => {
-  it('requires a complete milestone condition when entity is Milestone, same rule as Transaction requiring a lookback window', () => {
-    const base = { entity: 'Milestone', conditions: [], extraEntityGroups: [] };
-    expect(dcAddFormValid('ENTRY_SEGMENT', { ...base, milestone: { benefitId: '', operator: 'IS' } })).toBe(false);
-    expect(dcAddFormValid('ENTRY_SEGMENT', { ...base, milestone: dcDefaultMilestone() })).toBe(false); // still no benefit picked
-    expect(dcAddFormValid('ENTRY_SEGMENT', { ...base, milestone: { ...dcDefaultMilestone(), benefitId: 'MS-1001' } })).toBe(true);
-  });
-
-  it('an extra entity group can independently be Milestone, AND\'d with the primary block', () => {
-    const p = {
-      entity: 'Account',
-      conditions: [{ attribute: 'Status', operator: 'Equals', value: 'Active' }],
-      extraEntityGroups: [{ entity: 'Milestone', conditions: [], milestone: { benefitId: 'MS-1003', operator: 'IS', statusChoice: 'NOT_COMPLETED', value: '100' } }],
-    };
-    expect(dcAddFormValid('ENTRY_SEGMENT', p)).toBe(true);
-    const g = dcConfirmAddNode(EMPTY_GRAPH, 'ENTRY_SEGMENT', p, { kind: 'root' }, null);
-    expect(g.rootId).toBeTruthy();
+    expect(ds.label).toBe(offer.name);
+    expect(g.edges.filter((e) => e.from === ds.id).map((e) => e.branchLabel)).toEqual([
+      'On track (≥ 80%)',
+      'Needs a nudge (< 40%)',
+      'Anything else',
+    ]);
   });
 });
 
@@ -783,7 +774,7 @@ describe('Goal Check — one node type, one behaviour, added either way', () => 
     let g = addEntryEvent(EMPTY_GRAPH);
     g = dcConfirmAddNode(g, 'GOAL_CHECK', dcDefaultConfig('GOAL_CHECK', TEST_GOAL), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
     const check = Object.values(g.nodes).find((n) => n.type === 'GOAL_CHECK')!;
-    expect(check.label).toBe('Card Activated?');
+    expect(check.label).toBe('Virtual card activated?');
     expect(check._config).toBeNull(); // nothing of its own to configure
   });
 

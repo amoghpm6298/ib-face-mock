@@ -131,6 +131,42 @@ export interface DripEntityConditionGroup {
   milestone?: DripMilestoneCondition;
 }
 
+// One filter row: what, comparison, value. The single shape behind Entry ·
+// Audience, Condition and Branch, replacing the Entity control, the Source
+// control and the separate per-source forms that sat behind them.
+//
+// `group` + `field` together are the "what". For Account/Card/Customer the
+// field is an attribute name and the row is self-contained. The other three
+// groups keep the shape their question always needed, carried on the same
+// row rather than in a different form:
+//   Transactions      — `operator` is the existence direction, `txn` holds
+//                       the transaction fields and the lookback.
+//   Milestone         — `field` is the benefit id, `operator` is a real
+//                       MILESTONE_OPERATORS code, `value`/`value2` the
+//                       progress comparison.
+//   Previous message  — `values` holds the delivery statuses that count.
+//
+// Rows on one step are AND'd. Branch is the exception by nature: it shares
+// one row's `group`/`field` across its arms, and each arm carries its own
+// comparison and value, because it routes rather than narrows.
+export interface DripFilterRow {
+  group: string;
+  field: string;
+  operator?: string;
+  value?: string;
+  value2?: string;
+  values?: string[];
+  txn?: DripTxnHistoryCriteria;
+  // Milestone only: whether the typed progress is a percent or a rupee
+  // amount. Percent is the default, and "is at least 100%" is how completed
+  // is expressed — there is no Completed/Not Completed choice.
+  valueUnit?: 'percent' | 'rupees';
+  // App activity only: the chosen event's own details, keyed by detail kind
+  // (today only 'offer'). A detail left out, or left empty, means any value.
+  // Kept as a map so a new detail kind needs no new field.
+  details?: Record<string, string>;
+}
+
 export interface DripGoal {
   eventCategory: string;
   eventType: string;
@@ -146,6 +182,12 @@ export interface DripGoal {
   batch?: string;
   offerType?: string;
   offerName?: string;
+  // A card event's own details, where it has any (Card hotlisted carries a
+  // reason, Card control updated a channel and what changed). Entry · Event
+  // and Wait for Event carry the identical key on their own untyped
+  // _config. Absent on every campaign saved before this existed, and an
+  // empty detail means any value.
+  cardDetails?: Record<string, string>;
 }
 
 export type DripCampaignStatus =

@@ -1,26 +1,10 @@
 // Ported from journeysnudgesemi/emi-conversions-prototype.html
 // (dcCondSummary, dcDecisionBranchSummary, dcGoalLabel, dcOrdinal,
 // dcRecurrenceLabel, dcRecomputeLabelMeta).
-import type { DripGoal, DripGoalCondition, DripMilestoneCondition, DripTxnHistoryCriteria } from '../data/graphTypes';
+import type { DripGoal, DripGoalCondition, DripTxnHistoryCriteria } from '../data/graphTypes';
 import type { DcNodeType } from '../data/nodeMeta';
-import { milestoneBenefitName } from '../data/sharedConstants';
-
-// Short operator symbols for Milestone summaries — same convention as
-// dcCondSummary's '>' / '<' / '≠'. Only the two _PCT operators get a '%'
-// suffix; 'BETWEEN' and 'IS' are handled as their own cases below.
-const MILESTONE_OP_SYMBOL: Record<string, string> = { GT: '>', GTE: '≥', LT: '<', LTE: '≤', GTE_PCT: '≥', LTE_PCT: '≤' };
-
-// Readable canvas summary for a Milestone condition — same collapse
-// discipline as dcTxnHistorySummary: a real business question, not a
-// dump of the raw operator/value shape.
-export function dcMilestoneSummary(m: DripMilestoneCondition | undefined): string {
-  if (!m || !m.benefitId) return 'Milestone';
-  const name = milestoneBenefitName(m.benefitId);
-  if (m.operator === 'IS') return `${name} — ${m.statusChoice === 'NOT_COMPLETED' ? 'Not Completed' : 'Completed'}`;
-  if (m.operator === 'BETWEEN') return `${name} between ${m.value || '?'} and ${m.value2 || '?'}`;
-  const pct = m.operator === 'GTE_PCT' || m.operator === 'LTE_PCT' ? '%' : '';
-  return `${name} ${MILESTONE_OP_SYMBOL[m.operator] || m.operator} ${m.value || '?'}${pct}`;
-}
+import { TXN_NONE, appEventLabel, dcCardEventPhrase, dcNormalizeOperator, dcValidEventType, milestoneOfferName } from '../data/sharedConstants';
+import { dcAppDetailPhrase, dcBranchWhatOf, dcCompleteFilters, dcFilterSentence, dcFiltersOf, dcMilestoneValue } from '../data/filters';
 
 // Short readable summary of a condition array for a node's meta line —
 // "Amount = 2000, MCC = 5411" rather than making a reviewer open the
@@ -58,15 +42,19 @@ export interface DecisionBranch {
   value?: string;
   value2?: string;
   values?: string[];
-  // Only meaningful when the parent Decision Split's source is
-  // 'Milestone' and this branch's own operator is 'IS'.
-  statusChoice?: 'COMPLETED' | 'NOT_COMPLETED';
+  // Milestone arms only: whether the typed progress is a percent or a
+  // rupee amount.
+  valueUnit?: 'percent' | 'rupees';
+  // App activity arms only: that event's details, for this arm.
+  details?: Record<string, string>;
 }
 export interface DecisionSplitConfig {
-  source: string;
+  what?: { group: string; field: string };
+  branches: DecisionBranch[];
+  // Read by dcBranchWhatOf for campaigns saved before the one-row rewrite.
+  source?: string;
   attribute?: string;
   milestoneBenefitId?: string;
-  branches: DecisionBranch[];
 }
 
 // "Previous step outcome" moved from a single exact-match value to a set
@@ -84,20 +72,38 @@ export function dcSelectedMulti(single: string | undefined, multi: string[] | un
 // (always a status-set match), everything else mirrors dcCondSummary's
 // operator formatting.
 export function dcDecisionBranchSummary(p: DecisionSplitConfig, b: DecisionBranch): string {
-  if (p.source === 'Previous step outcome') {
+  const what = dcBranchWhatOf(p);
+  if (what.group === 'Previous message') {
     const sel = dcSelectedMulti(b.value, b.values);
     return sel.length === 0 ? '(unset)' : sel.length === 1 ? sel[0] : `${sel.length} outcomes`;
   }
-  if (p.source === 'Milestone') {
-    if (b.operator === 'IS') return b.statusChoice === 'NOT_COMPLETED' ? 'Not Completed' : 'Completed';
-    if (b.operator === 'BETWEEN') return `${b.value || '?'}–${b.value2 || '?'}`;
-    const pct = b.operator === 'GTE_PCT' || b.operator === 'LTE_PCT' ? '%' : '';
-    return `${MILESTONE_OP_SYMBOL[b.operator] || b.operator} ${b.value || '?'}${pct}`;
+  if (what.group === 'Milestone') {
+    const v = (x: string | undefined) => dcMilestoneValue(x, b.valueUnit) || '?';
+    if (b.operator === 'is between') return `${v(b.value)}–${v(b.value2)}`;
+    const symbol: Record<string, string> = { 'is more than': '>', 'is at least': '≥', 'is less than': '<', 'is at most': '≤' };
+    return `${symbol[b.operator] || b.operator || ''} ${v(b.value)}`.trim();
   }
-  if (b.operator === 'Between') return `${b.value || '?'}–${b.value2 || '?'}`;
-  if (b.operator === 'Greater than') return `> ${b.value || '?'}`;
-  if (b.operator === 'Less than') return `< ${b.value || '?'}`;
-  if (b.operator === 'Not Equals') return `≠ ${b.value || '?'}`;
+  if (what.group === 'Transactions') return b.operator === TXN_NONE ? 'none' : 'exists';
+  if (what.group === 'App activity') {
+    // The event is already the node's own label, so an arm chip carries
+    // only what differs between arms: its detail, direction and window.
+    const detail = dcAppDetailPhrase({ field: what.field, details: b.details });
+    const n = Number(b.value || 0);
+    return `${detail ? `${detail}, ` : ''}${b.operator || ''} in ${b.value || '?'} ${n === 1 ? 'day' : 'days'}`.trim();
+  }
+  // An edge chip has no room for a whole sentence, so the comparison is
+  // shortened to a symbol. The row and Review still read in full words.
+  const op = dcNormalizeOperator(b.operator);
+  if (op === 'is between') return `${b.value || '?'}–${b.value2 || '?'}`;
+  if (op === 'is more than') return `> ${b.value || '?'}`;
+  if (op === 'is at least') return `≥ ${b.value || '?'}`;
+  if (op === 'is less than') return `< ${b.value || '?'}`;
+  if (op === 'is at most') return `≤ ${b.value || '?'}`;
+  if (op === 'is not') return `≠ ${b.value || '?'}`;
+  if (op === 'is any of') {
+    const sel = dcSelectedMulti(b.value, b.values);
+    return sel.length === 0 ? '(unset)' : sel.length === 1 ? sel[0] : `${sel.length} values`;
+  }
   return b.value || '(unset)';
 }
 
@@ -106,8 +112,12 @@ export function dcDecisionBranchSummary(p: DecisionSplitConfig, b: DecisionBranc
 // has no single shared goal — its checkpoints are independent).
 export function dcGoalLabel(g: DripGoal | null | undefined): string | null {
   if (!g || !g.eventType) return null;
+  // An event the category no longer lists reads as no goal at all, rather
+  // than naming something that does not exist any more.
+  const head = dcCardEventPhrase(g.eventType, g.cardDetails) || dcValidEventType(g.eventCategory, g.eventType);
+  if (!head) return null;
   const cond = dcCondSummary(g.conditions);
-  return cond ? `${g.eventType} (${cond})` : g.eventType;
+  return cond ? `${head} (${cond})` : head;
 }
 
 export function dcOrdinal(n: number | string): string {
@@ -142,6 +152,8 @@ export function dcRecurrenceLabel(p: ScheduledEntryConfig): string {
 // `p` is intentionally loosely typed (Record<string, any>) — each node
 // type's pendingConfig shape is its own thing, defined in defaultConfig.ts.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// Entry · Audience keeps showing only recurrence on the canvas: filters are
+// configuration detail, and the canvas is an execution map.
 export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | null): { label: string; meta: string } {
   if (type === 'ENTRY_SEGMENT') {
     // Canvas-vs-drawer principle: the canvas is an execution map, not a
@@ -156,8 +168,10 @@ export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | 
   }
   if (type === 'ENTRY_EVENT') {
     // Conditions are configuration detail (P2, drawer-only) — only the
-    // event category (P1) earns a glance on the canvas.
-    return { label: p.eventType || 'Event Trigger', meta: p.eventCategory };
+    // event category (P1) earns a glance on the canvas. A card event's own
+    // detail is part of which event this is, so it rides on the label.
+    const card = dcCardEventPhrase(p.eventType, p.cardDetails);
+    return { label: card || dcValidEventType(p.eventCategory, p.eventType) || 'Event Trigger', meta: p.eventCategory };
   }
   if (type === 'SEND') {
     // meta is deliberately unused for Send's own canvas rendering —
@@ -174,37 +188,36 @@ export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | 
     // Event category and conditions are P2/unclassified configuration
     // detail — only the timeout (P1) earns a canvas line alongside the
     // event type itself.
-    return { label: p.eventType || 'Wait for Event', meta: `Timeout after ${p.duration} ${p.unit}` };
+    const card = dcCardEventPhrase(p.eventType, p.cardDetails);
+    return { label: card || dcValidEventType(p.eventCategory, p.eventType) || 'Wait for Event', meta: `Timeout after ${p.duration} ${p.unit}` };
   }
   if (type === 'SPLIT') {
     // A Condition has no "Goal reached" basis anymore (Phase 1) — it's
     // always a user-defined question, never a stand-in for the one
     // campaign goal (that's GOAL_CHECK's job, a distinct node type that
     // carries no condition config of its own at all — see below).
-    if (p.customSource === 'Previous step outcome') {
-      const sel = dcSelectedMulti(p.outcome, p.outcomes);
-      const text = sel.length === 0 ? '(unset)' : sel.length === 1 ? sel[0] : `${sel.length} outcomes`;
-      return { label: `Previous step: ${text}?`, meta: '' };
-    }
-    if (p.customSource === 'Transaction history') return { label: dcTxnHistorySummary(p.txnHistory) + '?', meta: '' };
-    if (p.customSource === 'Milestone') return { label: dcMilestoneSummary(p.milestone) + '?', meta: '' };
-    const conds = (p.customConditions || []).filter((c: DripGoalCondition) => c.attribute);
-    // One simple condition gets to be the label itself (a short, real
-    // business question) — two or more collapse to a count-only meta
-    // line instead (Phase 1 §9: counts, not joined expressions). This is
-    // the direct fix for the literal bug a joined multi-condition string
-    // produced on canvas ("Status = Active, Status ≠ Active?").
-    if (conds.length === 0) return { label: 'Custom condition', meta: '' };
-    if (conds.length === 1) return { label: (dcCondSummary(conds) || 'Custom condition') + '?', meta: '' };
-    return { label: 'Custom condition', meta: `${conds.length} conditions` };
+    //
+    // One complete filter gets to be the label itself, as a real business
+    // question. Two or more collapse to a count (Phase 1 §9: counts, not
+    // joined expressions), which is the fix for the literal bug a joined
+    // multi-condition string produced on canvas.
+    const rows = dcCompleteFilters(dcFiltersOf('SPLIT', p));
+    if (rows.length === 0) return { label: 'Custom condition', meta: '' };
+    if (rows.length === 1) return { label: dcFilterSentence(rows[0]) + '?', meta: '' };
+    return { label: 'Custom condition', meta: `${rows.length} filters` };
   }
   if (type === 'DECISION_SPLIT') {
+    const what = dcBranchWhatOf(p);
     const label =
-      p.source === 'Previous step outcome'
-        ? 'Previous step outcome'
-        : p.source === 'Milestone'
-          ? milestoneBenefitName(p.milestoneBenefitId) || 'Milestone'
-          : p.attribute || 'Branch';
+      what.group === 'Previous message'
+        ? 'Previous message outcome'
+        : what.group === 'Milestone'
+          ? milestoneOfferName(what.field) || 'Milestone'
+          : what.group === 'Transactions'
+            ? 'Transactions'
+            : what.group === 'App activity'
+              ? appEventLabel(what.field) || 'App activity'
+              : what.field || 'Branch';
     return { label, meta: `${p.branches.length} branch${p.branches.length === 1 ? '' : 'es'} + catch-all` };
   }
   if (type === 'RANDOM_SPLIT') {

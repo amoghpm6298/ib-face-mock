@@ -3,7 +3,7 @@
 // dcCondUpdate / dcCondToggleMulti — React-idiomatic version: takes the
 // conditions array + an onChange callback instead of a global containerKey
 // lookup (dcCondArrayFor), since each caller now owns its own local state.
-import { ELIGIBILITY_META, DC_PROMOTED_ATTR, dcOperatorsForAttribute, type AttrType } from '../data/sharedConstants';
+import { ELIGIBILITY_META, DC_PROMOTED_ATTR, ON_OFF, YES_NO, dcOperatorsForAttribute, type AttrType } from '../data/sharedConstants';
 import type { DripGoalCondition } from '../data/graphTypes';
 import { MultiSelectDropdown } from '../components/MultiSelectDropdown';
 
@@ -219,16 +219,24 @@ export function ValueField({
       </select>
     );
   }
-  if (attrMeta?.type === 'bool') {
+  if (attrMeta?.type === 'bool' || attrMeta?.type === 'onoff') {
+    // A yes/no filter shows Yes and No; a card control shows the words that
+    // make its own row read as a sentence. Legacy 'true'/'false' still
+    // displays correctly because the option list carries them as aliases.
+    const options = attrMeta.type === 'onoff' ? ON_OFF : YES_NO;
+    const legacy = cond.value === 'true' ? 'Yes' : cond.value === 'false' ? 'No' : cond.value;
     return (
-      <select value={cond.value || ''} onChange={(e) => onPatch({ value: e.target.value })}>
+      <select value={legacy || ''} onChange={(e) => onPatch({ value: e.target.value })}>
         <option value="">Value</option>
-        <option value="true">true</option>
-        <option value="false">false</option>
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
       </select>
     );
   }
-  if (attrMeta?.type === 'number' && cond.operator === 'Between') {
+  if (attrMeta?.type === 'number' && (cond.operator === 'is between' || cond.operator === 'Between')) {
     return (
       <div style={{ display: 'flex', gap: 6 }}>
         <input type="number" className="f-input" placeholder="From" value={cond.value || ''} onChange={(e) => onPatch({ value: e.target.value })} />

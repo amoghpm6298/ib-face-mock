@@ -11,7 +11,7 @@
 // Push') for it, with no real catalog anywhere in that file to draw a
 // list from (see OFFER_TYPE_OPTIONS's own comment in sharedConstants.ts
 // for why `IBL_CAMPAIGNS` doesn't count as one).
-import { JOURNEY_OPTIONS, BATCH_OPTIONS, OFFER_TYPE_OPTIONS } from '../data/sharedConstants';
+import { JOURNEY_OPTIONS, BATCH_OPTIONS, OFFER_TYPE_OPTIONS, CARD_CONTROL_LIMITS, cardEventDetailFields, dcValidEventType } from '../data/sharedConstants';
 
 export interface EventScopingValue {
   journey?: string;
@@ -73,4 +73,77 @@ export function EventScopingFields({
     );
   }
   return null;
+}
+
+// A card event's own details, wherever a card event is chosen — Entry ·
+// Event, the Goal, and Wait for Event. Two events carry them; the rest
+// render nothing.
+//
+// Stored flat on the same config/goal object as everything else here, under
+// `cardDetails`, so an old campaign simply lacks the key.
+// Keyed by the detail's own field name, so a new detail needs no new type.
+export type CardEventDetailValue = Record<string, string>;
+
+export function CardEventDetailFields({
+  eventCategory,
+  eventType,
+  value,
+  onChange,
+}: {
+  eventCategory: string;
+  eventType: string;
+  value: CardEventDetailValue | undefined;
+  onChange: (next: CardEventDetailValue) => void;
+}) {
+  if (eventCategory !== 'Card Events') return null;
+  const fields = cardEventDetailFields(dcValidEventType(eventCategory, eventType));
+  if (!fields) return null;
+  const details = value || {};
+  // The amount only means anything once Change is one of the three limits.
+  const changeIsLimit = CARD_CONTROL_LIMITS.includes(details.Change || '');
+  return (
+    <div className="f-group">
+      <label className="f-label">
+        Event detail <span style={{ fontWeight: 400, color: 'var(--gray-500)' }}>(optional)</span>
+      </label>
+      {Object.entries(fields).map(([name, meta]) => {
+        if (name === 'Limit amount' && !changeIsLimit) return null;
+        return (
+          <div key={name} style={{ marginBottom: 8 }}>
+            <label className="f-label" style={{ fontWeight: 500 }}>
+              {name}
+            </label>
+            {meta.type === 'number' ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  className="f-input"
+                  type="number"
+                  min={0}
+                  value={details[name] || ''}
+                  onChange={(e) => onChange({ ...details, [name]: e.target.value })}
+                />
+                <span style={{ fontSize: 13, color: 'var(--gray-600)' }}>₹</span>
+              </div>
+            ) : (
+              <select
+                className="f-input"
+                value={details[name] || ''}
+                onChange={(e) => {
+                  const next: CardEventDetailValue = { ...details, [name]: e.target.value };
+                  // Moving off a limit drops the amount it belonged to.
+                  if (name === 'Change' && !CARD_CONTROL_LIMITS.includes(e.target.value)) delete next['Limit amount'];
+                  onChange(next);
+                }}
+              >
+                <option value="">Any</option>
+                {(meta.options || []).map((o) => (
+                  <option key={o}>{o}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
