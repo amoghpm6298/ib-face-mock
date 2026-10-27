@@ -17,14 +17,6 @@ import {
   milestoneOfferName,
 } from './sharedConstants';
 
-// What a row needs to know about the campaign around it. Only Entry event
-// rows use it, and only to resolve which attribute set the triggering event
-// exposes.
-export interface FilterContext {
-  entryEventEntity?: string | null;
-  entryEventLockedAttr?: string | null;
-}
-
 export function dcDefaultFilterRow(): DripFilterRow {
   return { group: 'Account', field: '', operator: '' };
 }
@@ -100,7 +92,9 @@ function txnRowFrom(t: DripTxnHistoryCriteria | undefined): DripFilterRow {
 
 export function dcFiltersOf(type: string, p: any): DripFilterRow[] {
   if (!p) return [];
-  if (Array.isArray(p.filters)) return p.filters;
+  // A row saved under the retired Entry event group opens with its what
+  // cleared, left in place to be picked again.
+  if (Array.isArray(p.filters)) return p.filters.map((r: DripFilterRow) => (r.group === 'Entry event' ? { ...r, group: '', field: '' } : r));
   if (type === 'ENTRY_SEGMENT') {
     const primary = { entity: p.entity, conditions: p.conditions, lookbackDuration: p.lookbackDuration, lookbackUnit: p.lookbackUnit, existence: p.existence, milestone: p.milestone };
     return [primary, ...(p.extraEntityGroups || [])].flatMap(entityGroupToRows);
@@ -116,7 +110,10 @@ export function dcFiltersOf(type: string, p: any): DripFilterRow[] {
       case 'Milestone':
         return [milestoneRowFrom(p.milestone)];
       case 'Entry event attribute':
-        return (p.customConditions || []).map((c: DripGoalCondition) => condToRow('Entry event', c));
+        // The Entry event group is gone: the entry event is settled on the
+        // entry step. Such a row opens with its what cleared and stays in
+        // place, keeping whatever comparison and value were typed.
+        return (p.customConditions || []).map((c: DripGoalCondition) => ({ ...condToRow('Entry event', c), group: '', field: '' }));
       default:
         return (p.customConditions || []).map((c: DripGoalCondition) => condToRow('Account', c));
     }
@@ -133,7 +130,8 @@ export function dcBranchWhatOf(p: any): { group: string; field: string } {
     case 'Previous step outcome':
       return { group: 'Previous message', field: PREV_MESSAGE_FIELD };
     case 'Entry event attribute':
-      return { group: 'Entry event', field: p.attribute || '' };
+      // Same rule on a Branch: the what clears and the arms stay.
+      return { group: '', field: '' };
     case 'Milestone': {
       // Same rule as a Condition row: a removed benefit clears rather than
       // remapping onto a different offer, which would quietly change who
@@ -152,7 +150,7 @@ export function dcBranchWhatOf(p: any): { group: string; field: string } {
 // label or Review. It does not block saving, because a half-typed row is a
 // normal intermediate state, not an error to shout about.
 
-export function dcFilterRowComplete(row: DripFilterRow | undefined, ctx?: FilterContext): boolean {
+export function dcFilterRowComplete(row: DripFilterRow | undefined): boolean {
   if (!row || !row.group) return false;
   if (row.group === 'App activity') {
     // Details are optional throughout: an empty one means any value.
@@ -165,14 +163,14 @@ export function dcFilterRowComplete(row: DripFilterRow | undefined, ctx?: Filter
     return row.operator === 'is between' ? !!row.value && !!row.value2 : !!row.value;
   }
   if (!row.field || !row.operator) return false;
-  const meta = dcFilterAttrMeta(row.group, row.field, ctx?.entryEventEntity);
+  const meta = dcFilterAttrMeta(row.group, row.field);
   if (meta?.type === 'multiSelect') return !!(row.values && row.values.length);
   if (row.operator === 'is between') return !!row.value && !!row.value2;
   return !!row.value;
 }
 
-export function dcCompleteFilters(rows: DripFilterRow[] | undefined, ctx?: FilterContext): DripFilterRow[] {
-  return (rows || []).filter((r) => dcFilterRowComplete(r, ctx));
+export function dcCompleteFilters(rows: DripFilterRow[] | undefined): DripFilterRow[] {
+  return (rows || []).filter((r) => dcFilterRowComplete(r));
 }
 
 // --- app activity ----------------------------------------------------------
@@ -220,14 +218,14 @@ export function dcMilestoneValue(raw: string | undefined, unit: 'percent' | 'rup
   return `${v}%`;
 }
 
-function valuePhrase(row: DripFilterRow, ctx?: FilterContext): string {
-  const meta = dcFilterAttrMeta(row.group, row.field, ctx?.entryEventEntity);
+function valuePhrase(row: DripFilterRow): string {
+  const meta = dcFilterAttrMeta(row.group, row.field);
   if (meta?.type === 'multiSelect') return (row.values || []).join(', ');
   if (row.operator === 'is between') return `${dcFormatValue(meta, row.value)} and ${dcFormatValue(meta, row.value2)}`;
   return dcFormatValue(meta, row.value);
 }
 
-export function dcFilterSentence(row: DripFilterRow, ctx?: FilterContext): string {
+export function dcFilterSentence(row: DripFilterRow): string {
   if (!row) return '';
   if (row.group === 'Transactions') {
     const txn = row.txn ?? dcDefaultTxnForRow();
@@ -255,20 +253,20 @@ export function dcFilterSentence(row: DripFilterRow, ctx?: FilterContext): strin
     const val = row.operator === 'is between' ? `${amount(row.value)} and ${amount(row.value2)}` : amount(row.value);
     return `${name} ${row.operator || ''} ${val}`.replace(/\s+/g, ' ').trim();
   }
-  return `${row.field} ${row.operator} ${valuePhrase(row, ctx)}`.replace(/\s+/g, ' ').trim();
+  return `${row.field} ${row.operator} ${valuePhrase(row)}`.replace(/\s+/g, ' ').trim();
 }
 
 // Review and the saved campaign show one sentence per filter, in the order
 // they were added.
-export function dcFilterSentences(rows: DripFilterRow[] | undefined, ctx?: FilterContext): string[] {
-  return dcCompleteFilters(rows, ctx).map((r) => dcFilterSentence(r, ctx));
+export function dcFilterSentences(rows: DripFilterRow[] | undefined): string[] {
+  return dcCompleteFilters(rows).map((r) => dcFilterSentence(r));
 }
 
 // One short line for a canvas card, which has no room for a list.
-export function dcFiltersLabel(rows: DripFilterRow[] | undefined, ctx?: FilterContext): string {
-  const done = dcCompleteFilters(rows, ctx);
+export function dcFiltersLabel(rows: DripFilterRow[] | undefined): string {
+  const done = dcCompleteFilters(rows);
   if (!done.length) return '';
-  if (done.length === 1) return dcFilterSentence(done[0], ctx);
+  if (done.length === 1) return dcFilterSentence(done[0]);
   return `${done.length} filters`;
 }
 

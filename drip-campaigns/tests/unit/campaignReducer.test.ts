@@ -10,9 +10,9 @@ import { dcResetIdCounters } from '../../src/reducer/idGen';
 import { dcGraphHasOpenBranches } from '../../src/reducer/graphOps';
 import { dcConfirmAddNode, dcConfirmEditNode, dcRemoveEdge, dcRemoveGoalCheck, dcRenameEdge, type DcAddingAt } from '../../src/reducer/campaignReducer';
 import { dcDefaultConfig, dcAddFormValid } from '../../src/reducer/defaultConfig';
-import { resolveEntryEventAttrSource, EVENT_ATTR_BY_TYPE, MILESTONE_OFFERS } from '../../src/data/sharedConstants';
+import { resolveEntryEventAttrSource, EVENT_ATTR_BY_TYPE, MILESTONE_OFFERS, dcFilterOptionGroups } from '../../src/data/sharedConstants';
 import { dcMilestoneSummary } from '../../src/reducer/labelMeta';
-import { dcFilterRowComplete, dcFilterSentence, dcFilterSentences, dcFiltersOf } from '../../src/data/filters';
+import { dcBranchWhatOf, dcFilterRowComplete, dcFilterSentence, dcFilterSentences, dcFiltersOf } from '../../src/data/filters';
 import { dcCanFanOut, dcIsRoutingNode, DC_STEP_TYPES } from '../../src/data/nodeMeta';
 
 const EMPTY_GRAPH: DripGraph = { nodes: {}, edges: [], rootId: null };
@@ -350,47 +350,38 @@ describe('Journey/Offer Events condition narrowing (locked attribute)', () => {
     expect(resolveEntryEventAttrSource(null, null)).toEqual({ entity: null, lockedAttr: null });
   });
 
-  it('Condition "Entry event attribute" source builds a real Yes/No pair off a Journey Events entry\'s locked attribute', () => {
-    let g = addEntryEvent(EMPTY_GRAPH, { eventCategory: 'Journey Events', eventType: 'Pageload' });
-    const p = { customSource: 'Entry event attribute', outcome: '', customConditions: [{ attribute: 'Page Name', operator: 'Equals', value: 'EMI Offer Page' }] };
-    g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
-    const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
-    expect(split).toBeTruthy();
-    expect(split.label).toBe('Page Name is EMI Offer Page?');
-    expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'Yes')).toBe(true);
-    expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'No')).toBe(true);
+  it('a saved Condition that filtered on the entry event opens with its what cleared, and the row stays', () => {
+    const rows = dcFiltersOf('SPLIT', {
+      customSource: 'Entry event attribute',
+      customConditions: [{ attribute: 'Page Name', operator: 'Equals', value: 'EMI Offer Page' }],
+    });
+    expect(rows).toHaveLength(1); // the row is still there to be picked again
+    expect(rows[0].group).toBe('');
+    expect(rows[0].field).toBe('');
+    expect(rows[0].value).toBe('EMI Offer Page'); // what was typed survives
+    expect(dcFilterSentences(rows)).toEqual([]); // incomplete, so ignored
+    // Nothing is silently repointed at another group.
+    expect(dcAddFormValid('SPLIT', { filters: rows })).toBe(false);
   });
 
-  it('dcAddFormValid already covers the locked-attribute case via its existing customConditions fallback — no new validation logic needed', () => {
-    expect(dcAddFormValid('SPLIT', { customSource: 'Entry event attribute', customConditions: [{ attribute: 'Status', operator: 'Equals', value: 'Completed' }] })).toBe(true);
-    expect(dcAddFormValid('SPLIT', { customSource: 'Entry event attribute', customConditions: [] })).toBe(false);
-    expect(dcAddFormValid('SPLIT', { customSource: 'Entry event attribute', customConditions: [{ attribute: '', operator: '', value: '' }] })).toBe(false);
-  });
-
-  it('Branch "Entry event attribute" source on a Journey Events entry builds real branches off the locked attribute, with a real canvas label', () => {
-    let g = addEntryEvent(EMPTY_GRAPH, { eventCategory: 'Journey Events', eventType: 'Button Click' });
+  it('a saved Branch that routed on the entry event opens with its what cleared, and the arms stay', () => {
     const p = {
-      name: 'Decision', source: 'Entry event attribute', attribute: 'Button Name', outcome: '',
+      source: 'Entry event attribute',
+      attribute: 'Button Name',
       branches: [
         { id: 'b1', label: 'CTA clicked', operator: 'Equals', value: 'Apply Now' },
         { id: 'b2', label: 'Other', operator: 'Equals', value: 'Learn More' },
       ],
     };
-    g = dcConfirmAddNode(g, 'DECISION_SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
-    const ds = Object.values(g.nodes).find((n) => n.type === 'DECISION_SPLIT')!;
-    expect(ds.label).toBe('Button Name');
-    const labels = g.edges.filter((e) => e.from === ds.id).map((e) => e.branchLabel);
-    expect(labels).toEqual(['CTA clicked (Apply Now)', 'Other (Learn More)', 'Anything else']);
+    expect(dcBranchWhatOf(p)).toEqual({ group: '', field: '' });
+    expect(p.branches).toHaveLength(2);
+    expect(dcAddFormValid('DECISION_SPLIT', p)).toBe(false);
   });
 
-  it('dcAddFormValid: Branch already covers the locked-attribute case the same way Account attribute does — attribute populated, every branch filled in', () => {
-    const valid = {
-      source: 'Entry event attribute', attribute: 'Status',
-      branches: [{ value: 'Started', operator: 'Equals', value2: '' }],
-    };
-    expect(dcAddFormValid('DECISION_SPLIT', valid)).toBe(true);
-    expect(dcAddFormValid('DECISION_SPLIT', { ...valid, attribute: '' })).toBe(false);
-    expect(dcAddFormValid('DECISION_SPLIT', { ...valid, branches: [{ value: '', operator: 'Equals', value2: '' }] })).toBe(false);
+  it('the what menu offers no Entry event group at all, on Condition or Branch', () => {
+    for (const groups of [dcFilterOptionGroups(), dcFilterOptionGroups({ previousMessage: true })]) {
+      expect(groups.some((g) => g.group === 'Entry event')).toBe(false);
+    }
   });
 
   it('backward compatibility: ENTRY_EVENT/WAIT_UNTIL/Goal configs predating journey/batch/offerType/offerName stay valid', () => {

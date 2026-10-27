@@ -73,6 +73,19 @@ async function setFilterRow(
   return row;
 }
 
+// The milestone offer is a search, so it is picked by typing rather than
+// selected from the what menu.
+async function pickOffer(page: import('@playwright/test').Page, name: string) {
+  const drawer = page.locator('.sd-drawer.open');
+  const trigger = drawer.locator('.msel-trigger', { hasText: /Select…|Milestone/ }).first();
+  await trigger.click();
+  await page.waitForTimeout(150);
+  await drawer.locator('.msel-panel input').first().fill(name.split(' ')[0]);
+  await page.waitForTimeout(200);
+  await drawer.locator('.msel-option', { hasText: name }).first().click();
+  await page.waitForTimeout(200);
+}
+
 async function addFilter(page: import('@playwright/test').Page) {
   await page.locator('.sd-drawer.open .add-link', { hasText: '+ Add filter' }).click();
   await page.waitForTimeout(150);
@@ -313,10 +326,9 @@ test('Decision Split: one shared what, per-arm comparisons, catch-all, mid-list 
   await page.locator('.dc-type-opt', { hasText: /^Branch/ }).click();
   await page.waitForTimeout(150);
   // One "What" for the whole Branch — no Source control, no separate
-  // Attribute control. Transaction Amount comes from the Entry event group,
-  // since this campaign's entry is a Transaction Event.
+  // Attribute control.
   const drawer = page.locator('.sd-drawer.open');
-  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'What' }) }).locator('select').selectOption('Entry event::Transaction Amount');
+  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'What' }) }).locator('select').selectOption('Account::Current OS amount');
   await page.waitForTimeout(200);
 
   const branchOpSelects = drawer.locator('select');
@@ -334,10 +346,10 @@ test('Decision Split: one shared what, per-arm comparisons, catch-all, mid-list 
   await drawer.locator('.sd-foot button.btn.primary').click();
   await page.waitForTimeout(400);
 
-  await expect(page.locator('.dc-node-card:has-text("Transaction Amount")')).toHaveCount(1);
+  await expect(page.locator('.dc-node-card:has-text("Current OS amount")')).toHaveCount(1);
   await expect(page.locator('.dc-branch-label:has-text("Anything else")')).toHaveCount(1);
 
-  await page.locator('.dc-node-card:has-text("Transaction Amount")').click();
+  await page.locator('.dc-node-card:has-text("Current OS amount")').click();
   await page.waitForTimeout(300);
   const insertRows = page.locator('.dcb-insert-row');
   await expect(insertRows.nth(1)).toBeAttached();
@@ -499,13 +511,15 @@ test('Condition: a Milestone filter is an offer plus a typed threshold, percent 
   await page.waitForTimeout(200);
   await addFilter(page);
 
-  // The offers listed are the program's own. None of them names a target
-  // amount or a day count — the invented spend ladder is gone.
+  // One Milestone choice in the menu — the fifty offers are behind a search,
+  // not listed here — and no option names an amount or a day count.
   const whatOptions = await page.locator('.sd-drawer.open .cond-row').first().locator('select').first().locator('option').allTextContents();
+  expect(whatOptions.filter((o) => o === 'Milestone')).toHaveLength(1);
   for (const o of whatOptions) expect(o).not.toMatch(/Spend ₹/);
 
   const offer = MILESTONE_OFFERS[0];
-  const row = await setFilterRow(page, 0, `Milestone::${offer.id}`, 'is at least');
+  const row = await setFilterRow(page, 0, 'Milestone::', 'is at least');
+  await pickOffer(page, offer.name);
   await row.locator('input[type=number]').first().fill('80');
   await page.waitForTimeout(200);
 
@@ -542,7 +556,8 @@ test('Entry · Audience never blocks on a half-typed filter, and a complete Mile
   await expect(page.locator('.sd-drawer.open .sd-foot button.btn.primary')).toBeEnabled();
 
   const offer = MILESTONE_OFFERS[1];
-  const row = await setFilterRow(page, 0, `Milestone::${offer.id}`, 'is at least');
+  const row = await setFilterRow(page, 0, 'Milestone::', 'is at least');
+  await pickOffer(page, offer.name);
   await row.locator('input[type=number]').first().fill('80');
   await page.waitForTimeout(150);
 
@@ -579,8 +594,10 @@ test('Branch: one Milestone offer shared across arms, each arm its own threshold
   await page.waitForTimeout(150);
   const drawer = page.locator('.sd-drawer.open');
   const offer = MILESTONE_OFFERS[2];
-  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'What' }) }).locator('select').selectOption(`Milestone::${offer.id}`);
+  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'What' }) }).locator('select').selectOption('Milestone::');
   await page.waitForTimeout(200);
+  // One offer search, shared by every arm.
+  await pickOffer(page, offer.name);
 
   // Arm 1: at least 80%. Arm 2: less than 40%. Same offer, own thresholds.
   const sel = () => drawer.locator('select');
@@ -700,59 +717,23 @@ test('Goal Definition: Journey Events shows its own scoping fields + a locked-at
 });
 
 
-test('Condition: an Entry event filter resolves a Journey Events locked attribute and forks Yes/No', async ({ page }) => {
-  await startNewCampaign(page, 'Builder Spec: Locked Attr Condition');
+test('Condition and Branch do not ask about the entry event again', async ({ page }) => {
+  await startNewCampaign(page, 'Builder Spec: No Entry Event Group');
   await addEntryEvent(page, 'Journey Events', 'Pageload');
 
   await page.locator('.dc-add-btn').click();
   await page.locator('.dc-type-opt:has-text("Condition")').first().click();
   await page.waitForTimeout(200);
   await addFilter(page);
-  // Journey Events resolve exactly one attribute, so the Entry event group
-  // offers exactly that one.
-  const row = await setFilterRow(page, 0, 'Entry event::Page Name', 'is');
-  await row.locator('input[placeholder="Value"]').fill('EMI Offer Page');
-  await page.waitForTimeout(150);
-
-  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
-  await page.waitForTimeout(400);
-
-  await expect(page.locator('.dc-node-card', { hasText: 'Page Name is EMI Offer Page?' })).toHaveCount(1);
-  await expect(page.locator('.dc-branch-label', { hasText: 'Yes' })).toBeVisible();
-  await expect(page.locator('.dc-branch-label', { hasText: 'No' })).toBeVisible();
-});
-
-
-test('Branch: an Entry event what on an Offer Events entry builds real arms', async ({ page }) => {
-  await startNewCampaign(page, 'Builder Spec: Locked Attr Branch');
-  await addEntryEvent(page, 'Offer Events', 'Outcome Issuance');
-
-  await page.locator('.dc-add-btn').click();
-  await page.locator('.dc-type-opt', { hasText: /^Branch/ }).click();
-  await page.waitForTimeout(150);
-  const drawer = page.locator('.sd-drawer.open');
-  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'What' }) }).locator('select').selectOption('Entry event::Outcome Status');
+  // The journey already started from that event; a later filter does not
+  // offer it as something to narrow on.
+  const groups = await page.locator('.sd-drawer.open .cond-row').first().locator('select').first().locator('optgroup').evaluateAll((els) => els.map((e) => (e as HTMLOptGroupElement).label));
+  expect(groups).not.toContain('Entry event');
+  expect(groups).toContain('Account');
+  expect(groups).toContain('Previous message');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.secondary').click();
   await page.waitForTimeout(200);
-
-  const valueInputs = drawer.locator('input[placeholder="Value"]');
-  const opSelects = drawer.locator('select');
-  const count = await opSelects.count();
-  for (let i = 0; i < count; i++) {
-    const options = await opSelects.nth(i).locator('option').allTextContents();
-    if (options.includes('is')) await opSelects.nth(i).selectOption('is');
-  }
-  await valueInputs.nth(0).fill('Redeemed');
-  await valueInputs.nth(1).fill('Expired');
-  await page.waitForTimeout(150);
-
-  await expect(drawer.locator('.sd-foot button.btn.primary')).toBeEnabled();
-  await drawer.locator('.sd-foot button.btn.primary').click();
-  await page.waitForTimeout(400);
-
-  await expect(page.locator('.dc-node-card', { hasText: 'Outcome Status' })).toHaveCount(1);
-  await expect(page.locator('.dc-branch-label', { hasText: 'Anything else' })).toBeVisible();
 });
-
 
 test('Entry · Audience: two filters from different groups are AND\'d, and survive save/reopen', async ({ page }) => {
   await startNewCampaign(page, 'Builder Spec: Multi Entity Entry');

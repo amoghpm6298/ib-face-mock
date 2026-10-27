@@ -123,20 +123,6 @@ export function DripBuilder({
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
-  const [entryEventCategory, setEntryEventCategory] = useState<string | null>(() => {
-    const root = initial?.root?.rootId ? initial.root.nodes[initial.root.rootId] : null;
-    return root?.type === 'ENTRY_EVENT' ? (root.meta.split(' · ')[0] ?? null) : null;
-  });
-  // Entry · Event's own eventType — read straight from the node's own
-  // `label` (same reasoning as entryEventCategory reading `meta`: an
-  // ENTRY_EVENT's label IS its eventType, per dcRecomputeLabelMeta, so
-  // this works for every seeded node regardless of whether its _config
-  // happens to be populated).
-  const [entryEventType, setEntryEventType] = useState<string | null>(() => {
-    const root = initial?.root?.rootId ? initial.root.nodes[initial.root.rootId] : null;
-    return root?.type === 'ENTRY_EVENT' ? root.label || null : null;
-  });
-
   // Add/edit drawer state.
   const [addingAt, setAddingAt] = useState<DcAddingAt | null>(null);
   const [addingType, setAddingType] = useState<DcNodeType | null>(null);
@@ -225,10 +211,6 @@ export function DripBuilder({
     if (!addingType || !addingAt) return;
     const next = dcConfirmAddNode(graph, addingType, pendingConfig, addingAt, goal);
     pushGraph(next);
-    if (addingType === 'ENTRY_EVENT') {
-      setEntryEventCategory(pendingConfig.eventCategory);
-      setEntryEventType(pendingConfig.eventType);
-    }
     cancelAdd();
   }
 
@@ -455,8 +437,6 @@ export function DripBuilder({
         onCancel={editingNodeId !== null ? cancelEdit : cancelAdd}
         onConfirm={editingNodeId !== null ? confirmEditNode : confirmAddNode}
         goal={goal}
-        entryEventCategory={entryEventCategory}
-        entryEventType={entryEventType}
         previousStepChannel={previousStepChannel}
         onGoToGoal={() => {
           cancelEdit();

@@ -34,13 +34,6 @@ export interface AddEditDrawerProps {
   onCancel: () => void;
   onConfirm: () => void;
   goal: DripGoal | null;
-  entryEventCategory: string | null;
-  // The entry's own eventType (e.g. "Pageload") — needed alongside
-  // entryEventCategory because Journey/Offer Events' locked attribute
-  // (see resolveEntryEventAttrSource) depends on the specific event type,
-  // not just the category (Journey Events alone has 3 possible types,
-  // each with a different locked attribute).
-  entryEventType: string | null;
   previousStepChannel: PrevStepSend | null;
   // Goal Check's own "edit" view is read-only (see NodeForms.tsx's
   // GoalCheckInfo) — this is its one real action, a shortcut back to the
@@ -49,7 +42,7 @@ export interface AddEditDrawerProps {
 }
 
 export function AddEditDrawer(props: AddEditDrawerProps) {
-  const { open, isEditing, isEntry, isMidEdge, types, disabledTypes, selectedType, pendingConfig, onConfigChange, onPickType, onCancel, onConfirm, goal, entryEventCategory, entryEventType, previousStepChannel, onGoToGoal } = props;
+  const { open, isEditing, isEntry, isMidEdge, types, disabledTypes, selectedType, pendingConfig, onConfigChange, onPickType, onCancel, onConfirm, goal, previousStepChannel, onGoToGoal } = props;
 
   // Whether the type grid should be showing right now, as opposed to the
   // collapsed chip. True initially (nothing picked yet) and whenever the
@@ -94,8 +87,6 @@ export function AddEditDrawer(props: AddEditDrawerProps) {
             type={selectedType!}
             p={pendingConfig}
             onChange={(patch) => onConfigChange(patch)}
-            entryEventCategory={entryEventCategory}
-            entryEventType={entryEventType}
             previousStepChannel={previousStepChannel}
           />
         )}
@@ -123,15 +114,11 @@ function NodeForm({
   type,
   p,
   onChange,
-  entryEventCategory,
-  entryEventType,
   previousStepChannel,
 }: {
   type: DcNodeType;
   p: any; // eslint-disable-line @typescript-eslint/no-explicit-any
   onChange: (patch: any) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
-  entryEventCategory: string | null;
-  entryEventType: string | null;
   previousStepChannel: PrevStepSend | null;
 }) {
   switch (type) {
@@ -146,9 +133,9 @@ function NodeForm({
     case 'WAIT_UNTIL':
       return <Forms.WaitUntilForm p={p} onChange={onChange} />;
     case 'SPLIT':
-      return <Forms.SplitForm p={p} onChange={onChange} entryEventCategory={entryEventCategory} entryEventType={entryEventType} previousStepChannel={previousStepChannel} />;
+      return <Forms.SplitForm p={p} onChange={onChange} previousStepChannel={previousStepChannel} />;
     case 'DECISION_SPLIT':
-      return <Forms.DecisionSplitForm p={p} onChange={onChange} entryEventCategory={entryEventCategory} entryEventType={entryEventType} previousStepChannel={previousStepChannel} />;
+      return <Forms.DecisionSplitForm p={p} onChange={onChange} previousStepChannel={previousStepChannel} />;
     case 'RANDOM_SPLIT':
       return <Forms.RandomSplitForm p={p} onChange={onChange} />;
     case 'GOAL_CHECK':

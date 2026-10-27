@@ -247,6 +247,53 @@ export const MILESTONE_OFFERS: MilestoneOffer[] = [
   { id: 'MO-1', name: 'Welcome Milestone' },
   { id: 'MO-2', name: 'Quarterly Spend Milestone' },
   { id: 'MO-3', name: 'Annual Fee Waiver Milestone' },
+  { id: 'MO-4', name: 'Activation Milestone' },
+  { id: 'MO-5', name: 'First Transaction Milestone' },
+  { id: 'MO-6', name: 'First Purchase Milestone' },
+  { id: 'MO-7', name: 'First Repayment Milestone' },
+  { id: 'MO-8', name: 'Half Yearly Spend Milestone' },
+  { id: 'MO-9', name: 'Monthly Spend Milestone' },
+  { id: 'MO-10', name: 'Festive Spend Milestone' },
+  { id: 'MO-11', name: 'Diwali Spend Milestone' },
+  { id: 'MO-12', name: 'Summer Spend Milestone' },
+  { id: 'MO-13', name: 'Dining Spend Milestone' },
+  { id: 'MO-14', name: 'Fuel Spend Milestone' },
+  { id: 'MO-15', name: 'Travel Spend Milestone' },
+  { id: 'MO-16', name: 'Grocery Spend Milestone' },
+  { id: 'MO-17', name: 'Online Spend Milestone' },
+  { id: 'MO-18', name: 'Offline Spend Milestone' },
+  { id: 'MO-19', name: 'International Spend Milestone' },
+  { id: 'MO-20', name: 'Contactless Spend Milestone' },
+  { id: 'MO-21', name: 'Utility Payment Milestone' },
+  { id: 'MO-22', name: 'Insurance Payment Milestone' },
+  { id: 'MO-23', name: 'Rent Payment Milestone' },
+  { id: 'MO-24', name: 'Education Payment Milestone' },
+  { id: 'MO-25', name: 'Healthcare Spend Milestone' },
+  { id: 'MO-26', name: 'Entertainment Spend Milestone' },
+  { id: 'MO-27', name: 'Fashion Spend Milestone' },
+  { id: 'MO-28', name: 'Electronics Spend Milestone' },
+  { id: 'MO-29', name: 'Furniture Spend Milestone' },
+  { id: 'MO-30', name: 'Cab Spend Milestone' },
+  { id: 'MO-31', name: 'Flight Booking Milestone' },
+  { id: 'MO-32', name: 'Hotel Booking Milestone' },
+  { id: 'MO-33', name: 'Lounge Access Milestone' },
+  { id: 'MO-34', name: 'Airport Transfer Milestone' },
+  { id: 'MO-35', name: 'Forex Spend Milestone' },
+  { id: 'MO-36', name: 'EMI Conversion Milestone' },
+  { id: 'MO-37', name: 'Balance Transfer Milestone' },
+  { id: 'MO-38', name: 'Loan On Card Milestone' },
+  { id: 'MO-39', name: 'Autopay Setup Milestone' },
+  { id: 'MO-40', name: 'Standing Instruction Milestone' },
+  { id: 'MO-41', name: 'Statement Spend Milestone' },
+  { id: 'MO-42', name: 'Cycle Spend Milestone' },
+  { id: 'MO-43', name: 'Anniversary Spend Milestone' },
+  { id: 'MO-44', name: 'Birthday Spend Milestone' },
+  { id: 'MO-45', name: 'Referral Milestone' },
+  { id: 'MO-46', name: 'App Engagement Milestone' },
+  { id: 'MO-47', name: 'Rewards Redemption Milestone' },
+  { id: 'MO-48', name: 'Partner Spend Milestone' },
+  { id: 'MO-49', name: 'Merchant Spend Milestone' },
+  { id: 'MO-50', name: 'Supplementary Card Milestone' },
 ];
 export function milestoneOfferName(id: string | undefined): string {
   return MILESTONE_OFFERS.find((o) => o.id === id)?.name || '';
@@ -442,7 +489,7 @@ export function deliveryStatusOptionsForSend(send: PrevStepSend): string[] {
 // lookback window", Milestone is still one benefit and a progress
 // comparison, Previous message is still the previous send's outcome.
 // ---------------------------------------------------------------------------
-export type FilterGroup = 'Account' | 'Card' | 'Card controls' | 'Customer' | 'Transactions' | 'Milestone' | 'App activity' | 'Entry event' | 'Previous message';
+export type FilterGroup = 'Account' | 'Card' | 'Card controls' | 'Customer' | 'Transactions' | 'Milestone' | 'App activity' | 'Previous message';
 export const TXN_EXISTS = 'a matching transaction exists';
 export const TXN_NONE = 'no matching transaction exists';
 export const PREV_MESSAGE_FIELD = 'Outcome';
@@ -458,12 +505,12 @@ export interface FilterOptionGroup {
 }
 
 // Previous message only exists once there is a message to have an outcome,
-// so it is offered on Condition and Branch and never on Entry. Entry event
-// is the same: it needs a triggering event to read, so it appears only when
-// entry is an Event Trigger, and only with whatever that event resolves to
-// (a real entity for Transaction/EMI Events, one locked attribute for
-// Journey/Offer Events, nothing for Card Events).
-export function dcFilterOptionGroups(opts?: { previousMessage?: boolean; entryEventEntity?: string | null; entryEventLockedAttr?: string | null }): FilterOptionGroup[] {
+// so it is offered on Condition and Branch and never on Entry.
+//
+// There is no Entry event group. The entry event and its details belong to
+// the entry step, where the manager says who starts; a later Condition or
+// Branch does not ask about that same event again.
+export function dcFilterOptionGroups(opts?: { previousMessage?: boolean }): FilterOptionGroup[] {
   const fromEntity = (g: FilterGroup, entity: string): FilterOptionGroup => ({
     group: g,
     options: Object.keys(ELIGIBILITY_META[entity] || {}).map((field) => ({ group: g, field, label: field })),
@@ -480,21 +527,16 @@ export function dcFilterOptionGroups(opts?: { previousMessage?: boolean; entryEv
   // an empty group would read as a dead end, and there is nothing honest to
   // put in it.
   if (MILESTONE_OFFERS.length) {
-    groups.push({ group: 'Milestone', options: MILESTONE_OFFERS.map((o) => ({ group: 'Milestone' as FilterGroup, field: o.id, label: o.name })) });
+    // One entry, not fifty: the offer is picked by search on the row, the
+    // same reason the app event is. Omitted when the program has no
+    // milestone offers configured.
+    groups.push({ group: 'Milestone', options: [{ group: 'Milestone', field: '', label: 'Milestone' }] });
   }
   // One entry, not forty: the event itself is picked by search on the row,
   // because a plain dropdown of every event the app fires is unscannable.
   // Omitted when the program emits no events at all.
   if (APP_EVENTS.length) {
     groups.push({ group: 'App activity', options: [{ group: 'App activity', field: '', label: 'App activity' }] });
-  }
-  if (opts?.entryEventEntity) {
-    groups.push({
-      group: 'Entry event',
-      options: Object.keys(ELIGIBILITY_META[opts.entryEventEntity] || {}).map((field) => ({ group: 'Entry event' as FilterGroup, field, label: field })),
-    });
-  } else if (opts?.entryEventLockedAttr) {
-    groups.push({ group: 'Entry event', options: [{ group: 'Entry event', field: opts.entryEventLockedAttr, label: opts.entryEventLockedAttr }] });
   }
   if (opts?.previousMessage) {
     groups.push({ group: 'Previous message', options: [{ group: 'Previous message', field: PREV_MESSAGE_FIELD, label: 'Previous message outcome' }] });
@@ -507,8 +549,7 @@ export function dcFilterOptionGroups(opts?: { previousMessage?: boolean; entryEv
 export function dcEntityForGroup(group: string): string | null {
   return group === 'Account' || group === 'Card' || group === 'Card controls' || group === 'Customer' ? group : null;
 }
-export function dcFilterAttrMeta(group: string, field: string, entryEventEntity?: string | null): AttrMeta | null {
-  if (group === 'Entry event') return entryEventEntity ? ELIGIBILITY_META[entryEventEntity]?.[field] ?? null : null;
+export function dcFilterAttrMeta(group: string, field: string): AttrMeta | null {
   const entity = dcEntityForGroup(group);
   return entity ? ELIGIBILITY_META[entity]?.[field] ?? null : null;
 }
@@ -521,16 +562,11 @@ export const MILESTONE_COMPARISONS = ['is more than', 'is at least', 'is less th
 // amount on the same row.
 export type MilestoneValueUnit = 'percent' | 'rupees';
 
-export function dcComparisonsForFilter(group: string, field: string, entryEventEntity?: string | null): string[] {
+export function dcComparisonsForFilter(group: string, field: string): string[] {
   if (group === 'App activity') return APP_ACTIVITY_DIRECTIONS;
   if (group === 'Transactions') return [TXN_EXISTS, TXN_NONE];
   if (group === 'Milestone') return MILESTONE_COMPARISONS;
   if (group === 'Previous message') return ['is any of'];
-  if (group === 'Entry event') {
-    const meta = entryEventEntity ? ELIGIBILITY_META[entryEventEntity]?.[field] : null;
-    // No entity means a locked attribute, which has its own shorter list.
-    return entryEventEntity ? dcOperatorsForAttribute(meta) : LOCKED_ATTR_OPERATORS;
-  }
   return dcOperatorsForAttribute(dcFilterAttrMeta(group, field));
 }
 

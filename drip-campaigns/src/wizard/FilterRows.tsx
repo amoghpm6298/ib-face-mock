@@ -11,6 +11,7 @@ import { ConditionRows, ValueField } from './ConditionRows';
 import type { DripFilterRow } from '../data/graphTypes';
 import {
   APP_EVENTS,
+  MILESTONE_OFFERS,
   PROGRAM_OFFERS,
   appEventById,
   TXN_EXISTS,
@@ -22,7 +23,7 @@ import {
   CHANNEL_CONFIG_LABELS,
   type PrevStepSend,
 } from '../data/sharedConstants';
-import { dcDefaultFilterRow, dcDefaultTxnForRow, dcDetailsForEvent, type FilterContext } from '../data/filters';
+import { dcDefaultFilterRow, dcDefaultTxnForRow, dcDetailsForEvent } from '../data/filters';
 
 const SEP = '::';
 
@@ -31,31 +32,24 @@ export interface FilterRowsProps {
   onChange: (rows: DripFilterRow[]) => void;
   previousMessage?: boolean;
   previousStepChannel?: PrevStepSend | null;
-  ctx?: FilterContext;
 }
 
 export function WhatSelect({
   group,
   field,
   previousMessage,
-  ctx,
   onPick,
 }: {
   group: string;
   field: string;
   previousMessage?: boolean;
-  ctx?: FilterContext;
   onPick: (group: string, field: string) => void;
 }) {
-  const groups = dcFilterOptionGroups({
-    previousMessage,
-    entryEventEntity: ctx?.entryEventEntity,
-    entryEventLockedAttr: ctx?.entryEventLockedAttr,
-  });
+  const groups = dcFilterOptionGroups({ previousMessage });
   // App activity stores the chosen EVENT in `field`, but the group list
   // carries a single entry for it, so the select matches on the group alone.
   // Picking the event is a search, on the row.
-  const current = group === 'App activity' ? `App activity${SEP}` : group ? `${group}${SEP}${field}` : '';
+  const current = group === 'App activity' || group === 'Milestone' ? `${group}${SEP}` : group ? `${group}${SEP}${field}` : '';
   return (
     <select
       value={current}
@@ -115,6 +109,24 @@ export function AppEventFields({
   );
 }
 
+// The milestone offer itself, picked by search. Fifty-odd offers is well
+// past what a dropdown can be scanned for, and the closed field shows the
+// offer's name and nothing else.
+export function MilestoneOfferField({ field, onPick }: { field: string; onPick: (id: string) => void }) {
+  return (
+    <>
+      <label className="f-label">Offer</label>
+      <SearchSelect
+        options={MILESTONE_OFFERS.map((o) => ({ value: o.id, label: o.name }))}
+        value={field}
+        placeholder="Search offers"
+        emptyText="No offer matches that."
+        onPick={onPick}
+      />
+    </>
+  );
+}
+
 // An event's Offer detail. Left empty it means any offer, so the list
 // carries an explicit "Any offer" entry rather than leaving blank ambiguous.
 export function AppOfferDetail({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -142,13 +154,11 @@ function UnitAdornment({ unit }: { unit?: 'rupees' | 'percent' }) {
 export function FilterValue({
   row,
   previousStepChannel,
-  ctx,
   hideTxnLookback,
   onPatch,
 }: {
   row: DripFilterRow;
   previousStepChannel?: PrevStepSend | null;
-  ctx?: FilterContext;
   // Branch arms share one lookback and one set of transaction fields, so an
   // arm shows only its direction and the shared parts sit by the "what".
   hideTxnLookback?: boolean;
@@ -238,7 +248,7 @@ export function FilterValue({
       </div>
     );
   }
-  const meta = dcFilterAttrMeta(row.group, row.field, ctx?.entryEventEntity);
+  const meta = dcFilterAttrMeta(row.group, row.field);
   return (
     <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
       <ValueField
@@ -261,8 +271,8 @@ export function FilterValue({
 // The comparison cell. Milestone stores a real operator code and shows a
 // lowercased label, so the dropdown reads like the sentence without
 // inventing a second vocabulary.
-export function FilterComparison({ row, ctx, onPatch }: { row: DripFilterRow; ctx?: FilterContext; onPatch: (patch: Partial<DripFilterRow>) => void }) {
-  const options = dcComparisonsForFilter(row.group, row.field, ctx?.entryEventEntity).map((l) => ({ value: l, label: l }));
+export function FilterComparison({ row, onPatch }: { row: DripFilterRow; onPatch: (patch: Partial<DripFilterRow>) => void }) {
+  const options = dcComparisonsForFilter(row.group, row.field).map((l) => ({ value: l, label: l }));
   return (
     <select value={row.operator || ''} onChange={(e) => onPatch({ operator: e.target.value, value: '', value2: '' })}>
       <option value="">Comparison</option>
@@ -275,7 +285,7 @@ export function FilterComparison({ row, ctx, onPatch }: { row: DripFilterRow; ct
   );
 }
 
-export function FilterRows({ rows, onChange, previousMessage, previousStepChannel, ctx }: FilterRowsProps) {
+export function FilterRows({ rows, onChange, previousMessage, previousStepChannel }: FilterRowsProps) {
   const setRow = (i: number, patch: Partial<DripFilterRow>) => onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   const removeRow = (i: number) => onChange(rows.filter((_, idx) => idx !== i));
   const addRow = () => onChange([...rows, dcDefaultFilterRow()]);
@@ -289,6 +299,7 @@ export function FilterRows({ rows, onChange, previousMessage, previousStepChanne
       next.txn = dcDefaultTxnForRow();
     } else if (group === 'Milestone') {
       next.valueUnit = 'percent';
+      next.field = '';
     } else if (group === 'App activity') {
       next.operator = 'happened';
       next.value = '7';
@@ -297,7 +308,7 @@ export function FilterRows({ rows, onChange, previousMessage, previousStepChanne
       // A comparison with exactly one real choice is filled in rather than
       // asked for, the same precedent multiSelect's "is any of" already set.
       // Done here, on the pick, rather than during render.
-      const only = dcComparisonsForFilter(group, field, ctx?.entryEventEntity);
+      const only = dcComparisonsForFilter(group, field);
       if (only.length === 1) next.operator = only[0];
     }
     onChange(rows.map((r, idx) => (idx === i ? next : r)));
@@ -308,13 +319,21 @@ export function FilterRows({ rows, onChange, previousMessage, previousStepChanne
       {rows.map((row, i) => (
         <div key={i}>
           <div className="cond-row">
-            <WhatSelect group={row.group} field={row.field} previousMessage={previousMessage} ctx={ctx} onPick={(g, f) => pickWhat(i, g, f)} />
-            <FilterComparison row={row} ctx={ctx} onPatch={(patch) => setRow(i, patch)} />
-            <FilterValue row={row} previousStepChannel={previousStepChannel} ctx={ctx} onPatch={(patch) => setRow(i, patch)} />
+            <WhatSelect group={row.group} field={row.field} previousMessage={previousMessage} onPick={(g, f) => pickWhat(i, g, f)} />
+            <FilterComparison row={row} onPatch={(patch) => setRow(i, patch)} />
+            <FilterValue row={row} previousStepChannel={previousStepChannel} onPatch={(patch) => setRow(i, patch)} />
             <div className="cond-remove" onClick={() => removeRow(i)}>
               ✕
             </div>
           </div>
+          {row.group === 'Milestone' && (
+            // The offer sits under the row it belongs to, like the app
+            // event does. The comparison and the typed threshold stay on
+            // the row itself.
+            <div style={{ margin: '0 0 10px 12px', paddingLeft: 12, borderLeft: '2px solid var(--gray-200)' }}>
+              <MilestoneOfferField field={row.field} onPick={(id) => setRow(i, { field: id })} />
+            </div>
+          )}
           {row.group === 'App activity' && (
             // The event and its details sit under the row they belong to,
             // the same place a Transactions row keeps its fields.

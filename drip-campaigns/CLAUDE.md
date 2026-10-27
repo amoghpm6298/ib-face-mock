@@ -1392,3 +1392,50 @@ are about where this app's visual design came from, not the Campaign
 Designer.
 
 Verified: 153 unit, 45 e2e, clean build — nothing referenced any of it.
+
+## 2026-10-27 — The entry event stops being a filter, and a milestone offer
+is searched rather than listed
+
+**The Entry event group is gone from Condition and Branch.** The event and
+its details belong to the entry step, where the manager says who starts; a
+later condition or branch does not ask about that same event again. Removing
+the group took the whole prop chain with it — `entryEventCategory` and
+`entryEventType` threaded from `DripBuilder` through `AddEditDrawer` into
+both forms, and `FilterContext` itself, which existed only to carry them.
+`resolveEntryEventAttrSource` stays: Entry · Event, the Goal and Wait for
+Event still use it to render their own condition rows and card-event
+details. It just no longer feeds a filter menu.
+
+**A saved row that was an Entry event filter opens with its what cleared and
+stays in place**, keeping whatever comparison and value were typed. Three
+paths needed it: a stored `filters` row carrying the retired group, the
+legacy `customSource: 'Entry event attribute'` on a Condition, and the
+legacy `source` on a Branch, where the arms stay and only the shared what
+clears. Nothing is repointed at another group.
+
+**The milestone offer is a search.** Fifty seeded offers make a dropdown
+unscannable, so the menu carries one Milestone choice and the offer is
+picked by typing — the same shape the app event already uses, with the
+offer sitting in the row's own block and the comparison and typed threshold
+staying on the row. An empty result says "No offer matches that."; the
+closed field shows the offer name and nothing else; and with no offers
+configured the Milestone choice is omitted entirely.
+
+Names carry no amount and no day count, asserted by a test rather than
+trusted — the check is for digits and for "N days", not the substring
+"day", because Birthday Spend Milestone is a legitimate name. Welcome
+Milestone, Quarterly Spend Milestone and Annual Fee Waiver Milestone are
+kept among the fifty.
+
+A saved offer no longer in the list already cleared the offer and kept the
+threshold, from the round that removed the invented spend ladder; that rule
+now covers fifty names instead of three. On a Branch the offer is chosen
+once by the same search, and each arm keeps its own threshold.
+
+Verified live, 0 console errors: a Condition's what menu lists Account,
+Card, Card controls, Customer, Transactions, Milestone, App activity and
+Previous message — no Entry event — with exactly one Milestone entry; the
+offer search lists 50 and narrows to one on "welcome"; a nonsense query says
+no offer matches; the closed field reads "Welcome Milestone"; and Review
+reads "Welcome Milestone is at least 100%" before and after save and reopen.
+152 unit, 45 e2e, clean build. App activity and the campaign view untouched.

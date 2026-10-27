@@ -35,23 +35,10 @@ describe('the grouped what list', () => {
     ]);
   });
 
-  it('puts Entry event after Milestone and before Previous message, and only when an entry event resolves one', () => {
-    expect(dcFilterOptionGroups({ previousMessage: true, entryEventEntity: 'Transaction' }).map((g) => g.group)).toEqual([
-      'Account',
-      'Card',
-      'Card controls',
-      'Customer',
-      'Transactions',
-      'Milestone',
-      'App activity',
-      'Entry event',
-      'Previous message',
-    ]);
-    // A locked-attribute event (Journey/Offer) offers exactly that one.
-    const locked = dcFilterOptionGroups({ entryEventLockedAttr: 'Page Name' }).find((g) => g.group === 'Entry event');
-    expect(locked?.options.map((o) => o.field)).toEqual(['Page Name']);
-    // Card Events resolve neither, so the group is absent rather than empty.
-    expect(dcFilterOptionGroups().some((g) => g.group === 'Entry event')).toBe(false);
+  it('has no Entry event group: the entry event belongs to the entry step', () => {
+    for (const groups of [dcFilterOptionGroups(), dcFilterOptionGroups({ previousMessage: true })]) {
+      expect(groups.some((g) => g.group === 'Entry event')).toBe(false);
+    }
   });
 
   it('lists the four money filters first on Account, ahead of the attributes that were already there', () => {
@@ -131,9 +118,12 @@ describe('campaigns saved before the rewrite still open', () => {
       field: 'Status',
       operator: 'is',
     });
+    // Except the entry-event source, which has no group any more: its row
+    // opens with the what cleared, kept in place to be picked again.
     expect(dcFiltersOf('SPLIT', { customSource: 'Entry event attribute', customConditions: [{ attribute: 'Page Name', operator: 'Equals', value: 'X' }] })[0]).toMatchObject({
-      group: 'Entry event',
-      field: 'Page Name',
+      group: '',
+      field: '',
+      value: 'X',
     });
   });
 
@@ -363,12 +353,13 @@ describe('Card Events — the replaced list', () => {
     );
   });
 
-  it('Condition and Branch see that event’s details and nothing else, and nothing at all for a plain card event', () => {
+  it('a card event’s details belong to the entry step, and are never re-asked by a later filter', () => {
+    // The entry/goal/wait forms still resolve them, which is what renders
+    // the detail block there.
     expect(resolveEntryEventAttrSource('Card Events', 'Card hotlisted')).toEqual({ entity: 'Card hotlisted', lockedAttr: null });
-    const offered = dcFilterOptionGroups({ entryEventEntity: 'Card control updated' }).find((g) => g.group === 'Entry event')!;
-    expect(offered.options.map((o) => o.field)).toEqual(['Channel', 'Change', 'Limit amount']);
-    // A card event with no details hides the group entirely.
     expect(resolveEntryEventAttrSource('Card Events', 'PIN set')).toEqual({ entity: null, lockedAttr: null });
-    expect(dcFilterOptionGroups({ entryEventEntity: null }).some((g) => g.group === 'Entry event')).toBe(false);
+    // But no filter menu offers them: a Condition does not ask about the
+    // event the journey already started from.
+    expect(dcFilterOptionGroups({ previousMessage: true }).some((g) => g.group === 'Entry event')).toBe(false);
   });
 });

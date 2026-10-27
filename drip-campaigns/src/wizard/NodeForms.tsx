@@ -18,7 +18,7 @@ import type { DripGoal } from '../data/graphTypes';
 import { dcOrdinal, dcRecurrenceLabel, dcGoalLabel } from '../reducer/labelMeta';
 import { dcNewBranchId } from '../reducer/idGen';
 import { ConditionsSection, ConditionRows } from './ConditionRows';
-import { FilterRows, WhatSelect, FilterComparison, FilterValue, AppEventFields, AppOfferDetail } from './FilterRows';
+import { FilterRows, WhatSelect, FilterComparison, FilterValue, AppEventFields, AppOfferDetail, MilestoneOfferField } from './FilterRows';
 import { dcFiltersOf, dcBranchWhatOf, dcDefaultTxnForRow, dcDetailsForEvent } from '../data/filters';
 import { TxnLookbackFields } from './TxnHistoryFields';
 import { EventScopingFields, CardEventDetailFields } from './EventScopingFields';
@@ -364,14 +364,9 @@ export function WaitUntilForm({ p, onChange }: FormProps) {
   );
 }
 
-export function SplitForm({
-  p,
-  onChange,
-  entryEventCategory,
-  entryEventType,
-  previousStepChannel,
-}: FormProps & { entryEventCategory: string | null; entryEventType: string | null; previousStepChannel: PrevStepSend | null }) {
-  const { entity: entryEventEntity, lockedAttr } = resolveEntryEventAttrSource(entryEventCategory, entryEventType);
+// Condition and Branch no longer take the entry event: it is settled on the
+// entry step, and a later filter does not ask about it again.
+export function SplitForm({ p, onChange, previousStepChannel }: FormProps & { previousStepChannel: PrevStepSend | null }) {
   const filters = dcFiltersOf('SPLIT', p);
   return (
     <div className="f-group">
@@ -381,7 +376,6 @@ export function SplitForm({
         onChange={(rows) => onChange({ filters: rows })}
         previousMessage
         previousStepChannel={previousStepChannel}
-        ctx={{ entryEventEntity, entryEventLockedAttr: lockedAttr }}
       />
       <p className="f-hint" style={{ margin: '6px 0 0' }}>Anything that does not match goes to No.</p>
     </div>
@@ -396,15 +390,7 @@ function BranchInsertRow({ onInsert }: { onInsert: () => void }) {
   );
 }
 
-export function DecisionSplitForm({
-  p,
-  onChange,
-  entryEventCategory,
-  entryEventType,
-  previousStepChannel,
-}: FormProps & { entryEventCategory: string | null; entryEventType: string | null; previousStepChannel: PrevStepSend | null }) {
-  const { entity: entryEventEntity, lockedAttr } = resolveEntryEventAttrSource(entryEventCategory, entryEventType);
-  const ctx = { entryEventEntity, entryEventLockedAttr: lockedAttr };
+export function DecisionSplitForm({ p, onChange, previousStepChannel }: FormProps & { previousStepChannel: PrevStepSend | null }) {
   // Branch routes rather than narrows, so it shares one question across its
   // arms instead of taking a list of AND'd rows. The question is picked from
   // the same grouped list every other step uses, which is what replaced its
@@ -437,7 +423,6 @@ export function DecisionSplitForm({
           group={what.group}
           field={what.field}
           previousMessage
-          ctx={ctx}
           onPick={(group, field) =>
             // A new question makes every arm's comparison and value stale,
             // not merely hidden: the operator vocabularies are disjoint
@@ -449,6 +434,13 @@ export function DecisionSplitForm({
             })
           }
         />
+        {what.group === 'Milestone' && (
+          <div style={{ marginTop: 10 }}>
+            {/* One offer for the whole Branch; each arm keeps its own
+                comparison and threshold against it. */}
+            <MilestoneOfferField field={what.field} onPick={(id) => onChange({ what: { group: 'Milestone', field: id } })} />
+          </div>
+        )}
         {isAppActivity && (
           <div style={{ marginTop: 10 }}>
             {/* One event for the whole Branch. Each arm then sets its own
@@ -493,10 +485,10 @@ export function DecisionSplitForm({
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                   <input className="f-input" type="text" style={{ width: 110, flexShrink: 0 }} placeholder="Label" value={b.label} onChange={(e) => setBranch(i, { label: e.target.value })} />
                   <div style={{ width: 150, flexShrink: 0 }}>
-                    <FilterComparison row={row} ctx={ctx} onPatch={(patch) => setBranch(i, patch)} />
+                    <FilterComparison row={row} onPatch={(patch) => setBranch(i, patch)} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <FilterValue row={row} previousStepChannel={previousStepChannel} ctx={ctx} hideTxnLookback onPatch={(patch) => setBranch(i, patch)} />
+                    <FilterValue row={row} previousStepChannel={previousStepChannel} hideTxnLookback onPatch={(patch) => setBranch(i, patch)} />
                   </div>
                   {p.branches.length > 1 && (
                     <div className="cond-remove" onClick={() => removeBranch(i)}>
