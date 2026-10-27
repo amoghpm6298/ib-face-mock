@@ -16,6 +16,15 @@ test.describe('Branch-label chip overlap (the original bug)', () => {
       const name = await row.locator('td').first().innerText();
       await row.click();
       await page.waitForTimeout(500);
+      // The view opens on Basic Details now, so the journey is one tab
+      // across. Without this the chip count is zero and the test passes
+      // vacuously. A DRAFT row opens straight into the builder instead,
+      // where the journey is already on screen and there are no tabs.
+      const campaignTab = page.locator('.dv-tab', { hasText: 'Campaign' });
+      if (await campaignTab.count()) {
+        await campaignTab.click();
+        await page.waitForTimeout(900);
+      }
 
       const boxes = await page.locator('.dc-branch-label').evaluateAll((els) =>
         els.map((el) => {

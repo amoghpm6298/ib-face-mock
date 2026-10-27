@@ -29,6 +29,9 @@ export interface DripAnalyticsMetrics {
   // got opened by half of them are different facts worth showing
   // separately, not folded into one number.
   engagementByNodeId: Record<string, { deliveredPct: number; openedPct: number; clickedPct: number }>;
+  // People sitting on a wait right now, out of the number that reached it.
+  // Only present for the two waiting node types.
+  waitingByNodeId: Record<string, number>;
 }
 
 export interface DripAnalyticsTotals {
@@ -39,6 +42,11 @@ export interface DripAnalyticsTotals {
   exitedWithoutGoal: number;
   stillActive: number;
   conversionRate: number;
+  // What the held-back group did without ever being messaged. Illustrative,
+  // from the same seed as everything else, and deliberately a lower rate
+  // than the treatment group's — a campaign that did nothing would not be
+  // worth running.
+  controlReachedGoal: number;
 }
 
 export interface DripAnalyticsData {
@@ -100,6 +108,7 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
   const nodeCounts: Record<string, number> = {};
   const edgeCounts: Record<string, { count: number; pct: number }> = {};
   const engagementByNodeId: Record<string, { deliveredPct: number; openedPct: number; clickedPct: number }> = {};
+  const waitingByNodeId: Record<string, number> = {};
   let reachedGoal = 0;
   let exitedWithoutGoal = 0;
   let stillActive = 0;
@@ -129,6 +138,12 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
       const node = graph.nodes[nodeId];
       if (!node) continue;
       const total = nodeCounts[nodeId] || 0;
+      if (node.type === 'PAUSE' || node.type === 'WAIT_UNTIL') {
+        // Some of the people who reached a wait are still sitting on it.
+        // A killed campaign exited everyone, so nobody is waiting.
+        const waitingFrac = campaign.status === 'KILLED' ? 0 : 0.08 + ((seedFromId(nodeId) % 17) / 100);
+        waitingByNodeId[nodeId] = Math.round(total * waitingFrac);
+      }
       if (node.type === 'SEND') {
         // Seeded independently per node (not off the shared `rand`
         // sequence) so engagement numbers don't shift depending on where
@@ -201,9 +216,14 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
   }
 
   const conversionRate = entered > 0 ? reachedGoal / entered : 0;
+  // The held-back group converts on its own, at a materially lower rate —
+  // 45-70% of the messaged rate, from the same seeded sequence. Rounded
+  // down so it can never tie the treatment result at small numbers.
+  const controlRate = conversionRate * (0.45 + rand() * 0.25);
+  const controlReachedGoal = Math.floor(control * controlRate);
 
   return {
-    metrics: { nodeCounts, edgeCounts, engagementByNodeId },
-    totals: { totalMatched, control, entered, reachedGoal, exitedWithoutGoal, stillActive, conversionRate },
+    metrics: { nodeCounts, edgeCounts, engagementByNodeId, waitingByNodeId },
+    totals: { totalMatched, control, entered, reachedGoal, exitedWithoutGoal, stillActive, conversionRate, controlReachedGoal },
   };
 }

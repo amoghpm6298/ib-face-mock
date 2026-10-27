@@ -20,6 +20,10 @@ export interface DripEdgeData {
   // owner (see toFlowElements.ts) — a routing node's labels come from its
   // config and are never editable here.
   onRename?: (label: string) => void;
+  // Analytics only: clicking an arrow follows that path, and everything
+  // off it fades.
+  onSelect?: () => void;
+  dimmed?: boolean;
   [key: string]: unknown;
 }
 
@@ -68,21 +72,30 @@ export function DripEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   const anchorToTarget = !!onRename;
   const labelX = anchorToTarget ? targetX : midX;
   const labelY = anchorToTarget ? targetY - 15 : midY;
+  const dimmed = !!data?.dimmed;
+  const onSelect = data?.onSelect;
+  const edgeStyle = { stroke: 'var(--gray-300)', strokeWidth: 1.5, opacity: dimmed ? 0.18 : 1 };
   if (!hasLabel && !editable && !statLabel) {
-    return <BaseEdge id={id} path={edgePath} style={{ stroke: 'var(--gray-300)', strokeWidth: 1.5 }} />;
+    return <BaseEdge id={id} path={edgePath} style={edgeStyle} />;
   }
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={{ stroke: 'var(--gray-300)', strokeWidth: 1.5 }} />
+      <BaseEdge id={id} path={edgePath} style={edgeStyle} />
       <EdgeLabelRenderer>
         <div
           className={`dc-branch-label${!hasLabel && editable && !onRename ? ' dc-branch-label-bare' : ''}`}
           style={{
             position: 'absolute',
             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-            pointerEvents: editable || onInsert || onRename ? 'auto' : 'none',
-            cursor: 'default',
+            pointerEvents: editable || onInsert || onRename || onSelect ? 'auto' : 'none',
+            cursor: onSelect ? 'pointer' : 'default',
+            // Only set when it is actually dimmed. An inline opacity of 1
+            // would beat .dc-branch-label-bare's own rule, which is what
+            // keeps an unlabeled builder connector invisible until hover.
+            ...(dimmed ? { opacity: 0.25 } : {}),
           }}
+          onClick={onSelect}
+          title={onSelect ? 'Follow this path' : undefined}
         >
           {onRename && renaming ? (
             <input

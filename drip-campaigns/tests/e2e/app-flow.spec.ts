@@ -16,34 +16,31 @@ test('list shows the 6 real seed campaigns with correctly colored status badges'
   }
 });
 
-test('Analytics tab renders KPIs + an annotated canvas for a live campaign, and is absent for a Draft', async ({ page }) => {
+test('Analytics shows the two totals and an annotated journey for a live campaign', async ({ page }) => {
   await page.goto('/');
   // DRIP-001 "Card Activation Reminder" is ACTIVE in the seed data.
   await page.locator('table tbody tr', { hasText: 'Card Activation Reminder' }).click();
   await page.waitForTimeout(400);
-  await expect(page.getByRole('button', { name: 'Analytics' })).toBeVisible();
-  await page.getByRole('button', { name: 'Analytics' }).click();
-  await page.waitForTimeout(500);
-  await expect(page.getByText('Entered', { exact: true })).toBeVisible();
-  await expect(page.getByText('Reached Goal')).toBeVisible();
-  await expect(page.getByText('Conversion Rate')).toBeVisible();
-  // Annotated canvas — nodes carry a "reached" stat line.
+  await page.locator('.dv-tab', { hasText: 'Analytics' }).click();
+  await page.waitForTimeout(900);
+  // Two totals, each with its held-back figure beside it.
+  await expect(page.locator('.an-total')).toHaveCount(2);
+  await expect(page.locator('.an-total').first()).toContainText('Entered');
+  await expect(page.locator('.an-total').nth(1)).toContainText('Reached the goal');
+  // Annotated journey — nodes carry a "reached" stat line.
   await expect(page.locator('.dc-node-stat').first()).toBeVisible();
-
-  await page.goto('/');
-  // DRIP-003 "Spend Milestone Rewards" is DRAFT — never launched, no
-  // customers to report on, so no Analytics tab at all.
-  await page.locator('table tbody tr', { hasText: 'Spend Milestone Rewards' }).click();
-  await page.waitForTimeout(400);
-  await expect(page.getByRole('button', { name: 'Analytics' })).toHaveCount(0);
 });
 
-test('row click opens the real read-only view with the real canvas', async ({ page }) => {
+test('row click opens the real read-only view, landing on the setup read-back', async ({ page }) => {
   await page.goto('/');
   const firstRowName = await page.locator('table tbody tr').first().locator('td').first().locator('b').innerText();
   await page.locator('table tbody tr').first().click();
   await page.waitForTimeout(500);
   await expect(page.locator('h1.page-title')).toContainText(firstRowName);
+  // The view opens on Basic Details; the journey is one tab across.
+  await expect(page.locator('.bd-wrap')).toBeVisible();
+  await page.locator('.dv-tab', { hasText: 'Campaign' }).click();
+  await page.waitForTimeout(900);
   expect(await page.locator('.dc-node-card').count()).toBeGreaterThan(5);
 });
 

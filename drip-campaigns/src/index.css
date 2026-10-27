@@ -243,3 +243,70 @@ select:focus { outline: 2px solid var(--info-bg); }
 .add-link.quiet:hover { color: var(--blue-cta); }
 
 
+
+/* ---------------------------------------------------------------------------
+   Campaign view — three tabs, a read-only step panel beside the journey,
+   and the two analytics totals above it.
+   --------------------------------------------------------------------------- */
+.dv-tabs { display: flex; gap: 4px; margin: 16px 0 2px; border-bottom: 1px solid var(--gray-200); }
+.dv-tab {
+  border: none; background: none; padding: 8px 14px; font-size: 13px; font-weight: 600;
+  cursor: pointer; color: var(--gray-500); border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.dv-tab.active { color: var(--blue-cta); border-bottom-color: var(--blue-cta); }
+
+/* Basic Details — a read-back, so plain rows rather than form chrome. */
+.bd-wrap { margin-top: 16px; max-width: 760px; }
+.bd-section { margin-bottom: 22px; }
+.bd-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--gray-500); margin-bottom: 8px;
+}
+.bd-row { display: grid; grid-template-columns: 190px 1fr; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--gray-100); }
+.bd-key { font-size: 12.5px; color: var(--gray-600); }
+.bd-val { font-size: 13.5px; color: var(--neutral-800); font-weight: 500; }
+.bd-sub { font-size: 11.5px; color: var(--gray-500); font-weight: 400; margin-top: 3px; }
+.bd-none { color: var(--gray-500); font-weight: 400; }
+.bd-note { font-size: 11.5px; color: var(--gray-500); margin: 8px 0 0; }
+
+/* The journey and its panel sit side by side; the panel is a reading
+   surface, not a drawer that covers the thing being read. */
+.an-stage { display: flex; gap: 14px; margin-top: 16px; align-items: stretch; }
+.an-canvas { flex: 1 1 auto; min-width: 0; padding: 0; height: 68vh; border: 1px solid var(--gray-200); border-radius: 10px; overflow: hidden; margin: 0; }
+.sp-panel {
+  flex: 0 0 320px; border: 1px solid var(--gray-200); border-radius: 10px; background: #fff;
+  height: 68vh; overflow-y: auto; box-shadow: var(--shadow-sm, 0 1px 2px rgba(16,24,40,.06));
+}
+.sp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--gray-200); }
+.sp-kicker { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--gray-500); }
+.sp-title { font-size: 14px; font-weight: 700; color: var(--neutral-800); margin-top: 3px; }
+.sp-close { border: none; background: none; cursor: pointer; color: var(--gray-400); font-size: 14px; line-height: 1; padding: 2px 4px; }
+.sp-close:hover { color: var(--gray-600); }
+.sp-body { padding: 10px 16px 18px; }
+.sp-row { padding: 7px 0; border-bottom: 1px solid var(--gray-100); }
+.sp-row-key { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--gray-500); }
+.sp-row-val { font-size: 13px; color: var(--neutral-800); margin-top: 3px; overflow-wrap: anywhere; }
+.sp-empty { color: var(--gray-500); }
+/* The result reads first, the configuration under it. */
+.sp-result { background: var(--gray-50); border-radius: 8px; padding: 2px 12px 8px; margin-bottom: 12px; }
+
+.an-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 4px; }
+.an-total { border: 1px solid var(--gray-200); border-radius: 10px; padding: 14px 16px; background: #fff; }
+.an-total-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--gray-500); margin-bottom: 8px; }
+.an-total-pair { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.an-total-value { font-size: 24px; font-weight: 700; color: var(--neutral-800); }
+.an-total-beside { text-align: right; }
+.an-total-beside-label { font-size: 11px; color: var(--gray-500); }
+.an-total-beside-value { font-size: 15px; font-weight: 600; color: var(--gray-600); }
+
+.an-path { margin-top: 14px; border: 1px solid var(--gray-200); border-radius: 10px; padding: 12px 14px; background: #fff; }
+.an-path-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--gray-500); }
+.an-path-clear { border: none; background: none; color: var(--blue-cta); font-size: 12px; font-weight: 600; cursor: pointer; text-transform: none; letter-spacing: 0; padding: 0; }
+.an-path-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.an-path-list li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--gray-100); }
+.an-path-count { font-weight: 600; color: var(--gray-600); }
+
+.an-empty { margin-top: 20px; font-size: 13.5px; color: var(--gray-500); }
+
+/* A step you can open to read, on a view where nothing is editable. */
+.dc-node-card.inspectable:hover { border-color: var(--gray-400); }

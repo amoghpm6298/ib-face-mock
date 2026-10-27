@@ -7,7 +7,7 @@
 // in) — is the structural fix for the original's "floating connector"
 // bug, which came from feeding dagre a height estimate that didn't match
 // real content.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -41,19 +41,24 @@ interface DripCanvasInnerProps {
   onRemoveGoalCheck?: (nodeId: string) => void;
   metrics?: DripCanvasMetrics;
   goal?: DripGoal | null;
+  onInspectNode?: (nodeId: string) => void;
+  onSelectEdge?: (edgeId: string) => void;
+  pathNodeIds?: string[];
+  pathEdgeIds?: string[];
 }
 
-function DripCanvasInner({ graph, editable, onEditNode, onRemoveRoot, onReplaceAuto, onRemoveEdge, onAddAtEdge, onAddAtGrowLeaf, onAddAtMidEdge, onAddParallel, onRenameEdge, onRemoveGoalCheck, metrics, goal }: DripCanvasInnerProps) {
+function DripCanvasInner({ graph, editable, onEditNode, onRemoveRoot, onReplaceAuto, onRemoveEdge, onAddAtEdge, onAddAtGrowLeaf, onAddAtMidEdge, onAddParallel, onRenameEdge, onRemoveGoalCheck, metrics, goal, onInspectNode, onSelectEdge, pathNodeIds, pathEdgeIds }: DripCanvasInnerProps) {
   const opts: ToFlowOptions = useMemo(
-    () => ({ editable, onEditNode, onRemoveRoot, onReplaceAuto, onRemoveEdge, onAddAtEdge, onAddAtGrowLeaf, onAddAtMidEdge, onAddParallel, onRenameEdge, onRemoveGoalCheck, metrics, goal }),
-    [editable, onEditNode, onRemoveRoot, onReplaceAuto, onRemoveEdge, onAddAtEdge, onAddAtGrowLeaf, onAddAtMidEdge, onAddParallel, onRenameEdge, onRemoveGoalCheck, metrics, goal],
+    () => ({ editable, onEditNode, onRemoveRoot, onReplaceAuto, onRemoveEdge, onAddAtEdge, onAddAtGrowLeaf, onAddAtMidEdge, onAddParallel, onRenameEdge, onRemoveGoalCheck, metrics, goal, onInspectNode, onSelectEdge, pathNodeIds, pathEdgeIds }),
+    [editable, onEditNode, onRemoveRoot, onReplaceAuto, onRemoveEdge, onAddAtEdge, onAddAtGrowLeaf, onAddAtMidEdge, onAddParallel, onRenameEdge, onRemoveGoalCheck, metrics, goal, onInspectNode, onSelectEdge, pathNodeIds, pathEdgeIds],
   );
   const initial = useMemo(() => graphToFlowElements(graph, opts), [graph, opts]);
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
   const [laidOut, setLaidOut] = useState(false);
   const nodesInitialized = useNodesInitialized();
-  const { getNodes, fitView } = useReactFlow();
+  const { getNodes, fitView, getViewport, setViewport } = useReactFlow();
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
   // Re-seed React Flow's own state whenever the underlying graph changes
   // (a different campaign selected, or — in the builder — a real edit).
@@ -63,7 +68,7 @@ function DripCanvasInner({ graph, editable, onEditNode, onRemoveRoot, onReplaceA
     setEdges(next.edges);
     setLaidOut(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph]);
+  }, [graph, pathNodeIds, pathEdgeIds, metrics]);
 
   useEffect(() => {
     if (!nodesInitialized || laidOut) return;
@@ -75,12 +80,33 @@ function DripCanvasInner({ graph, editable, onEditNode, onRemoveRoot, onReplaceA
     setNodes(relaid.nodes);
     setEdges(relaid.edges);
     setLaidOut(true);
-    requestAnimationFrame(() => fitView({ padding: 0.15, duration: 200 }));
+    // minZoom keeps the journey readable: fitting a long campaign to the
+    // viewport used to shrink it until the words on the first card were
+    // gone. Below this floor it stops shrinking and the manager pans
+    // instead, which is the honest trade.
+    requestAnimationFrame(() => {
+      fitView({ padding: 0.15, duration: 200, minZoom: 0.62, maxZoom: 1 });
+      // Once it stops shrinking, fitView still CENTRES what does not fit,
+      // which puts the start off the top of the viewport. A journey is read
+      // from its start, so when the content is taller than the frame the
+      // view is anchored there instead of to the middle.
+      window.setTimeout(() => {
+        const el = wrapRef.current;
+        const ns = getNodes();
+        if (!el || !ns.length) return;
+        const top = Math.min(...ns.map((n) => n.position.y));
+        const bottom = Math.max(...ns.map((n) => n.position.y + (n.measured?.height ?? 0)));
+        const vp = getViewport();
+        if ((bottom - top) * vp.zoom > el.clientHeight) {
+          setViewport({ x: vp.x, y: -top * vp.zoom + 24, zoom: vp.zoom }, { duration: 200 });
+        }
+      }, 260);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodesInitialized, laidOut, graph]);
 
   return (
-    <div className="dc-graph-wrap" style={{ width: '100%', height: '100%' }}>
+    <div className="dc-graph-wrap" ref={wrapRef} style={{ width: '100%', height: '100%' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -90,7 +116,11 @@ function DripCanvasInner({ graph, editable, onEditNode, onRemoveRoot, onReplaceA
         edgeTypes={dripEdgeTypes}
         nodesDraggable={false}
         nodesConnectable={false}
-        elementsSelectable={editable}
+        /* React Flow drops pointer-events on nodes it considers
+           non-selectable, so a read-only card could not be clicked at all
+           until this also accounted for inspection. Caught by driving the
+           real DOM — the pane swallowed every click. */
+        elementsSelectable={editable || !!onInspectNode}
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={16} size={1} />

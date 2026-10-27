@@ -4,15 +4,19 @@ import { useState } from 'react';
 import { DRIP_STATUS_META } from '../data/statusMeta';
 import { dcCountSends } from '../reducer/graphOps';
 import { dcGoalLabel } from '../reducer/labelMeta';
-import { FilterReadback } from '../components/FilterReadback';
 import { DripCanvas } from '../canvas/DripCanvas';
 import { DripAnalytics } from './DripAnalytics';
+import { BasicDetailsView } from './BasicDetailsView';
+import { StepDetailPanel } from './StepDetailPanel';
 import { Modal } from '../components/Modal';
 import type { DripCampaign } from '../data/graphTypes';
 
-// A campaign that never launched has no customers to report on — only a
-// campaign that has (or had) real activity gets an Analytics tab.
+// All three tabs are always there. A campaign that never launched has no
+// customers to report on, so Analytics says so plainly rather than being
+// hidden — a missing tab reads as a missing feature.
 const ANALYTICS_STATUSES = ['ACTIVE', 'PAUSED', 'SCHEDULED', 'KILLED'];
+type ViewTab = 'basic' | 'campaign' | 'analytics';
+const TAB_LABELS: Record<ViewTab, string> = { basic: 'Basic Details', campaign: 'Campaign', analytics: 'Analytics' };
 
 export function DripView({
   campaign,
@@ -30,8 +34,9 @@ export function DripView({
   onOpenVersion: (id: string) => void;
 }) {
   const [killConfirmOpen, setKillConfirmOpen] = useState(false);
-  const showAnalyticsTab = ANALYTICS_STATUSES.includes(campaign.status);
-  const [tab, setTab] = useState<'overview' | 'analytics'>('overview');
+  const hasRun = ANALYTICS_STATUSES.includes(campaign.status);
+  const [tab, setTab] = useState<ViewTab>('basic');
+  const [openNodeId, setOpenNodeId] = useState<string | null>(null);
   const c = campaign;
   const sm = DRIP_STATUS_META[c.status];
 
@@ -95,42 +100,42 @@ export function DripView({
           )}
         </div>
       </div>
-      {showAnalyticsTab && (
-        <div style={{ display: 'flex', gap: 4, marginTop: 16, marginBottom: 2, borderBottom: '1px solid var(--gray-200)' }}>
-          {(['overview', 'analytics'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                border: 'none',
-                background: 'none',
-                padding: '8px 14px',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                color: tab === t ? 'var(--blue-cta)' : 'var(--gray-500)',
-                borderBottom: tab === t ? '2px solid var(--blue-cta)' : '2px solid transparent',
-                marginBottom: -1,
-              }}
-            >
-              {t === 'overview' ? 'Overview' : 'Analytics'}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="dv-tabs">
+        {(['basic', 'campaign', 'analytics'] as const).map((t) => (
+          <button
+            key={t}
+            className={`dv-tab${tab === t ? ' active' : ''}`}
+            onClick={() => {
+              setTab(t);
+              setOpenNodeId(null);
+            }}
+          >
+            {TAB_LABELS[t]}
+          </button>
+        ))}
+      </div>
 
-      {tab === 'overview' ? (
-        <>
-          <div className="card" style={{ padding: 0, marginTop: 16, height: '70vh', border: '1px solid var(--gray-200)', borderRadius: 10, overflow: 'hidden' }}>
-            <DripCanvas graph={c.root!} goal={c.goal} editable={false} />
+      {tab === 'basic' && <BasicDetailsView campaign={c} />}
+
+      {tab === 'campaign' &&
+        (c.root && c.root.rootId ? (
+          <div className="an-stage">
+            <div className="card an-canvas">
+              {/* Read-only: clicking a step opens it in the panel. It does
+                  not start a new version and does not open the editor. */}
+              <DripCanvas graph={c.root} goal={c.goal} editable={false} onInspectNode={setOpenNodeId} />
+            </div>
+            {openNodeId && c.root.nodes[openNodeId] && (
+              <StepDetailPanel node={c.root.nodes[openNodeId]} campaign={c} graph={c.root} onClose={() => setOpenNodeId(null)} />
+            )}
           </div>
-          {/* The canvas has room for one short label per step; this is the
-              full read-back, one sentence per filter. */}
-          <FilterReadback graph={c.root} />
-        </>
-      ) : (
+        ) : (
+          <p className="an-empty">No steps yet — still a draft.</p>
+        ))}
+
+      {tab === 'analytics' && (
         <div style={{ marginTop: 16 }}>
-          <DripAnalytics campaign={c} />
+          <DripAnalytics campaign={c} hasRun={hasRun} />
         </div>
       )}
 

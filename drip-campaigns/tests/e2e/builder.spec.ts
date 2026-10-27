@@ -1133,6 +1133,95 @@ test('A sample activation campaign opens on Virtual card issued with the goal Vi
   await page.goto('/');
   await page.locator('tr', { hasText: 'Card Activation Reminder' }).first().click();
   await page.waitForTimeout(600);
-  await expect(page.locator('.dc-node-card', { hasText: 'Virtual card issued' })).toHaveCount(1);
   await expect(page.locator('.page-sub', { hasText: 'Goal: Virtual card activated' })).toBeVisible();
+  await page.locator('.dv-tab', { hasText: 'Campaign' }).click();
+  await page.waitForTimeout(900);
+  await expect(page.locator('.dc-node-card', { hasText: 'Virtual card issued' })).toHaveCount(1);
+});
+
+test('Campaign view: three tabs, and Basic Details reads back the setup', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('tr', { hasText: 'Card Activation Reminder' }).first().click();
+  await page.waitForTimeout(600);
+
+  await expect(page.locator('.dv-tab')).toHaveText(['Basic Details', 'Campaign', 'Analytics']);
+  // Basic Details is the tab you land on, and it is a read-back.
+  await expect(page.locator('.bd-row', { hasText: 'Goal' }).first()).toContainText('Virtual card activated');
+  await expect(page.locator('.bd-row', { hasText: 'Control group' })).toContainText('10% held back');
+  // Neither exclusion list is on for this campaign, so it says so.
+  await expect(page.locator('.bd-row', { hasText: 'Exclusion lists' })).toContainText('No exclusion lists are applied');
+});
+
+test('Campaign view: clicking a step opens it read-only, without starting an edit', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('tr', { hasText: 'Card Activation Reminder' }).first().click();
+  await page.waitForTimeout(600);
+  await page.locator('.dv-tab', { hasText: 'Campaign' }).click();
+  await page.waitForTimeout(1200);
+
+  await page.locator('.dc-node-card', { hasText: 'Reminder 2' }).first().click();
+  await page.waitForTimeout(400);
+  const panel = page.locator('.sp-panel');
+  await expect(panel).toBeVisible();
+  await expect(panel.locator('.sp-row', { hasText: 'Channel' })).toContainText('SMS');
+  await expect(panel.locator('.sp-row', { hasText: 'Account' })).toContainText('IBL-Karix-Txns');
+  await expect(panel.locator('.sp-row', { hasText: 'Template' })).toContainText('EMI Conversion SMS');
+  await expect(panel.locator('.sp-row', { hasText: 'Sends' })).toBeVisible();
+  // Still the view, not the builder: no wizard rail, no Add Step.
+  await expect(page.locator('.dcb-rail')).toHaveCount(0);
+  await expect(page.locator('.dc-add-btn')).toHaveCount(0);
+
+  await panel.locator('.sp-close').click();
+  await page.waitForTimeout(300);
+  await expect(page.locator('.sp-panel')).toHaveCount(0);
+});
+
+test('Campaign view: Analytics totals, arrow splits, and following one path', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('tr', { hasText: 'Card Activation Reminder' }).first().click();
+  await page.waitForTimeout(600);
+  await page.locator('.dv-tab', { hasText: 'Analytics' }).click();
+  await page.waitForTimeout(1400);
+
+  // Two totals, each with its held-back figure beside it. No conversion
+  // rate and no single still-in-sequence total.
+  await expect(page.locator('.an-total')).toHaveCount(2);
+  await expect(page.locator('.an-total').first()).toContainText('Held back');
+  await expect(page.locator('.an-total').nth(1)).toContainText('Held back, reached it anyway');
+  await expect(page.getByText('Conversion Rate')).toHaveCount(0);
+  await expect(page.getByText('Still In Sequence')).toHaveCount(0);
+
+  // A split writes counts on its arrows; nothing anywhere carries a %.
+  const labels = await page.locator('.dc-branch-label').allTextContents();
+  expect(labels.some((l) => /Yes[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
+  expect(labels.some((l) => /No[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
+  for (const l of labels) expect(l).not.toContain('%');
+
+  // Following the No arrow fades everything off that path.
+  await page.locator('.dc-branch-label', { hasText: 'No' }).first().click();
+  await page.waitForTimeout(600);
+  await expect(page.locator('.an-path')).toBeVisible();
+  const items = await page.locator('.an-path-list li').allTextContents();
+  expect(items.join(' ')).toMatch(/Wait/);
+  expect(items.join(' ')).toMatch(/Reminder/);
+  const faded = await page.locator('.dc-node-card').evaluateAll((els) => els.filter((e) => parseFloat(getComputedStyle(e).opacity) < 0.5).length);
+  expect(faded).toBeGreaterThan(0);
+
+  // And the whole journey comes back.
+  await page.locator('.an-path-clear').click();
+  await page.waitForTimeout(500);
+  const fadedAfter = await page.locator('.dc-node-card').evaluateAll((els) => els.filter((e) => parseFloat(getComputedStyle(e).opacity) < 0.5).length);
+  expect(fadedAfter).toBe(0);
+});
+
+test('Campaign view: a campaign that never ran says so on Analytics', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('tr', { hasText: 'Card Issuance to Activation' }).first().click();
+  await page.waitForTimeout(600);
+  // The tab is there either way — a missing tab reads as a missing feature.
+  await expect(page.locator('.dv-tab')).toHaveCount(3);
+  await page.locator('.dv-tab', { hasText: 'Analytics' }).click();
+  await page.waitForTimeout(500);
+  await expect(page.locator('.an-empty')).toContainText("hasn't run yet");
+  await expect(page.locator('.an-total')).toHaveCount(0);
 });

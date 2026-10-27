@@ -81,6 +81,10 @@ export interface DripCardData {
   // Present only on the read-only Analytics view.
   stat?: string;
   engagement?: string;
+  // Read-only inspection from the campaign view, and the fade applied to
+  // everything off a chosen path.
+  onInspect?: () => void;
+  dimmed?: boolean;
   // Set only when this node can hold genuinely parallel outgoing paths
   // (see dcCanFanOut) AND already has at least one — with zero children
   // the ordinary "+" slot below the card already covers adding the
@@ -118,10 +122,10 @@ export function DripCardNode({ data }: { data: DripCardData }) {
   const hasRemoveAffordance = data.editable && (data.isRoot || !!data.removableEdgeId);
   return (
     <div
-      className={`dc-node-card cat-${cat} size-${meta.size}${data.shared ? ' shared' : ''}${data.editable ? ' editable' : ''}${hasRemoveAffordance ? ' has-remove' : ''}`}
-      onClick={data.editable ? data.onEdit : undefined}
-      style={{ cursor: data.editable ? 'pointer' : 'default', position: 'relative' }}
-      title={data.editable ? 'Click to edit this step' : undefined}
+      className={`dc-node-card cat-${cat} size-${meta.size}${data.shared ? ' shared' : ''}${data.editable ? ' editable' : ''}${hasRemoveAffordance ? ' has-remove' : ''}${data.onInspect && !data.editable ? ' inspectable' : ''}`}
+      onClick={data.editable ? data.onEdit : data.onInspect}
+      style={{ cursor: data.editable || data.onInspect ? 'pointer' : 'default', position: 'relative', opacity: data.dimmed ? 0.3 : 1 }}
+      title={data.editable ? 'Click to edit this step' : data.onInspect ? 'Click to view this step' : undefined}
     >
       <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={false} />
       {data.shared && (

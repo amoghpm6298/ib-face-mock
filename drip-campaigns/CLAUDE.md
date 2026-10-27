@@ -1439,3 +1439,91 @@ offer search lists 50 and narrows to one on "welcome"; a nonsense query says
 no offer matches; the closed field reads "Welcome Milestone"; and Review
 reads "Welcome Milestone is at least 100%" before and after save and reopen.
 152 unit, 45 e2e, clean build. App activity and the campaign view untouched.
+
+## 2026-10-27 (cont'd) — The campaign view rebuilt: three tabs, a read-only
+step panel, and the journey as the funnel
+
+**Three tabs, always.** Basic Details, Campaign, Analytics. Analytics used
+to be hidden on a campaign that had never run, which reads as a missing
+feature rather than an empty one; it is now always there and says plainly
+that the campaign hasn't run yet.
+
+**Basic Details** is the setup read back: name and description, issuer and
+whether it applies to all programs or the chosen ones, the control group,
+re-entry (not allowed, or allowed after the cool-off that was set), start
+and end — or that it starts once approved — the goal, and the two
+guardrails, each on or off with the note that they are checked at every step
+and a match skips the rest of the journey. When neither is on it says no
+exclusion lists are applied.
+
+**Campaign** is the journey, and clicking a step opens it read-only in a
+panel beside it. It does not start a new version and does not open the
+editor: looking at a live campaign is not the same act as changing one. The
+panel is one component shared with Analytics, so the two cannot describe the
+same step differently.
+
+**Analytics keeps the journey as the funnel.** Each step carries one count —
+how many reached it — and a wait adds how many of those are still sitting
+there. A step that divides people writes the split on its arrows and nowhere
+else, as a plain count beside the arm's own name ("No 11,344", "Yes 1,333").
+A straight arrow carries nothing, because there is no split to describe, and
+neither do the arms of a fan-out, where everyone follows every arm and the
+full count already sits on each step. The old `23% · 8.4k` edge label is
+gone.
+
+Two totals above it: entered with held-back beside it, and the messaged
+group's goal result beside the held-back group's. The held-back figure is
+illustrative, from the same seeded sequence, at 45-70% of the messaged rate
+and floored so it can never tie. The conversion-rate and still-in-sequence
+tiles are gone.
+
+**Clicking an arrow follows that path** — everything off it fades to 0.3, and
+a short list reads the path from the start, through the chosen arrow, to
+where it ends, with each count. It stops at the next fork, where the arrow
+stops saying where anyone went. "Whole journey" brings the rest back.
+
+**Two real bugs this surfaced, both only findable in a real browser:**
+
+1. **A read-only card could not be clicked at all.** React Flow drops
+   pointer-events on nodes it considers non-selectable, and
+   `elementsSelectable` was tied to `editable`. Every click went to the pane
+   behind the card. This repo's own notes already listed that gotcha as one
+   only real-DOM tests catch, and it caught it again.
+2. **The journey opened with its start off-screen.** A zoom floor stopped the
+   words disappearing on a long campaign, but `fitView` still CENTRES what
+   does not fit, which pushed the first card above the frame. Measured
+   rather than guessed: when the content is taller than the frame, the view
+   anchors to the top instead. The start card now sits 25px inside the frame
+   at 13px type.
+
+**One thing the brief asked for that the app cannot show.** "Open a draft and
+confirm Analytics says there is nothing to show yet" — a draft row opens the
+*builder*, not the view, which is how a campaign is edited and was out of
+scope to change. The never-run state is reachable and verified on a campaign
+that does open the view: either PENDING_REVIEW campaign. Flagged rather than
+quietly changing navigation to make the check pass.
+
+Verified live on Card Activation Reminder, 0 console errors: three tabs; the
+goal, the 10% control group and the guardrail line on Basic Details; a
+send's channel, account, template and timing in the panel on Campaign;
+Entered 14,323 / held back 1,592 and Reached the goal 5,446 / held back 323
+on Analytics; no "%" on any arrow; the No arrow fading the rest and listing
+the wait and the next reminder; and "Whole journey" restoring it. 162 unit
+(10 new, including the fan-out arm rule the one fan-out campaign is a draft
+and cannot demonstrate), 48 e2e (4 new), clean build.
+
+**Four existing e2e tests had to change, and one of them was passing
+vacuously.** Three asserted the old view — an Analytics tab absent on a
+draft, KPI tiles, the canvas on landing — and were rewritten for the new
+one. The fourth is the real lesson: the branch-label overlap regression
+tests click a campaign row and measure chip positions, and once the view
+landed on Basic Details there were zero chips to measure, so "no two chips
+overlap" passed with nothing on screen. They now open the Campaign tab
+first, except for the DRAFT row, which goes straight to the builder and has
+no tabs at all.
+
+**And one regression I introduced, caught by those same tests**: the inline
+`opacity: 1` I put on every edge label to support fading beat
+`.dc-branch-label-bare`'s own rule, which is what keeps an unlabeled builder
+connector invisible until hover. The inline value is now set only when the
+label is actually dimmed.

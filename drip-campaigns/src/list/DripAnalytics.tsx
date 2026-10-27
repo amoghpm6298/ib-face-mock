@@ -1,46 +1,126 @@
-// Per-campaign analytics — the annotated canvas itself is the funnel
-// (see the UX-rebuild plan's Part 3), not a separate linear chart, since
-// a branching campaign can't be represented honestly as one column.
-import { useMemo } from 'react';
-import type { DripCampaign } from '../data/graphTypes';
-import { generateDripAnalytics } from '../data/dripAnalytics';
+// Per-campaign analytics — the journey itself is the funnel, not a separate
+// linear chart, since a branching campaign cannot be drawn honestly as one
+// column. Each step carries one count: how many people reached it. A step
+// that divides people writes the split on its arrows and nowhere else.
+import { useMemo, useState } from 'react';
+import type { DripCampaign, DripGraph } from '../data/graphTypes';
+import { generateDripAnalytics, type DripAnalyticsMetrics } from '../data/dripAnalytics';
 import { DripCanvas } from '../canvas/DripCanvas';
+import { StepDetailPanel } from './StepDetailPanel';
 
 function fmt(n: number): string {
   return n.toLocaleString('en-IN');
 }
 
-export function DripAnalytics({ campaign }: { campaign: DripCampaign }) {
+// The chain a chosen arrow belongs to: back to the start, then forward for
+// as long as there is exactly one way on. It stops at the next fork, because
+// past that point the arrow no longer tells you where anyone went.
+export function dcPathThroughEdge(graph: DripGraph, edgeId: string): { nodeIds: string[]; edgeIds: string[] } {
+  const edge = graph.edges.find((e) => e.id === edgeId);
+  if (!edge) return { nodeIds: [], edgeIds: [] };
+  const nodeIds: string[] = [];
+  const edgeIds: string[] = [edge.id];
+
+  let up: string | null = edge.from;
+  const seen = new Set<string>();
+  while (up && !seen.has(up)) {
+    seen.add(up);
+    nodeIds.unshift(up);
+    const incoming = graph.edges.find((e) => e.to === up);
+    if (!incoming) break;
+    edgeIds.unshift(incoming.id);
+    up = incoming.from;
+  }
+
+  let down: string | null = edge.to;
+  while (down && !seen.has(down)) {
+    seen.add(down);
+    nodeIds.push(down);
+    const outs = graph.edges.filter((e) => e.from === down && e.to);
+    if (outs.length !== 1) break;
+    edgeIds.push(outs[0].id);
+    down = outs[0].to;
+  }
+  return { nodeIds, edgeIds };
+}
+
+function Total({ label, value, besideLabel, besideValue }: { label: string; value: string; besideLabel: string; besideValue: string }) {
+  return (
+    <div className="an-total">
+      <div className="an-total-label">{label}</div>
+      <div className="an-total-pair">
+        <div>
+          <div className="an-total-value">{value}</div>
+        </div>
+        <div className="an-total-beside">
+          <div className="an-total-beside-label">{besideLabel}</div>
+          <div className="an-total-beside-value">{besideValue}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function DripAnalytics({ campaign, hasRun }: { campaign: DripCampaign; hasRun: boolean }) {
   const data = useMemo(() => generateDripAnalytics(campaign), [campaign]);
+  const [openNodeId, setOpenNodeId] = useState<string | null>(null);
+  const [pathEdgeId, setPathEdgeId] = useState<string | null>(null);
+  const graph = campaign.root;
+
+  const path = useMemo(() => (graph && pathEdgeId ? dcPathThroughEdge(graph, pathEdgeId) : null), [graph, pathEdgeId]);
+
+  if (!hasRun || !graph || !graph.rootId) {
+    return <p className="an-empty">This campaign hasn't run yet, so there's nothing to show here.</p>;
+  }
+
   const { totals, metrics } = data;
+  const openNode = openNodeId ? graph.nodes[openNodeId] : null;
 
   return (
     <div>
-      <div className="kpi-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
-        <div className="card" style={{ margin: 0, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--gray-500)', marginBottom: 6 }}>Entered</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{fmt(totals.entered)}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3 }}>{fmt(totals.control)} held back (Control)</div>
-        </div>
-        <div className="card" style={{ margin: 0, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--gray-500)', marginBottom: 6 }}>Reached Goal</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success-text)' }}>{fmt(totals.reachedGoal)}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3 }}>across the whole sequence</div>
-        </div>
-        <div className="card" style={{ margin: 0, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--gray-500)', marginBottom: 6 }}>Conversion Rate</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--success-text)' }}>{(totals.conversionRate * 100).toFixed(1)}%</div>
-          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3 }}>of entered, not of resolved</div>
-        </div>
-        <div className="card" style={{ margin: 0, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', color: 'var(--gray-500)', marginBottom: 6 }}>Still In Sequence</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{fmt(totals.stillActive)}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3 }}>{campaign.status === 'KILLED' ? 'everyone force-exited' : 'waiting on a later step'}</div>
-        </div>
+      <div className="an-totals">
+        <Total label="Entered" value={fmt(totals.entered)} besideLabel="Held back" besideValue={fmt(totals.control)} />
+        <Total label="Reached the goal" value={fmt(totals.reachedGoal)} besideLabel="Held back, reached it anyway" besideValue={fmt(totals.controlReachedGoal)} />
       </div>
 
-      <div className="card" style={{ padding: 0, height: '65vh', border: '1px solid var(--gray-200)', borderRadius: 10, overflow: 'hidden' }}>
-        <DripCanvas graph={campaign.root!} goal={campaign.goal} editable={false} metrics={metrics} />
+      {path && (
+        <div className="an-path">
+          <div className="an-path-head">
+            <span>Following one path</span>
+            <button className="an-path-clear" onClick={() => setPathEdgeId(null)}>
+              Whole journey
+            </button>
+          </div>
+          <ol className="an-path-list">
+            {path.nodeIds.map((id) => {
+              const n = graph.nodes[id];
+              if (!n) return null;
+              const count = (metrics as DripAnalyticsMetrics).nodeCounts[id];
+              return (
+                <li key={id}>
+                  <span>{n.label}</span>
+                  <span className="an-path-count">{count === undefined ? '—' : fmt(count)}</span>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+
+      <div className="an-stage">
+        <div className="card an-canvas">
+          <DripCanvas
+            graph={graph}
+            goal={campaign.goal}
+            editable={false}
+            metrics={metrics}
+            onInspectNode={setOpenNodeId}
+            onSelectEdge={setPathEdgeId}
+            pathNodeIds={path?.nodeIds}
+            pathEdgeIds={path?.edgeIds}
+          />
+        </div>
+        {openNode && <StepDetailPanel node={openNode} campaign={campaign} graph={graph} metrics={metrics} onClose={() => setOpenNodeId(null)} />}
       </div>
     </div>
   );
