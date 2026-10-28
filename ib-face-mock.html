@@ -7356,7 +7356,9 @@ const JOURNEY_BATCHES = [
     status:'ACTIVE', mode:'LIVE', startDate:'01 Aug 2026', endDate:'30 Sep 2026', createdBy:'Ananya Iyer', createdOn:'22 Jul 2026',
     description:'Festive-season push converting recent authorizations to EMI.', expectedConversion:'12', userBaseFile:'aug_festive_userbase.csv — 41,200 rows',
     notifyEmail:'ops-alerts@hyperface.co', notifyTime:'09:00', incentives:[
-      {id:'INC-901', name:'Festive PF Waiver', type:'Processing Fee', mode:'Relative', value:'50%', status:'ACTIVE'},
+      {id:'INC-901', name:'Festive PF Waiver', type:'Processing Fee', mode:'Relative', value:'50%', status:'ACTIVE',
+       outcomeType:'PROCESSING_FEE_EMI', startDate:'01 Aug 2026', endDate:'30 Sep 2026',
+       eligibility:[{field:'decile', operator:'RANGE', value:null, values:['1','3'], selectedStatuses:[]}] },
     ] },
   { id:'BATCH-5498', name:'Sep Reactivation Batch', journeyTitle:'OS-to-EMI', journeyType:'OS_EMI', journeyVariant:'Standard OS-to-EMI', issuer:'IndusInd Bank (IBL)',
     status:'ACTIVE', mode:'LIVE', startDate:'01 Sep 2026', endDate:'15 Oct 2026', createdBy:'Rohan Gupta', createdOn:'25 Aug 2026',
@@ -7786,7 +7788,10 @@ function iwizGoStep(i){ if(i<=iwiz.stepIdx){ iwiz.stepIdx=i; renderIncentiveWiza
 function iwizNext(){ if(iwiz.stepIdx<INCENTIVE_STEPS.length-1){ iwiz.stepIdx++; renderIncentiveWizard(); } }
 function iwizBack(){ if(iwiz.stepIdx>0){ iwiz.stepIdx--; renderIncentiveWizard(); } else { switchPage('jb-view'); } }
 function iField(k,v){ iwiz.draft[k]=v; }
-function iwizFooter(){ return `<div class="wiz-footer"><button class="btn secondary" onclick="iwizBack()">${iwiz.stepIdx===0?'Cancel':'Back'}</button><button class="btn primary" onclick="iwizNext()">Continue</button></div>`; }
+function iwizFooter(opts){
+  const blocked = opts && opts.blocked;
+  return `<div class="wiz-footer"><button class="btn secondary" onclick="iwizBack()">${iwiz.stepIdx===0?'Cancel':'Back'}</button><button class="btn primary" ${blocked?'disabled style="opacity:.5;cursor:not-allowed;"':''} onclick="${blocked?'':'iwizNext()'}">Continue</button></div>`;
+}
 
 function renderIncentiveWizard(){
   let rail = `<div class="wiz-rail-back" onclick="switchPage('jb-view')">${ic('external')} Back to Batch</div>
@@ -7836,7 +7841,7 @@ function ieligCardBody(idx, c){
   }
   if(c.field==='propensity' || c.field==='decile'){
     const isRange = c.operator==='RANGE';
-    const opts = c.field==='propensity' ? PROPENSITY_CONDITION_OPTIONS : CONDITION_OPTIONS;
+    const opts = PROPENSITY_CONDITION_OPTIONS;
     return `<div style="background:#fff;padding:8px;margin:8px 0;border-top:1px solid var(--gray-200);border-radius:10px;display:flex;gap:8px;align-items:flex-start;">
       <select style="width:45%;" onchange="ieligOperatorChange(${idx},this.value)"><option value="">Operator</option>${opts.map(o=>`<option value="${o.value}" ${c.operator===o.value?'selected':''}>${o.label}</option>`).join('')}</select>
       ${isRange ? `
@@ -7870,8 +7875,118 @@ function formatEligibilityCriteria(c){
   if(c.field==='journey_status') return `${fieldLabel}: ${(c.selectedStatuses||[]).join(', ')||'—'}`;
   if(c.field==='smartTagName') return `${fieldLabel}: ${(c.values||[]).join(', ')||'—'}`;
   if(c.operator==='RANGE') return `${fieldLabel} between ${c.values?.[0]??'—'} and ${c.values?.[1]??'—'}`;
-  const opLabel = CONDITION_OPTIONS.find(o=>o.value===c.operator)?.label ?? c.operator;
+  const opLabel = (c.operator==='RANGE' ? 'Range' : (CONDITION_OPTIONS.find(o=>o.value===c.operator)?.label ?? c.operator));
   return `${fieldLabel} ${opLabel} ${c.value??'—'}`;
+}
+// A second offer on the same outcome is allowed. It is refused only when one
+// customer can match both while both are active. The check compares the
+// filters already saved, not the customer base. A filter only one offer uses
+// does not separate them. Smart tags do not separate them either, because a
+// customer can carry more than one tag.
+const INCENTIVE_DONE_STATUS = { COMPLETED:1, TERMINATED:1, EXPIRED:1, DISABLED:1 };
+function incentiveOutcomeKey(inc){
+  if(inc.outcomeType==='ROI_EMI' || inc.outcomeType==='PROCESSING_FEE_EMI') return inc.outcomeType;
+  const blob = `${inc.type||''} ${inc.outcome||''}`;
+  if(/processing fee|^PF\b/i.test(blob)) return 'PROCESSING_FEE_EMI';
+  if(/\bROI\b/i.test(blob)) return 'ROI_EMI';
+  return '';
+}
+function parseIncentiveTime(v, isEnd){
+  if(!v || v==='—') return null;
+  const d = new Date(v);
+  if(isNaN(d.getTime())) return null;
+  if(isEnd && !String(v).includes('T') && !String(v).includes(':')) d.setHours(23,59,59,999);
+  return d.getTime();
+}
+function incentiveDatesOverlap(a, b){
+  const a0 = parseIncentiveTime(a.start, false), a1 = parseIncentiveTime(a.end, true);
+  const b0 = parseIncentiveTime(b.start, false), b1 = parseIncentiveTime(b.end, true);
+  if(a0==null || a1==null || b0==null || b1==null) return true;
+  return a0 < b1 && b0 < a1;
+}
+function eligibilityByField(list){
+  const m = {};
+  (list||[]).forEach(c=>{ if(c && c.field && c.operator) m[c.field]=c; });
+  return m;
+}
+function numericInterval(c){
+  if(c.operator==='RANGE'){
+    const a = Number(c.values?.[0]), b = Number(c.values?.[1]);
+    if(!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    return { lo:Math.min(a,b), hi:Math.max(a,b), loInc:true, hiInc:true, known:true };
+  }
+  const n = Number(c.value);
+  if(!Number.isFinite(n)) return null;
+  if(c.operator==='GT') return { lo:n, hi:Infinity, loInc:false, hiInc:false, known:true };
+  if(c.operator==='GTE') return { lo:n, hi:Infinity, loInc:true, hiInc:false, known:true };
+  if(c.operator==='LT') return { lo:-Infinity, hi:n, loInc:false, hiInc:false, known:true };
+  if(c.operator==='LTE') return { lo:-Infinity, hi:n, loInc:false, hiInc:true, known:true };
+  if(c.operator==='EQ') return { lo:n, hi:n, loInc:true, hiInc:true, known:true };
+  return null;
+}
+function intersectIntervals(a, b){
+  const lo = a.lo > b.lo ? a.lo : b.lo;
+  const loInc = a.lo === b.lo ? (a.loInc && b.loInc) : (a.lo > b.lo ? a.loInc : b.loInc);
+  const hi = a.hi < b.hi ? a.hi : b.hi;
+  const hiInc = a.hi === b.hi ? (a.hiInc && b.hiInc) : (a.hi < b.hi ? a.hiInc : b.hiInc);
+  if(lo > hi) return null;
+  if(lo === hi && (!loInc || !hiInc)) return null;
+  return { lo, hi, loInc, hiInc };
+}
+function formatInterval(label, iv){
+  const num = (n)=> Number.isInteger(n) ? String(n) : String(Math.round(n*100)/100);
+  if(Number.isFinite(iv.lo) && iv.lo===iv.hi && iv.loInc && iv.hiInc) return `${label} ${num(iv.lo)}`;
+  if(Number.isFinite(iv.lo) && Number.isFinite(iv.hi) && iv.loInc && iv.hiInc) return `${label} ${num(iv.lo)} to ${num(iv.hi)}`;
+  if(Number.isFinite(iv.lo) && !Number.isFinite(iv.hi)) return iv.loInc ? `${label} ${num(iv.lo)} or more` : `${label} more than ${num(iv.lo)}`;
+  if(!Number.isFinite(iv.lo) && Number.isFinite(iv.hi)) return iv.hiInc ? `${label} ${num(iv.hi)} or less` : `${label} less than ${num(iv.hi)}`;
+  if(Number.isFinite(iv.lo) && Number.isFinite(iv.hi)) return `${label} ${iv.loInc?num(iv.lo):'more than '+num(iv.lo)} to ${iv.hiInc?num(iv.hi):'less than '+num(iv.hi)}`;
+  return label;
+}
+function fieldOverlap(field, a, b){
+  const label = ELIGIBILITY_FILTERS.find(f=>f.value===field)?.label || field;
+  if(field==='smartTagName') return { overlap:true };
+  if(field==='journey_status'){
+    const A = a.selectedStatuses||[], B = b.selectedStatuses||[];
+    if(!A.length || !B.length) return { overlap:true };
+    const shared = A.filter(s=>B.includes(s));
+    if(!shared.length) return { overlap:false };
+    return { overlap:true, detail:`Journey Status ${shared.join(', ')}` };
+  }
+  const ia = numericInterval(a), ib = numericInterval(b);
+  if(!ia || !ib) return { overlap:true, detail:label };
+  const both = intersectIntervals(ia, ib);
+  if(!both) return { overlap:false };
+  return { overlap:true, detail:formatInterval(label, both) };
+}
+function incentiveClashTexts(draft, batchId){
+  const key = draft.outcomeType;
+  if(key!=='ROI_EMI' && key!=='PROCESSING_FEE_EMI') return [];
+  const batch = JOURNEY_BATCHES.find(x=>x.id===batchId);
+  if(!batch) return [];
+  const noun = key==='ROI_EMI' ? 'ROI offer' : 'processing fee offer';
+  const mine = { start:draft.durationStart, end:draft.durationEnd };
+  const texts = [];
+  (batch.incentives||[]).forEach(other=>{
+    if(INCENTIVE_DONE_STATUS[other.status]) return;
+    if(incentiveOutcomeKey(other)!==key) return;
+    if(!incentiveDatesOverlap(mine, { start:other.startDate, end:other.endDate })) return;
+    const A = eligibilityByField(draft.eligibility);
+    const B = eligibilityByField(other.eligibility);
+    const shared = Object.keys(A).filter(f=>B[f]);
+    const details = [];
+    for(const f of shared){
+      const hit = fieldOverlap(f, A[f], B[f]);
+      if(!hit.overlap) return;
+      if(hit.detail) details.push(hit.detail);
+    }
+    const who = other.name || 'another offer';
+    const slice = details.length ? `${details.join(' and ')} also ${details.length>1?'match':'matches'} this offer and "${who}".` : `A customer can match this offer and "${who}" at the same time.`;
+    texts.push(`${slice} A customer can receive only one ${noun}.`);
+  });
+  return texts;
+}
+function escIncentiveText(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function renderIncentiveStep(stepId){
   const d = iwiz.draft;
@@ -7916,6 +8031,8 @@ function renderIncentiveStep(stepId){
     const prefix = OUTCOME_PREFIX[key] || '—';
     const isProcessingFee = d.outcomeType==='PROCESSING_FEE_EMI';
     const minCapPrefix = d.minCapSubtype==='RELATIVE' ? 'Current Mincap minus Rs' : 'MinCap Value = Rs';
+    const clashes = incentiveClashTexts(d, iwiz.batchId);
+    const clashHtml = clashes.map(t=>`<div style="margin-top:10px;background:var(--error-bg);border:1px solid var(--error-border);border-radius:8px;padding:10px 14px;color:var(--error-text);font-size:13px;line-height:1.45;">${escIncentiveText(t)}</div>`).join('');
     html = `
       <h1 class="wiz-heading">What do the eligible customers receive?</h1>
       <p class="wiz-sub" style="margin-bottom:4px;"><b style="color:var(--neutral-800);">Outcome Definition</b></p>
@@ -7930,6 +8047,7 @@ function renderIncentiveStep(stepId){
             <option value="">Select</option>${OUTCOME_SUBTYPES.map(s=>`<option value="${s.value}" ${d.outcomeSubtype===s.value?'selected':''}>${s.label}</option>`).join('')}
           </select>
         </div>
+        ${clashHtml}
         ${d.outcomeSubtype ? `<div style="background:#fff;padding:12px;margin-top:10px;border-top:1px solid var(--gray-200);border-radius:10px;display:flex;align-items:center;gap:8px;">
           <span style="font-size:13px;color:var(--neutral-800);">${prefix}</span>
           <input class="f-input" type="text" style="max-width:100px;" value="${d.outcomeValue||''}" placeholder="${d.outcomeSubtype==='RELATIVE'?'0.00':'0'}" oninput="iField('outcomeValue',this.value)">
@@ -7948,7 +8066,7 @@ function renderIncentiveStep(stepId){
           </select>
           <div class="cond-remove" style="margin-left:auto;" onclick="iField('hasMinCap',false);iField('minCapSubtype','');iField('minCapValue','');renderIncentiveStep('OUTCOME_DEFINITION')">✕</div>
         </div>` : ''}
-      ${iwizFooter()}`;
+      ${iwizFooter({ blocked: clashes.length>0 })}`;
   } else if(stepId==='REVIEW'){
     const key = `${d.outcomeType}|${d.outcomeSubtype}`;
     const outcomeTypeLabel = OUTCOME_TYPES.find(t=>t.value===d.outcomeType)?.label||'—';
@@ -7973,9 +8091,11 @@ function renderIncentiveStep(stepId){
 function submitIncentive(){
   const b = JOURNEY_BATCHES.find(x=>x.id===iwiz.batchId);
   const d = iwiz.draft;
+  if(incentiveClashTexts(d, iwiz.batchId).length){ iwiz.stepIdx=2; renderIncentiveWizard(); return; }
   const prefix = OUTCOME_PREFIX[`${d.outcomeType}|${d.outcomeSubtype}`] || '';
   (b.incentives = b.incentives||[]).unshift({ id:'INC-'+(900+Math.floor(Math.random()*90)), name:d.title||'Untitled Incentive',
     outcome:`${prefix} ${d.outcomeValue||'—'}${d.outcomeSubtype==='RELATIVE'?'%':''}`, eligibleCustomers:'—',
+    outcomeType:d.outcomeType, eligibility:JSON.parse(JSON.stringify(d.eligibility||[])),
     startDate:d.durationStart||'—', endDate:d.durationEnd||'—', status:'ACTIVE' });
   bwiz = { stepIdx:0, isEdit:true, draft: JSON.parse(JSON.stringify(b)) };
   jbvState = { tab:'incentives' };
