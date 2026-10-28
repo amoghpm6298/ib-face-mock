@@ -117,6 +117,10 @@ export const TRANSACTION_SUBTYPE_OPTIONS = [
 // reads "Domestic online is turned on" rather than "... is Yes".
 export type AttrType = 'date' | 'select' | 'bool' | 'onoff' | 'number' | 'list' | 'smartTag' | 'multiSelect' | 'highestTxnEMI' | 'none';
 export const YES_NO = ['Yes', 'No'];
+// Ported verbatim from the original prototype's own SMART_TAG_OPTIONS. A
+// Smart Tag filter had no catalogue here at all, so it fell through to a
+// free-text box and you had to know a tag name and spell it exactly.
+export const SMART_TAG_OPTIONS = ['High EMI Propensity', 'Dormant 60d', 'Recent Complaint'];
 export const ON_OFF = ['turned on', 'turned off'];
 
 // The four card-control channels, and the three limits each one carries.
@@ -373,7 +377,9 @@ export function dcOperatorsForAttribute(meta: AttrMeta | null | undefined, opts?
   // Two-valued fields get one comparison. "is not Yes" is just "is No", and
   // offering both would be a choice with no meaning behind it.
   if (meta?.type === 'bool' || meta?.type === 'onoff') return ['is'];
-  if (meta?.type === 'multiSelect') return ['is any of'];
+  // A customer can carry several tags, so this is a set comparison like any
+  // other multi-value pick, not an equality.
+  if (meta?.type === 'multiSelect' || meta?.type === 'smartTag') return ['is any of'];
   if (meta?.type === 'number') return NUMBER_COMPARISONS;
   if (meta?.type === 'date') return DATE_COMPARISONS;
   return ['is', 'is not'];

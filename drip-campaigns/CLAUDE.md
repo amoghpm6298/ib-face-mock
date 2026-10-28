@@ -1527,3 +1527,58 @@ no tabs at all.
 `.dc-branch-label-bare`'s own rule, which is what keeps an unlabeled builder
 connector invisible until hover. The inline value is now set only when the
 label is actually dimmed.
+
+## 2026-10-28 — Dropdown audit: four gaps found by tracing every path, and
+fixed
+
+Traced every select and search control in the app against the real modules
+rather than by eye, then confirmed each finding in a browser.
+
+**1. "is between" on a date was a dead end, and it failed silently.** The
+worst of the four. `ValueField` renders two inputs for `number + is
+between`, but the `date` branch sat *after* it and only ever rendered one
+date input, so `value2` could never be filled. Completeness requires both,
+so the row was incomplete — and an incomplete row is deliberately ignored,
+which meant the campaign saved happily and the filter was dropped from
+Review with nothing on screen to say why. Someone sets a date range and gets
+a campaign targeting everyone. Affected all ten date attributes. The
+between check now runs ahead of the per-type branches and covers both types.
+
+**2. Smart Tag fell through to a free-text box.** There was no
+`SMART_TAG_OPTIONS` in this app at all, and `ValueField` had no `smartTag`
+branch, so you had to know a tag name and spell it exactly. The real list is
+ported from the prototype. A customer can carry several tags, so it is a set
+comparison — "is any of" with a checkbox list — not an equality.
+
+**3. Block Codes and MCC said nothing about their format.** `type: 'list'`
+also had no branch, so a generic "Value" box. They are genuinely free text
+with no catalogue behind them, so the fix is the placeholder the prototype
+already used: "Comma-separated codes".
+
+**4. Entry · Event and Wait for Event conditions surfaced nowhere.** Mine,
+from the campaign-view round. `dcFiltersOf` answers for `ENTRY_SEGMENT` and
+`SPLIT` and returns `[]` for everything else, and I wired the step panel's
+"Narrowed by" row and Review's read-back through it. An entry narrowed to
+"Transaction Amount is more than 5000" showed nothing in either place. New
+`dcEventConditionSentences` reads those conditions through the event's own
+resolved entity or locked attribute, and `dcStepSentences` is now the single
+entry point both Review and the panel use, so they cannot diverge again.
+
+**Checked and sound**: the fallback channel excludes the primary and clears
+its own account/template, the Send channel cascade clears downstream,
+single-comparison fields are auto-filled rather than asked, no entity is
+defined-but-unreachable, and the eight card events with no details correctly
+render no block.
+
+**Left alone, reported rather than fixed**: changing Event Category clears
+`eventType` but not the scoping fields, `cardDetails` or `conditions`. They
+are hidden by the new category so nothing wrong is visible, but they are
+still stored and reappear on switching back. Stale state, not a wrong
+answer, and worth its own pass.
+
+Verified live: a date range now keeps both bounds and reads back as
+"Statement Due Date is between 2026-10-01 and 2026-10-31"; Smart Tag offers
+the three real tags and reads "Smart Tag is any of Dormant 60d"; Block Codes
+says "Comma-separated codes"; and an Entry · Event narrowing reads
+"Transaction Amount is more than 5000" on Review. 167 unit (5 new), 48 e2e,
+clean build.

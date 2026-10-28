@@ -15,6 +15,7 @@ import {
   dcFormatValue,
   dcNormalizeOperator,
   milestoneOfferName,
+  resolveEntryEventAttrSource,
 } from './sharedConstants';
 
 export function dcDefaultFilterRow(): DripFilterRow {
@@ -164,7 +165,7 @@ export function dcFilterRowComplete(row: DripFilterRow | undefined): boolean {
   }
   if (!row.field || !row.operator) return false;
   const meta = dcFilterAttrMeta(row.group, row.field);
-  if (meta?.type === 'multiSelect') return !!(row.values && row.values.length);
+  if (meta?.type === 'multiSelect' || meta?.type === 'smartTag') return !!(row.values && row.values.length);
   if (row.operator === 'is between') return !!row.value && !!row.value2;
   return !!row.value;
 }
@@ -220,7 +221,7 @@ export function dcMilestoneValue(raw: string | undefined, unit: 'percent' | 'rup
 
 function valuePhrase(row: DripFilterRow): string {
   const meta = dcFilterAttrMeta(row.group, row.field);
-  if (meta?.type === 'multiSelect') return (row.values || []).join(', ');
+  if (meta?.type === 'multiSelect' || meta?.type === 'smartTag') return (row.values || []).join(', ');
   if (row.operator === 'is between') return `${dcFormatValue(meta, row.value)} and ${dcFormatValue(meta, row.value2)}`;
   return dcFormatValue(meta, row.value);
 }
@@ -260,6 +261,39 @@ export function dcFilterSentence(row: DripFilterRow): string {
 // they were added.
 export function dcFilterSentences(rows: DripFilterRow[] | undefined): string[] {
   return dcCompleteFilters(rows).map((r) => dcFilterSentence(r));
+}
+
+// Entry · Event and Wait for Event narrow on their own event's attributes,
+// which are not filter rows and so never passed through dcFiltersOf — it
+// answers for ENTRY_SEGMENT and SPLIT and returns nothing for anything
+// else. The result was that a real narrowing ("Transaction Amount is more
+// than 5000") showed nowhere: not on Review, not in the step panel.
+export function dcEventConditionSentences(type: string, p: any): string[] {
+  if (type !== 'ENTRY_EVENT' && type !== 'WAIT_UNTIL') return [];
+  const { entity, lockedAttr } = resolveEntryEventAttrSource(p?.eventCategory ?? null, p?.eventType ?? null);
+  if (!entity && !lockedAttr) return [];
+  return (p?.conditions || [])
+    .filter((c: DripGoalCondition) => (lockedAttr || c.attribute) && c.operator)
+    .map((c: DripGoalCondition) => {
+      const field = lockedAttr || c.attribute;
+      const meta = entity ? ELIGIBILITY_META[entity]?.[c.attribute] ?? null : null;
+      const op = dcNormalizeOperator(c.operator);
+      const value =
+        meta?.type === 'multiSelect' || meta?.type === 'smartTag'
+          ? (c.values || []).join(', ')
+          : op === 'is between'
+            ? `${dcFormatValue(meta, c.value)} and ${dcFormatValue(meta, c.value2)}`
+            : dcFormatValue(meta, c.value);
+      return `${field} ${op} ${value}`.replace(/\s+/g, ' ').trim();
+    })
+    .filter((t: string) => t.split(' ').length > 2);
+}
+
+// Everything a step has to say, whichever shape it keeps it in. One entry
+// point so Review and the step panel cannot show different things.
+export function dcStepSentences(type: string, p: any): string[] {
+  const rows = dcFilterSentences(dcFiltersOf(type, p));
+  return rows.length ? rows : dcEventConditionSentences(type, p);
 }
 
 // One short line for a canvas card, which has no room for a list.

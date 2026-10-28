@@ -10,13 +10,14 @@ import {
   MILESTONE_OFFERS,
   APP_EVENTS,
   CARD_CONTROL_CHANNELS,
+  SMART_TAG_OPTIONS,
   EVENT_CATEGORIES,
   cardEventDetailFields,
   dcCardEventPhrase,
   dcValidEventType,
   resolveEntryEventAttrSource,
 } from '../../src/data/sharedConstants';
-import { dcBranchWhatOf, dcClearFiltersForEvents, dcDetailsForEvent, dcFilterRowComplete, dcFilterSentence, dcFilterSentences, dcFiltersOf } from '../../src/data/filters';
+import { dcBranchWhatOf, dcClearFiltersForEvents, dcDetailsForEvent, dcEventConditionSentences, dcFilterRowComplete, dcFilterSentence, dcFilterSentences, dcFiltersOf, dcStepSentences } from '../../src/data/filters';
 import { dcAddFormValid } from '../../src/reducer/defaultConfig';
 import { dcDecisionBranchSummary } from '../../src/reducer/labelMeta';
 
@@ -361,5 +362,55 @@ describe('Card Events — the replaced list', () => {
     // But no filter menu offers them: a Condition does not ask about the
     // event the journey already started from.
     expect(dcFilterOptionGroups({ previousMessage: true }).some((g) => g.group === 'Entry event')).toBe(false);
+  });
+});
+
+describe('value widgets reach every attribute type', () => {
+  it('a smart tag is a set picked from the real list, not free text', () => {
+    expect(SMART_TAG_OPTIONS.length).toBeGreaterThan(0);
+    expect(dcComparisonsForFilter('Account', 'Smart Tag')).toEqual(['is any of']);
+    const row = { group: 'Account', field: 'Smart Tag', operator: 'is any of', values: ['Dormant 60d'] };
+    expect(dcFilterRowComplete(row)).toBe(true);
+    expect(dcFilterSentence(row)).toBe('Smart Tag is any of Dormant 60d');
+    // With nothing picked it is incomplete, the same as any other set.
+    expect(dcFilterRowComplete({ group: 'Account', field: 'Smart Tag', operator: 'is any of', values: [] })).toBe(false);
+  });
+
+  it('a date range keeps both bounds, so it can actually be completed', () => {
+    // "is between" used to render one date input while completeness wanted
+    // two, so the row could never be finished and was silently dropped.
+    const one = { group: 'Account', field: 'Statement Due Date', operator: 'is between', value: '2026-10-01' };
+    expect(dcFilterRowComplete(one)).toBe(false);
+    const both = { ...one, value2: '2026-10-31' };
+    expect(dcFilterRowComplete(both)).toBe(true);
+    expect(dcFilterSentence(both)).toBe('Statement Due Date is between 2026-10-01 and 2026-10-31');
+  });
+});
+
+describe('an event step says what it narrows on', () => {
+  it('Entry · Event and Wait for Event conditions become sentences', () => {
+    const p = {
+      eventCategory: 'Transaction Events',
+      eventType: 'Transaction',
+      conditions: [{ attribute: 'Transaction Amount', operator: 'Greater than', value: '5000' }],
+    };
+    expect(dcEventConditionSentences('ENTRY_EVENT', p)).toEqual(['Transaction Amount is more than 5000']);
+    expect(dcEventConditionSentences('WAIT_UNTIL', p)).toEqual(['Transaction Amount is more than 5000']);
+    // dcFiltersOf answers for filter rows only, which is why these were
+    // invisible everywhere before.
+    expect(dcFiltersOf('ENTRY_EVENT', p)).toEqual([]);
+    // The one entry point both Review and the step panel use.
+    expect(dcStepSentences('ENTRY_EVENT', p)).toEqual(['Transaction Amount is more than 5000']);
+    expect(dcStepSentences('ENTRY_SEGMENT', { filters: [] })).toEqual([]);
+  });
+
+  it('says nothing for an event that resolves no attributes, and for other node types', () => {
+    expect(dcEventConditionSentences('ENTRY_EVENT', { eventCategory: 'Card Events', eventType: 'PIN set', conditions: [] })).toEqual([]);
+    expect(dcEventConditionSentences('SEND', { conditions: [{ attribute: 'x', operator: 'is', value: '1' }] })).toEqual([]);
+  });
+
+  it('a locked-attribute event reads its one attribute', () => {
+    const p = { eventCategory: 'Journey Events', eventType: 'Pageload', conditions: [{ attribute: 'Page Name', operator: 'Equals', value: 'EMI Offer' }] };
+    expect(dcEventConditionSentences('ENTRY_EVENT', p)).toEqual(['Page Name is EMI Offer']);
   });
 });

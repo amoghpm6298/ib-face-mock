@@ -5,7 +5,7 @@
 //
 // Reads through dcFiltersOf, so a campaign saved before the one-row rewrite
 // lists its old conditions here too.
-import { dcFilterSentences, dcFiltersOf } from '../data/filters';
+import { dcStepSentences } from '../data/filters';
 import type { DripGraph, DripNode } from '../data/graphTypes';
 
 export function FilterReadback({ graph, title = 'Filters' }: { graph: DripGraph | null; title?: string }) {
@@ -13,7 +13,7 @@ export function FilterReadback({ graph, title = 'Filters' }: { graph: DripGraph 
   // Object.values keeps insertion order, which is the order the steps were
   // added, and each node's rows are already in the order they were added.
   const withFilters = Object.values(graph.nodes)
-    .map((n: DripNode) => ({ node: n, sentences: dcFilterSentences(dcFiltersOf(n.type, n._config)) }))
+    .map((n: DripNode) => ({ node: n, sentences: dcStepSentences(n.type, n._config) }))
     .filter((x: { sentences: string[] }) => x.sentences.length > 0);
   if (!withFilters.length) return null;
   return (

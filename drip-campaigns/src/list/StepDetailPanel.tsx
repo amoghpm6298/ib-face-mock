@@ -9,7 +9,7 @@
 // right there under it.
 import type { DripCampaign, DripNode, DripGraph } from '../data/graphTypes';
 import { DC_NODE_META } from '../data/nodeMeta';
-import { dcFilterSentences, dcFiltersOf, dcBranchWhatOf } from '../data/filters';
+import { dcEventConditionSentences, dcFilterSentences, dcFiltersOf, dcBranchWhatOf } from '../data/filters';
 import { dcGoalLabel, dcRecurrenceLabel } from '../reducer/labelMeta';
 import {
   CHANNEL_CONFIG_LABELS,
@@ -69,7 +69,8 @@ function StepConfig({ node, campaign, graph }: { node: DripNode; campaign: DripC
           <Row label="Event" value={event} />
           <Row label="Event category" value={p.eventCategory || '—'} />
           {node.type === 'WAIT_UNTIL' && <Row label="Gives up after" value={`${p.duration} ${p.unit}`} />}
-          {node.type === 'ENTRY_EVENT' && <Row label="Narrowed by" value={<Lines items={dcFilterSentences(dcFiltersOf(node.type, p))} empty="No extra narrowing." />} />}
+          {/* Both event types can narrow on their own event's attributes. */}
+          <Row label="Narrowed by" value={<Lines items={dcEventConditionSentences(node.type, p)} empty="No extra narrowing." />} />
         </>
       );
     }

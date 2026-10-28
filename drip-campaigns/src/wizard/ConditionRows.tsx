@@ -3,7 +3,7 @@
 // dcCondUpdate / dcCondToggleMulti — React-idiomatic version: takes the
 // conditions array + an onChange callback instead of a global containerKey
 // lookup (dcCondArrayFor), since each caller now owns its own local state.
-import { ELIGIBILITY_META, DC_PROMOTED_ATTR, ON_OFF, YES_NO, dcOperatorsForAttribute, type AttrType } from '../data/sharedConstants';
+import { ELIGIBILITY_META, DC_PROMOTED_ATTR, ON_OFF, SMART_TAG_OPTIONS, YES_NO, dcOperatorsForAttribute, type AttrType } from '../data/sharedConstants';
 import type { DripGoalCondition } from '../data/graphTypes';
 import { MultiSelectDropdown } from '../components/MultiSelectDropdown';
 
@@ -204,8 +204,11 @@ export function ValueField({
   onPatch: (patch: Partial<Cond>) => void;
   onToggleMulti: (val: string) => void;
 }) {
-  if (attrMeta?.type === 'multiSelect') {
-    return <MultiSelectDropdown options={attrMeta.options || []} selected={cond.values || []} onToggle={onToggleMulti} />;
+  if (attrMeta?.type === 'multiSelect' || attrMeta?.type === 'smartTag') {
+    // A Smart Tag had no branch here, so it fell through to the bare text
+    // box at the bottom of this function. It is a pick from a real list.
+    const options = attrMeta.type === 'smartTag' ? SMART_TAG_OPTIONS : attrMeta.options || [];
+    return <MultiSelectDropdown options={options} selected={cond.values || []} onToggle={onToggleMulti} />;
   }
   if (attrMeta?.type === 'select') {
     return (
@@ -236,11 +239,16 @@ export function ValueField({
       </select>
     );
   }
-  if (attrMeta?.type === 'number' && (cond.operator === 'is between' || cond.operator === 'Between')) {
+  // Checked before the per-type branches below. While this only covered
+  // number, a date fell through to the single-input date branch, so value2
+  // could never be filled — the row then counted as incomplete and was
+  // silently dropped from Review, with nothing on screen to say why.
+  if ((attrMeta?.type === 'number' || attrMeta?.type === 'date') && (cond.operator === 'is between' || cond.operator === 'Between')) {
+    const inputType = attrMeta.type === 'date' ? 'date' : 'number';
     return (
-      <div style={{ display: 'flex', gap: 6 }}>
-        <input type="number" className="f-input" placeholder="From" value={cond.value || ''} onChange={(e) => onPatch({ value: e.target.value })} />
-        <input type="number" className="f-input" placeholder="To" value={cond.value2 || ''} onChange={(e) => onPatch({ value2: e.target.value })} />
+      <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+        <input type={inputType} className="f-input" style={{ minWidth: 0 }} placeholder="From" value={cond.value || ''} onChange={(e) => onPatch({ value: e.target.value })} />
+        <input type={inputType} className="f-input" style={{ minWidth: 0 }} placeholder="To" value={cond.value2 || ''} onChange={(e) => onPatch({ value2: e.target.value })} />
       </div>
     );
   }
@@ -250,5 +258,8 @@ export function ValueField({
   if (attrMeta?.type === 'date') {
     return <input type="date" className="f-input" value={cond.value || ''} onChange={(e) => onPatch({ value: e.target.value })} />;
   }
-  return <input type="text" className="f-input" placeholder="Value" value={cond.value || ''} onChange={(e) => onPatch({ value: e.target.value })} />;
+  // Block codes and MCC are free text with no catalogue behind them, so the
+  // placeholder has to say what shape the value takes.
+  const placeholder = attrMeta?.type === 'list' ? 'Comma-separated codes' : 'Value';
+  return <input type="text" className="f-input" placeholder={placeholder} value={cond.value || ''} onChange={(e) => onPatch({ value: e.target.value })} />;
 }
