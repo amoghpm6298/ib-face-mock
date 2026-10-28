@@ -8087,9 +8087,20 @@ function incentiveClashTexts(draft, batchId){
       if(!hit.overlap) return;
       if(hit.detail) details.push(hit.detail);
     }
-    const who = other.name || 'another offer';
-    const slice = details.length ? `${details.join(' and ')} also ${details.length>1?'match':'matches'} this offer and "${who}".` : `A customer can match this offer and "${who}" at the same time.`;
-    texts.push(`${slice} A customer can receive only one ${noun}.`);
+    // An offer saved without a title is stored as "Untitled Incentive".
+    // Quoting that back reads like a bug, so it is described instead.
+    const named = other.name && other.name !== 'Untitled Incentive';
+    const who = named ? `"${other.name}"` : 'an offer that has no name yet';
+    // Customers match offers; a range of propensity does not. The old copy
+    // had the range as the subject ("Propensity 2 to 3 also matches this
+    // offer"), which reads backwards. Naming the customers puts it right
+    // and drops the match/matches switch, since "Customers with X and Y"
+    // works whether there is one shared filter or several.
+    const slice = details.length
+      ? `Customers with ${details.join(' and ')} can match this offer and ${who} at the same time.`
+      : `Nothing in the filters separates this offer from ${who}, so the same customer can match both.`;
+    // Say what to do about it, not only that something is wrong.
+    texts.push(`${slice} A customer can receive only one ${noun}, so narrow the filters or change the dates until the two no longer overlap.`);
   });
   return texts;
 }
