@@ -1468,6 +1468,22 @@
 </div>
 
 <!-- ============ COMMS. TEMPLATES — LIST ============ -->
+<div class="page-view" id="page-qt-list">
+  <div class="page">
+    <div class="page-header">
+      <div><h1 class="page-title">Query Templates</h1></div>
+      <button class="btn primary" onclick="openQtCreate()">+ Create</button>
+    </div>
+    <div class="filters" id="qtFilters"></div>
+    <div class="card" style="padding:0;">
+      <table class="tbl"><thead><tr>
+        <th>Template ID</th><th>Template Name</th><th>Scope</th><th>Created On</th><th>Last Modified On</th><th></th>
+      </tr></thead><tbody id="qtListBody"></tbody></table>
+    </div>
+  </div>
+</div>
+<div class="page-view" id="page-qt-create"><div class="page"><div id="qtCreateRoot"></div></div></div>
+<div class="page-view" id="page-qt-view"><div class="page"><div id="qtViewRoot"></div></div></div>
 <div class="page-view" id="page-comms-list">
   <div class="page">
     <div class="page-header">
@@ -1651,7 +1667,7 @@ const NAV = [
   {type:'item', icon:'external', label:'Atlas Console', ext:true},
   {type:'heading', label:'Support Tools'},
   {type:'item', icon:'tag', label:'Smart Tag'},
-  {type:'item', icon:'database', label:'Query Templates'},
+  {type:'item', icon:'database', label:'Query Templates', page:'qt-list'},
   {type:'item', icon:'landmark', label:'Funding Account'},
   {type:'item', icon:'sigma', label:'Aggregate Definitions'},
   {type:'item', icon:'list', label:'Lists'},
@@ -1745,6 +1761,7 @@ function switchPage(name){
   if(name==='ab-list') renderAbList();
   if(name==='comms-list') renderCommsList();
   if(name==='dnc') renderDnc();
+  if(name==='qt-list') renderQtList();
   if(name==='drip-list') renderDripList();
   if(name==='drip-view') renderDripView();
   if(name==='drip-create') renderDripBuilder();
@@ -4970,6 +4987,10 @@ function openNudgeCreate(){
       variant:null, location:'topShelf', displayOrder:null, dismissible:true, heading:'Activate your Card', subtext:'To start shopping and collect rewards', channels:[],
       eventCategory:'Journey Events', eventType:'', eventJourney:'', delayType:'Immediate', delay:'', delayUnit:'minutes', cancellationEnabled:false,
       cooldown:'', cooldownUnit:'hours', quietHours:'Queue to next slot', displayEnabled:false, conditions:[{entity:'',attribute:'',operator:'',value:''}],
+      // Same shape the real app stores on the nudge:
+      // communicationQueryTemplateConfig {queryTemplateId, queryTemplateName,
+      // query, variables}. The old one-line picker wrote nowhere at all.
+      queryTemplateConfig:{ queryTemplateId:'', queryTemplateName:'', query:'', variables:{} },
       userBaseMode:'All Customers', smartTag:'', labels:[] } };
   switchPage('nudges-create');
   renderWizard();
@@ -5312,6 +5333,75 @@ const OPERATORS_BY_TYPE = {
   // meaningful comparison for a set like this.
   multiSelect:['Any of'],
 };
+/* =========================================================================
+   QUERY TEMPLATES — verified against ironbank-face-main.
+
+   In the real app these come from QueryTemplateService.getTemplateByName
+   ({name, issuerIds}), so the list a nudge sees is scoped to that nudge's
+   own issuer. The SHAPE below is the real one — a template carries a name,
+   a description shown as sub-text in the picker, the query itself, and a
+   list of variables each of {name, description, displayName, type,
+   isListType}. The real create screen derives those variables by scanning
+   the query for ${...}, which is why every variable here appears in its
+   own query text.
+
+   The contents are a stand-in for whatever an issuer has configured, the
+   same way MILESTONE_OFFERS and APP_EVENTS are. Scope is per issuer, and
+   a nudge on one issuer never sees another's.
+   ========================================================================= */
+const QUERY_TEMPLATES = [
+  { id:'QT-101', scope:'IndusInd Bank (IBL)', name:'High EMI Propensity', description:'Accounts scored likely to convert an eligible transaction to EMI.',
+    query:'SELECT account_id FROM emi_propensity WHERE score >= ${minScore} AND segment = ${segment}',
+    variables:[
+      {name:'minScore', displayName:'Minimum score', description:'Propensity score floor, 0 to 100.', type:'INTEGER', isListType:false},
+      {name:'segment', displayName:'Segment', description:'Portfolio segment to restrict to.', type:'STRING', isListType:false}],
+    createdOn:'04 Jun 2026, 11:20', updatedOn:'21 Aug 2026, 16:02', usedBySmartTags:['High EMI Propensity'] },
+  { id:'QT-102', scope:'IndusInd Bank (IBL)', name:'Dormant Cardholders', description:'No spend in the lookback window, card still active.',
+    query:'SELECT account_id FROM card_activity WHERE last_txn_days > ${dormantDays} AND card_status = ${cardStatus}',
+    variables:[
+      {name:'dormantDays', displayName:'Dormant for (days)', description:'Days since the last transaction.', type:'INTEGER', isListType:false},
+      {name:'cardStatus', displayName:'Card status', description:'Status the card must still be in.', type:'STRING', isListType:false}],
+    createdOn:'12 Jun 2026, 09:45', updatedOn:'02 Sep 2026, 10:11', usedBySmartTags:['Dormant 60d'] },
+  { id:'QT-103', scope:'IndusInd Bank (IBL)', name:'Statement Due Soon', description:'Statement due inside the window, balance above a floor.',
+    query:'SELECT account_id FROM statements WHERE due_in_days <= ${dueInDays} AND outstanding >= ${minOutstanding}',
+    variables:[
+      {name:'dueInDays', displayName:'Due within (days)', description:'How close the due date is.', type:'INTEGER', isListType:false},
+      {name:'minOutstanding', displayName:'Minimum outstanding', description:'Outstanding amount floor, in rupees.', type:'FLOAT', isListType:false}],
+    createdOn:'28 Jun 2026, 14:03', updatedOn:'28 Jun 2026, 14:03', usedBySmartTags:[] },
+  { id:'QT-104', scope:'IndusInd Bank (IBL)', name:'Multi-Txn EMI Candidates', description:'Several eligible transactions in one cycle.',
+    query:'SELECT account_id FROM transactions WHERE mcc IN ${mccList} GROUP BY account_id HAVING COUNT(*) >= ${minTxnCount}',
+    variables:[
+      {name:'mccList', displayName:'Merchant categories', description:'One or more MCC codes.', type:'STRING', isListType:true},
+      {name:'minTxnCount', displayName:'Minimum transactions', description:'How many eligible transactions in the cycle.', type:'INTEGER', isListType:false}],
+    createdOn:'09 Jul 2026, 08:30', updatedOn:'15 Sep 2026, 12:40', usedBySmartTags:[] },
+  { id:'QT-201', scope:'Yes Bank', name:'Activation Pending', description:'Card dispatched but never activated.',
+    query:'SELECT account_id FROM cards WHERE activated = false AND dispatched_days > ${sinceDays}',
+    variables:[
+      {name:'sinceDays', displayName:'Dispatched over (days) ago', description:'Days since dispatch.', type:'INTEGER', isListType:false}],
+    createdOn:'19 May 2026, 17:55', updatedOn:'07 Aug 2026, 09:14', usedBySmartTags:[] },
+  { id:'QT-202', scope:'Yes Bank', name:'High Utilisation', description:'Utilisation above a threshold on an active account.',
+    query:'SELECT account_id FROM balances WHERE utilisation_pct >= ${minUtilisation}',
+    variables:[
+      {name:'minUtilisation', displayName:'Minimum utilisation (%)', description:'Utilisation floor, as a whole percent.', type:'INTEGER', isListType:false}],
+    createdOn:'02 Aug 2026, 13:12', updatedOn:'02 Aug 2026, 13:12', usedBySmartTags:['Recent Complaint'] },
+];
+// QueryDataTypes, from utils/dropdownConstants.ts.
+const QUERY_DATA_TYPES = [['INTEGER','Integer'],['FLOAT','Float'],['STRING','Text'],['DATETIME','Date time']];
+function queryDataTypeLabel(v){ return (QUERY_DATA_TYPES.find(([k])=>k===v)||[,v||'—'])[1]; }
+// The real create screen derives a template's variables by scanning the
+// query for ${...}; this is that scan, shared by the editor and the
+// orphan check so they can never disagree.
+function queryVarNames(q){ return [...new Set((String(q||'').match(/\$\{([^}]+)\}/g)||[]).map(m=>m.slice(2,-1)))]; }
+function queryTemplatesForIssuer(issuer){ return QUERY_TEMPLATES.filter(t=>t.scope===issuer); }
+function queryTemplateById(id){ return QUERY_TEMPLATES.find(t=>t.id===id); }
+// Every template the create screen posts is scope ISSUER, so the Scope
+// column is an Issuer tag plus the issuer's own name — handleBadgeRender's
+// ISSUER case.
+function queryScopeHtml(name){ return `<span class="badge" style="background:#BEEBE7;color:#155C5E;">Issuer</span> <span style="margin-left:6px;">${name||'—'}</span>`; }
+// A variable's value box follows its declared type. Integer and Float take
+// a number; a list of them does not, because it is typed comma-separated.
+function queryVarInputType(v){ return (v.type==='INTEGER'||v.type==='FLOAT') && !v.isListType ? 'number' : (v.type==='DATETIME' ? 'date' : 'text'); }
+
 const SMART_TAG_OPTIONS = ['High EMI Propensity','Dormant 60d','Recent Complaint'];
 
 function condRow(c, idx, entityOptions, containerKey, opts){
@@ -5516,6 +5606,110 @@ function condRow(c, idx, entityOptions, containerKey, opts){
       ${c.mandatory ? `<div style="width:24px;flex-shrink:0;"></div>` : `<div class="cond-remove" onclick="wizCondRemove('${containerKey}',${idx})" style="align-self:center;">✕</div>`}
     </div>`;
 }
+/* ---------------- Query Details (Advanced Settings) ----------------
+   Ported from nudgesV2's QueryTestComponent, which the eligibility step
+   renders whenever Advanced Settings is open. The picker is searchable and
+   scoped to the nudge's own issuer, each row showing the template's
+   description as sub-text; choosing one reveals that template's variables;
+   and Test Query opens a side panel that runs it against the values typed.
+
+   The old version here was a two-option select with no onchange at all, so
+   whatever was picked was discarded on the next render and never reached
+   the draft or Review. */
+let qtSearch = '';
+function queryDetailsHtml(d){
+  const cfg = d.queryTemplateConfig || (d.queryTemplateConfig = { queryTemplateId:'', queryTemplateName:'', query:'', variables:{} });
+  const all = queryTemplatesForIssuer(d.issuer);
+  const picked = queryTemplateById(cfg.queryTemplateId);
+  const q = qtSearch.trim().toLowerCase();
+  const matches = q ? all.filter(t=>t.name.toLowerCase().includes(q) || (t.description||'').toLowerCase().includes(q)) : all;
+  if(!d.issuer) return `<div class="f-hint" style="margin-top:10px;">Pick an issuer first — query templates are scoped to one.</div>`;
+  return `
+    <div class="cond-group" style="margin-top:10px;padding:14px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+        <div><div class="toggle-row-label">Query Details</div><div class="toggle-row-sub">Details of the Query</div></div>
+        ${cfg.queryTemplateId ? `<div class="cond-remove" title="Reset query details" onclick="qtReset()">✕</div>` : ''}
+      </div>
+      ${!all.length ? `<div class="f-hint" style="margin:10px 0 0;">No query templates are configured for ${d.issuer}.</div>` : `
+      <div class="f-group" style="margin:12px 0 0;">
+        <label class="f-label">Query Template</label>
+        ${picked ? `
+          <div class="msel-trigger" onclick="qtReset()" title="Click to choose a different template">
+            <span><b>${picked.name}</b><span style="display:block;font-size:11.5px;color:var(--gray-500);">${picked.description}</span></span><span style="color:var(--gray-400);">✕</span>
+          </div>
+        ` : `
+          <input class="f-input" type="text" placeholder="Search query templates" value="${qtSearch}" oninput="qtSearch=this.value;renderWizStep('ELIGIBILITY')">
+          <div class="msel-panel" style="margin-top:6px;">
+            ${matches.length ? matches.map(t=>`
+              <div class="msel-option" style="display:block;" onclick="qtPick('${t.id}')">
+                <div style="font-weight:600;">${t.name}</div>
+                <div style="font-size:11.5px;color:var(--gray-500);">${t.description}</div>
+              </div>`).join('') : `<div class="f-hint" style="margin:0;">No query template matches that.</div>`}
+          </div>
+        `}
+      </div>
+      ${picked ? `
+        <div class="f-group" style="margin:12px 0 0;">
+          <label class="f-label">Query</label>
+          <div class="card mono" style="box-shadow:none;background:var(--gray-25);font-size:12px;padding:10px 12px;">${escIncentiveText(picked.query)}</div>
+        </div>
+        ${picked.variables.length ? `
+          <div class="f-group" style="margin:12px 0 0;">
+            <label class="f-label">Variables</label>
+            ${picked.variables.map(v=>`
+              <div class="f-group" style="margin-bottom:8px;">
+                <label class="f-label" style="font-weight:500;">${v.displayName}${v.isListType?' (one or more, comma separated)':''}</label>
+                <div class="f-hint" style="margin:0 0 4px;">${v.description}</div>
+                <input class="f-input" type="${queryVarInputType(v)}" value="${cfg.variables[v.name]||''}"
+                  oninput="wiz.draft.queryTemplateConfig.variables['${v.name}']=this.value">
+              </div>`).join('')}
+          </div>` : ''}
+        <div class="add-link" onclick="openQueryTestDrawer()">${ic('workflow')} Test Query</div>
+      ` : ''}`}
+    </div>`;
+}
+function qtPick(id){
+  const t = queryTemplateById(id);
+  wiz.draft.queryTemplateConfig = { queryTemplateId:t.id, queryTemplateName:t.name, query:t.query, variables:{} };
+  qtSearch = '';
+  renderWizStep('ELIGIBILITY');
+}
+// The real component's reset clears the whole block, not just the name —
+// variables belong to the template that was chosen.
+function qtReset(){
+  wiz.draft.queryTemplateConfig = { queryTemplateId:'', queryTemplateName:'', query:'', variables:{} };
+  qtSearch = '';
+  renderWizStep('ELIGIBILITY');
+}
+// TestQueryResult in the real app is a 550px side panel that runs the query
+// with the values entered and shows what came back. Nothing executes here —
+// the result is illustrative and says so.
+function openQueryTestDrawer(){
+  const cfg = wiz.draft.queryTemplateConfig;
+  const t = queryTemplateById(cfg.queryTemplateId);
+  if(!t) return;
+  const filled = t.variables.map(v=>[v.displayName, cfg.variables[v.name]]);
+  const missing = filled.filter(([,val])=>!val).map(([label])=>label);
+  const resolved = t.variables.reduce((acc,v)=>acc.replace('${'+v.name+'}', cfg.variables[v.name] ? `'${cfg.variables[v.name]}'` : '${'+v.name+'}'), t.query);
+  openSideDrawer(`
+    <div class="sd-head"><div class="sd-title">Test Query</div><div class="sd-icon-btn" onclick="closeSideDrawer()">✕</div></div>
+    <div class="sd-body">
+      <div class="f-group"><label class="f-label">${t.name}</label><div class="f-hint" style="margin:0;">${t.description}</div></div>
+      <div class="f-group"><label class="f-label">Query</label>
+        <div class="card mono" style="box-shadow:none;background:var(--gray-25);font-size:12px;padding:10px 12px;">${escIncentiveText(resolved)}</div>
+      </div>
+      <div class="f-group"><label class="f-label">Values</label>
+        ${filled.length ? filled.map(([label,val])=>`<div class="rev-field-row"><div class="rev-field-key">${label}</div><div class="rev-field-val">${val ? escIncentiveText(val) : '<span style="color:var(--gray-500);">Not set</span>'}</div></div>`).join('') : `<div class="f-hint" style="margin:0;">This template takes no variables.</div>`}
+      </div>
+      ${missing.length
+        ? `<div class="f-hint" style="background:var(--error-bg);border:1px solid var(--error-border);border-radius:8px;padding:10px 14px;color:var(--error-text);">Fill in ${missing.join(' and ')} before running this.</div>`
+        : `<div class="f-group"><label class="f-label">Result</label>
+            <div class="card" style="box-shadow:none;background:var(--gray-25);padding:10px 12px;font-size:13px;">Matched <b>4,218</b> accounts. Illustrative only — nothing runs against a real database here.</div>
+          </div>`}
+    </div>
+    <div class="sd-foot"><button class="btn secondary" onclick="closeSideDrawer()">Close</button></div>`, 550);
+}
+
 function wizCondUpdate(key, idx, field, val){
   const c = wiz.draft[key][idx];
   c[field] = val;
@@ -5734,7 +5928,7 @@ function renderWizStep(stepId){
         <div class="toggle-row"><div><div class="toggle-row-label">Override Do Not Communicate (DNC)</div><div class="toggle-row-sub">Send even to customers on the Do-Not-Contact list.</div></div><div class="toggle ${d.bypassDnc?'on':''}" onclick="fieldUpdate('bypassDnc',!d.bypassDnc);renderWizStep('ELIGIBILITY')"></div></div>
         <div class="toggle-row"><div><div class="toggle-row-label">Allow Duplicate Accounts</div><div class="toggle-row-sub">Allow this customer to receive the nudge more than once.</div></div><div class="toggle ${d.allowDup?'on':''}" onclick="fieldUpdate('allowDup',!d.allowDup);renderWizStep('ELIGIBILITY')"></div></div>
         <div class="add-link" onclick="fieldUpdate('advancedOpen',!d.advancedOpen);renderWizStep('ELIGIBILITY')">${ic('sliders')} Advanced Settings</div>
-        ${d.advancedOpen ? `<div class="f-group" style="margin-top:10px;"><label class="f-label">Query Template</label><select class="f-input"><option value="">None</option><option>High EMI Propensity Query</option></select></div>` : ''}`;
+        ${d.advancedOpen ? queryDetailsHtml(d) : ''}`;
     if(d.nudgeType==='EXTERNAL_SOURCE'){
       // No API picker — dropped 2026-09-24 per Amogh, relaying tech team's
       // pushback: a dedicated "which API" selector adds a real integration
@@ -6573,6 +6767,7 @@ function reviewSections(){
     ] : [
       ['Eligibility Entity', (ELIGIBILITY_ENTITY_BY_TYPE[d.nudgeType]||[]).join(', ')||'—'],
       ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(condSummary).join(', ')||'—'],
+      ...(d.queryTemplateConfig?.queryTemplateName ? [['Query Template', d.queryTemplateConfig.queryTemplateName]] : []),
     ]});
   }
   if(wiz.triggerType==='event-based'){
@@ -8410,7 +8605,29 @@ function renderAbViewPage(){
 const CHANNEL_TABS = [{v:'SMS',l:'SMS'},{v:'EMAIL',l:'Email'},{v:'RCS',l:'RCS'},{v:'WHATSAPP',l:'WhatsApp'}];
 const CHANNEL_CONFIG_LABELS = {SMS:'SMS', EMAIL:'E-mail', RCS:'RCS', WHATSAPP:'WhatsApp'};
 const VENDOR_OPTIONS = {'IndusInd Bank (IBL)':'Karix', 'Yes Bank':'Gupshup'};
-const TEMPLATE_VARIABLES = ['email','mobile','customerFirstName','customerLastName','programName','cardExpiryMonth','cardExpiryYear','cardStatus','cardLastFourDigits','cardStatementDueDate','batchId','journeyId','currentStep','longUrl','shortUrl','benefitName','current-month'];
+// All 40, from communication-template/constants.js's own templateVariables.
+// The list here used to be a 17-entry subset, so two thirds of the real
+// variables could not be inserted into a template at all.
+const TEMPLATE_VARIABLES = [
+  'email','mobile','customerFirstName','customerLastName','programName','cardExpiryMonth','cardExpiryYear',
+  'cardStatus','cardLastFourDigits','cardStatementDueDate','cardStatementGraceDate','userConfigData','batchId',
+  'journeyId','currentStep','userProgressStatus','isCompleted','updatedAt','completedOn','createdAt','longUrl',
+  'shortUrl','milestoneThresholdValue','milestoneCurrentValue','milestoneRemainingValue',
+  'milestoneCurrentPercentage','milestoneRemainingPercentage','benefitName','benefitStartDate','benefitEndDate',
+  'benefitSubPlanStart','benefitSubPlanEnd','benefitOutcomeValue','last-financial-quarter',
+  'current-financial-quarter','next-financial-quarter','current-month','next-month','last-month','current-date'];
+
+// whatsappTemplateType + mediaConfig, verbatim from the same constants file.
+// In the real app the format itself is a vendor-driven field delivered with
+// the account's config (addCommunicationModal renders it through
+// renderFilteredFields and only special-cases it to clear the media); the
+// four values and the upload rules below are the fixed part.
+const WHATSAPP_TEMPLATE_TYPES = [['TEXT','Text'],['IMAGE','Image'],['VIDEO','Video'],['DOCUMENT','Document']];
+const WHATSAPP_MEDIA_CONFIG = {
+  IMAGE:    { label:'Upload Image',    description:'Size limit: 5MB. Supported Types: .jpeg, .png' },
+  VIDEO:    { label:'Upload Video',    description:'Size limit: 16MB. Supported Types: .mp4, .3gpp' },
+  DOCUMENT: { label:'Upload Document', description:'Size limit: 100MB. Supported Types: .pdf, .doc, .ppt, .xls, .txt, .docx, .pptx, .xlsx' },
+};
 
 const COMMS_TEMPLATES = [
   { id:'CT-3301', name:'EMI Conversion SMS', channelType:'SMS', partnerName:'IndusInd Bank (IBL)', vendorName:'Karix', accountName:'IBL-Karix-Txns', createdOn:'22 Jul 2026, 10:12', message:'Hi ${customerFirstName}, convert your recent purchase to EMI in just 2 taps: ${shortUrl}' },
@@ -8468,7 +8685,7 @@ function renderCommsList(){
 
 let cwiz = null;
 function openCommsCreate(){
-  cwiz = { isEdit:false, draft:{ id:null, channelType:commsState.tab, partnerName:'', accountName:'', name:'', vendorName:'', message:'', body:'', configured:false } };
+  cwiz = { isEdit:false, draft:{ id:null, channelType:commsState.tab, partnerName:'', accountName:'', name:'', vendorName:'', message:'', body:'', whatsappMessageFormat:'TEXT', mediaUrl:'', mediaFileName:'', configured:false } };
   switchPage('comms-create'); renderCommsCreate();
 }
 function openCommsEdit(id){
@@ -8512,19 +8729,47 @@ function renderCommsCreate(){
 // config + an extra 600px HTML-editor panel to its left when body-type is
 // "Enter Body Manually") — NOT a centered dialog. Uses #sideDrawer.
 function openCommsConfigModal(){
-  const d = cwiz.draft;
   cwiz.emailBodyType = cwiz.emailBodyType || 'MANUAL';
+  cwiz.configTab = 'CONFIGURE';
   renderCommsConfigDrawer();
 }
+// Mirrors handleFieldOptionSelect: picking a different WhatsApp format
+// clears mediaUrl and mediaFileName, because a file uploaded for one format
+// is not a valid asset for another.
+function commsSetWhatsappFormat(v){
+  cwiz.draft.whatsappMessageFormat = v;
+  cwiz.draft.mediaUrl = '';
+  cwiz.draft.mediaFileName = '';
+  renderCommsConfigDrawer();
+}
+function commsSetConfigTab(t){ cwiz.configTab = t; renderCommsConfigDrawer(); }
 function renderCommsConfigDrawer(){
   const d = cwiz.draft;
   const ch = CHANNEL_CONFIG_LABELS[d.channelType];
   const bodyField = d.channelType==='EMAIL' ? 'body' : 'message';
   const isEmail = d.channelType==='EMAIL';
   const isManual = cwiz.emailBodyType==='MANUAL';
+  // Media upload only exists for the three non-TEXT formats (the real
+  // modal's showMediaUpload), and each carries its own limits and types.
+  const mediaCfg = d.channelType==='WHATSAPP' ? WHATSAPP_MEDIA_CONFIG[d.whatsappMessageFormat] : null;
+  // Preview is an Email-only tab, and it is reachable only when the body is
+  // being typed rather than uploaded as a .zip — there is nothing to render
+  // a preview from until the HTML exists here.
+  const canPreview = isEmail && isManual;
+  const onPreview = canPreview && cwiz.configTab==='PREVIEW';
   openSideDrawer(`
     <div class="sd-head"><div class="sd-title">${ch} Configuration</div><div class="sd-icon-btn" onclick="closeSideDrawer()">✕</div></div>
+    ${isEmail ? `<div class="nlist-tabs" style="padding:0 20px;">
+      <div class="nlist-tab ${!onPreview?'active':''}" onclick="commsSetConfigTab('CONFIGURE')">Configure</div>
+      <div class="nlist-tab ${onPreview?'active':''}" style="${canPreview?'':'opacity:.4;cursor:not-allowed;'}" ${canPreview?`onclick="commsSetConfigTab('PREVIEW')"`:''} title="${canPreview?'':'Preview is available once the body is entered manually'}">Preview</div>
+    </div>` : ''}
     <div class="sd-body">
+      ${onPreview ? `
+        <div class="f-group"><label class="f-label">Preview</label>
+          <div class="f-hint" style="margin:0 0 8px;">How the body renders. Variables are shown as written, not filled in.</div>
+          <div class="card" style="box-shadow:none;background:#fff;min-height:220px;">${d.body || '<span style="color:var(--gray-500);font-size:13px;">Nothing to preview yet.</span>'}</div>
+        </div>
+      ` : `
       ${isEmail ? `
         <div class="f-group"><label class="f-label">E-mail Body</label>
           <div class="binary-pick">
@@ -8555,14 +8800,29 @@ function renderCommsConfigDrawer(){
           </select>
         </div>` : ''}
       ${d.channelType==='WHATSAPP' ? `
-        <div class="f-group"><label class="f-label">Media (Image / Video / Document)</label>
-          <div class="upload-box" onclick="cField('mediaUrl','media_asset.jpg');renderCommsConfigDrawer()">${ic('gift')}<div>${d.mediaUrl||'Upload Image — Size limit: 5MB. Supported Types: .jpeg, .png'}</div></div>
-        </div>` : ''}
+        <div class="f-group"><label class="f-label">Message Format</label>
+          <div class="f-hint" style="margin:0 0 6px;">Delivered with this account's vendor configuration.</div>
+          <select class="f-input" onchange="commsSetWhatsappFormat(this.value)">
+            ${WHATSAPP_TEMPLATE_TYPES.map(([v,l])=>`<option value="${v}" ${(d.whatsappMessageFormat||'TEXT')===v?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        ${mediaCfg ? `<div class="f-group"><label class="f-label">${mediaCfg.label}</label>
+          <div class="upload-box" onclick="cField('mediaFileName','media_asset');cField('mediaUrl','https://cdn.example.com/media_asset');renderCommsConfigDrawer()">${ic('file')}<div>${d.mediaFileName || mediaCfg.description}</div></div>
+        </div>` : ''}` : ''}
+      `}
     </div>
     <div class="sd-foot">
       <button class="btn secondary" onclick="closeSideDrawer()">Cancel</button>
-      <button class="btn primary" onclick="cField('${bodyField}',document.getElementById('commsBodyInput')?document.getElementById('commsBodyInput').value:cwiz.draft.${bodyField});cField('configured',true);closeSideDrawer();renderCommsCreate()">Save</button>
-    </div>`, isEmail ? (isManual ? 1200 : 600) : 550);
+      <button class="btn primary" onclick="commsSaveConfig()">Save</button>
+    </div>`, isEmail ? (isManual && !onPreview ? 1200 : 600) : 550);
+}
+function commsSaveConfig(){
+  const d = cwiz.draft;
+  const el = document.getElementById('commsBodyInput');
+  if(el) cField(d.channelType==='EMAIL' ? 'body' : 'message', el.value);
+  cField('configured', true);
+  closeSideDrawer();
+  renderCommsCreate();
 }
 function submitComms(){
   const d = cwiz.draft;
@@ -8585,13 +8845,362 @@ function openCommsView(id){
     </div>
     <div class="card" style="margin-top:12px;">
       <div class="modal-grid" style="grid-template-columns:1fr 1fr;">
-        ${[['Account Name',d.accountName],['Vendor',d.vendorName],['Issuer',d.partnerName],['Channel Type',d.channelType],['Created On',d.createdOn]].map(([k,v])=>`<div class="rev-field-row"><div class="rev-field-key">${k}</div><div class="rev-field-val">${v||'—'}</div></div>`).join('')}
+        ${[['Account Name',d.accountName],['Vendor',d.vendorName],['Issuer',d.partnerName],['Vendor Config Id',d.vendorConfigId],['Channel Type',d.channelType],['Created On',d.createdOn]].map(([k,v])=>`<div class="rev-field-row"><div class="rev-field-key">${k}</div><div class="rev-field-val">${v||'—'}</div></div>`).join('')}
       </div>
     </div>
     ${d.message ? `<div class="card"><p class="card-title">Message Body</p><div class="card" style="background:var(--gray-25);box-shadow:none;">${d.message}</div></div>` : ''}
-    ${d.body ? `<div class="card"><p class="card-title">E-mail Body</p><div class="card mono" style="background:var(--gray-25);box-shadow:none;font-size:12px;">${d.body}</div></div>` : ''}
+    ${d.body ? `<div class="card"><p class="card-title">E-mail Body</p><div class="card mono" style="background:var(--gray-25);box-shadow:none;font-size:12px;">${escIncentiveText(d.body)}</div></div>` : ''}
+    ${d.contentUrl ? `<div class="card"><p class="card-title">E-mail Body</p><div class="rev-field-row"><div class="rev-field-key">Content URL</div><div class="rev-field-val"><a href="#" onclick="return false;" style="color:var(--blue-cta);text-decoration:underline;">${d.contentUrl}</a></div></div></div>` : ''}
+    ${d.channelType==='WHATSAPP' ? `<div class="card"><p class="card-title">WhatsApp Media</p>
+      <div class="rev-field-row"><div class="rev-field-key">Message Format</div><div class="rev-field-val">${(WHATSAPP_TEMPLATE_TYPES.find(([v])=>v===(d.whatsappMessageFormat||'TEXT'))||[,'Text'])[1]}</div></div>
+      ${d.mediaUrl ? `<div class="rev-field-row"><div class="rev-field-key">Media</div><div class="rev-field-val"><a href="#" onclick="return false;" style="color:var(--blue-cta);text-decoration:underline;">View WhatsApp Media</a></div></div>`
+        : `<div class="rev-field-row"><div class="rev-field-key">Media</div><div class="rev-field-val" style="color:var(--gray-500);">No media on a text message.</div></div>`}
+    </div>` : ''}
   `;
   switchPage('comms-view');
+}
+
+/* =========================================================================
+   SUPPORT TOOLS -> QUERY TEMPLATES — verified against
+   supportTools/queryTemplates/{page.js, queryFilter.js, create/page.js,
+   [id]/page.js} and components/TestQuery/index.js.
+
+   Three screens, which is all the real route has: a filtered list, a create
+   screen whose variables are discovered by scanning the query for ${...},
+   and a read-only view. There is deliberately NO edit screen — the real
+   view page's Edit button is commented out with "right now edit
+   functionality not supporting", so building one here would be inventing a
+   capability that does not exist.
+   ========================================================================= */
+let qtList = { open:false, fId:'', fName:'', fIssuer:'', error:'',
+               applied:{ fId:'', fName:'', fIssuer:'' } };
+
+function qtFilterSet(k, v){ qtList[k] = v; }
+function qtFilterToggle(){ qtList.open = !qtList.open; renderQtList(); }
+function qtFilterClear(){
+  qtList.fId=''; qtList.fName=''; qtList.fIssuer=''; qtList.error='';
+  qtList.applied = { fId:'', fName:'', fIssuer:'' };
+  renderQtList();
+}
+// The real Apply refuses to run with nothing set — "At least one filter is
+// required" — rather than quietly re-fetching everything.
+function qtFilterApply(){
+  if(!(qtList.fId.trim() || qtList.fName.trim() || qtList.fIssuer)){
+    qtList.error = 'At least one filter is required'; renderQtList(); return;
+  }
+  qtList.error = '';
+  qtList.applied = { fId:qtList.fId.trim(), fName:qtList.fName.trim(), fIssuer:qtList.fIssuer };
+  qtList.open = false; renderQtList();
+}
+// Removing a chip re-filters straight away, the way handleRemoveFilter does.
+function qtFilterRemove(k){
+  qtList[k] = ''; qtList.applied[k] = ''; renderQtList();
+}
+
+function renderQtList(){
+  // Template Id is the narrowest filter, so the real screen disables the
+  // other two while it is set rather than combining them.
+  const byId = !!qtList.fId.trim();
+  const issuers = Object.keys(PROGRAM_OPTIONS);
+  const a = qtList.applied;
+  const chip = (k, label, val) => `<div class="msel-chip" style="background:var(--gray-100);color:var(--gray-600);">${label}: ${val}
+    <span style="cursor:pointer;margin-left:6px;color:var(--gray-500);" onclick="qtFilterRemove('${k}')">✕</span></div>`;
+
+  document.getElementById('qtFilters').innerHTML = `
+    <div style="width:100%;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <button class="btn secondary small" onclick="qtFilterToggle()">Filter ${qtList.open?'▴':'▾'}</button>
+        ${!qtList.open && a.fId ? chip('fId','TEMPLATE ID', a.fId) : ''}
+        ${!qtList.open && a.fName ? chip('fName','TEMPLATE NAME', a.fName) : ''}
+        ${!qtList.open && a.fIssuer ? chip('fIssuer','ISSUER', a.fIssuer) : ''}
+      </div>
+      ${qtList.open ? `
+        <div class="card" style="margin-top:10px;">
+          <div class="modal-grid" style="grid-template-columns:1fr 1fr 1fr;">
+            <div class="f-group" style="margin:0;"><label class="f-label">Query Template Id</label>
+              <input class="f-input" type="text" value="${qtList.fId}" oninput="qtFilterSet('fId',this.value)" onchange="renderQtList()"></div>
+            <div class="f-group" style="margin:0;"><label class="f-label">Query Template Name</label>
+              <input class="f-input" type="text" ${byId?'disabled':''} value="${qtList.fName}" oninput="qtFilterSet('fName',this.value)"></div>
+            <div class="f-group" style="margin:0;"><label class="f-label">Issuer Name</label>
+              <select class="f-input" ${byId?'disabled':''} onchange="qtFilterSet('fIssuer',this.value)">
+                <option value="">All issuers</option>${issuers.map(i=>`<option ${qtList.fIssuer===i?'selected':''}>${i}</option>`).join('')}
+              </select></div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px;">
+            ${qtList.error ? `<span style="font-size:12px;color:var(--error-text);">${qtList.error}</span>` : ''}
+            <button class="btn secondary small" onclick="qtFilterClear()">Clear All</button>
+            <button class="btn primary small" onclick="qtFilterApply()">Apply</button>
+          </div>
+        </div>` : ''}
+    </div>`;
+
+  const list = QUERY_TEMPLATES.filter(t =>
+    (!a.fId || t.id.toLowerCase().includes(a.fId.toLowerCase()))
+    && (!a.fName || t.name.toLowerCase().includes(a.fName.toLowerCase()))
+    && (!a.fIssuer || t.scope === a.fIssuer));
+
+  document.getElementById('qtListBody').innerHTML = list.map(t=>`
+    <tr onclick="openQtView('${t.id}')">
+      <td><b>${t.id}</b></td><td>${t.name}</td><td>${queryScopeHtml(t.scope)}</td>
+      <td>${t.createdOn}</td><td>${t.updatedOn}</td>
+      <td onclick="event.stopPropagation()">
+        <div class="dropdown-wrap">
+          <div class="dropdown-trigger" onclick="this.nextElementSibling.classList.toggle('open')">⋮</div>
+          <div class="dropdown-menu"><div class="dropdown-menu-item" onclick="openQtView('${t.id}')">View</div></div>
+        </div>
+      </td>
+    </tr>`).join('') || `<tr><td colspan="6"><div class="placeholder">No records found</div></td></tr>`;
+}
+
+/* ---- Create ---------------------------------------------------------- */
+let qt = null;
+function qtBlankVar(){ return { name:'', displayName:'', description:'', type:'', isListType:false }; }
+function openQtCreate(){
+  qt = { draft:{ scope:'', name:'', description:'', query:'', variables:[qtBlankVar()] } };
+  switchPage('qt-create'); renderQtCreate();
+}
+function qtField(k, v){ qt.draft[k] = v; }
+
+// handleTemplate, from the real create screen: the query is the source of
+// truth for which variables exist. A name appearing in ${...} adds a row;
+// a name disappearing removes its row only if nothing was typed into it, so
+// a half-described variable is never silently thrown away.
+function qtSetQuery(v){
+  qt.draft.query = v;
+  const detected = queryVarNames(v);
+  const prev = qt.draft.variables;
+  const existing = prev.map(x=>x.name);
+  const toAdd = detected.filter(n=>!existing.includes(n)).map(n=>Object.assign(qtBlankVar(), {name:n}));
+  const kept = prev.filter(x=>{
+    const untouched = !x.description && !x.displayName && !x.type;
+    if(!x.name && untouched && toAdd.length) return false;
+    if(!detected.includes(x.name) && untouched) return false;
+    return true;
+  });
+  qt.draft.variables = kept.concat(toAdd);
+  if(!qt.draft.variables.length) qt.draft.variables = [qtBlankVar()];
+  renderQtVariables();
+}
+function qtVarSet(i, k, v){ qt.draft.variables[i][k] = v; if(k==='name'||k==='type') renderQtVariables(); }
+function qtVarToggleList(i){ const vr = qt.draft.variables[i]; vr.isListType = !vr.isListType; renderQtVariables(); }
+function qtVarAdd(){ qt.draft.variables.push(qtBlankVar()); renderQtVariables(); }
+function qtVarRemove(i){ qt.draft.variables.splice(i,1); if(!qt.draft.variables.length) qt.draft.variables=[qtBlankVar()]; renderQtVariables(); }
+
+// A variable the manager described whose name no longer appears anywhere in
+// the query. Nothing will ever fill it, so the real screen calls it out
+// instead of posting it silently.
+function qtOrphans(){
+  const detected = queryVarNames(qt.draft.query);
+  return qt.draft.variables.filter(v=>v.name && !detected.includes(v.name)).map(v=>v.name);
+}
+
+function renderQtVariables(){
+  const vars = qt.draft.variables;
+  const orphans = qtOrphans();
+  document.getElementById('qtVarsRoot').innerHTML = `
+    <div class="f-group" style="margin-top:20px;">
+      <label class="f-label">Query Variables</label>
+      <div class="f-hint" style="margin:0 0 10px;">Writing <span class="mono">\${name}</span> in the query adds its variable here. Each one needs a field name and a data type before the query can run.</div>
+      ${orphans.length ? `<div class="f-hint" style="background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:8px;padding:10px 14px;color:var(--warning-text);margin:0 0 10px;">
+        ${orphans.length===1?'This variable is':'These variables are'} no longer in the query: ${orphans.map(n=>`<span class="mono">${n}</span>`).join(', ')}. Put ${orphans.length===1?'it':'them'} back or remove the row.</div>` : ''}
+      ${vars.map((v,i)=>`
+        <div class="cond-group">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+            <div class="toggle-row-label">Variable ${i+1}${v.name?` · ${v.name}`:''}</div>
+            ${vars.length>1 ? `<div class="cond-remove" title="Remove this variable" onclick="qtVarRemove(${i})">✕</div>` : ''}
+          </div>
+          <div class="modal-grid" style="grid-template-columns:1fr 1fr;margin-top:10px;">
+            <div class="f-group" style="margin:0;"><label class="f-label">Variable Name</label>
+              <input class="f-input mono" type="text" placeholder="minScore" value="${v.name}" oninput="qtVarSet(${i},'name',this.value)" onchange="renderQtVariables()"></div>
+            <div class="f-group" style="margin:0;"><label class="f-label">Field Name</label>
+              <input class="f-input" type="text" placeholder="Minimum score" value="${v.displayName}" oninput="qtVarSet(${i},'displayName',this.value)"></div>
+            <div class="f-group" style="margin:0;"><label class="f-label">Data Type</label>
+              <select class="f-input" onchange="qtVarSet(${i},'type',this.value)">
+                <option value="">Select data type</option>${QUERY_DATA_TYPES.map(([k,l])=>`<option value="${k}" ${v.type===k?'selected':''}>${l}</option>`).join('')}
+              </select></div>
+            <div class="f-group" style="margin:0;"><label class="f-label">Variable Description</label>
+              <input class="f-input" type="text" value="${v.description}" oninput="qtVarSet(${i},'description',this.value)"></div>
+          </div>
+          <div class="toggle-row" style="margin-top:10px;">
+            <div><div class="toggle-row-label">Takes a list of values</div><div class="toggle-row-sub">The value is typed comma separated and the query compares against all of them.</div></div>
+            <div class="toggle ${v.isListType?'on':''}" onclick="qtVarToggleList(${i})"></div>
+          </div>
+        </div>`).join('')}
+      <div class="add-link" onclick="qtVarAdd()">+ Add Variable</div>
+    </div>`;
+}
+
+function renderQtCreate(){
+  const d = qt.draft;
+  document.getElementById('qtCreateRoot').innerHTML = `
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px;">Manage Query / Create New Query Template</div>
+    <h1 class="page-title" style="margin-bottom:20px;">Create Query Template</h1>
+    <div class="card" style="max-width:760px;">
+      <div class="f-group"><label class="f-label">Query Scope (Issuer)</label>
+        <select class="f-input" onchange="qtField('scope',this.value)">
+          <option value="">Select issuer</option>${Object.keys(PROGRAM_OPTIONS).map(i=>`<option ${d.scope===i?'selected':''}>${i}</option>`).join('')}
+        </select></div>
+      <div class="f-group"><label class="f-label">Template Name</label>
+        <input class="f-input" type="text" value="${d.name}" oninput="qtField('name',this.value)"></div>
+      <div class="f-group"><label class="f-label">Template Description</label>
+        <input class="f-input" type="text" value="${d.description}" oninput="qtField('description',this.value)"></div>
+      <div class="f-group"><label class="f-label">Query Template</label>
+        <textarea class="f-input mono" rows="6" placeholder="Write your query here..." style="font-size:12px;" oninput="qtSetQuery(this.value)">${escIncentiveText(d.query)}</textarea></div>
+      <div id="qtVarsRoot"></div>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button class="btn secondary" onclick="switchPage('qt-list')">Cancel</button>
+        <button class="btn secondary" onclick="openQtTestDrawer()">▶ Test Query</button>
+        <button class="btn primary" onclick="qtCreate()">Create</button>
+      </div>
+    </div>`;
+  renderQtVariables();
+}
+
+// validateQueryTemplate, from the TestQuery component: a blank query, or any
+// variable missing its name, field name or data type, stops the run.
+function qtValidate(){
+  const d = qt.draft;
+  if(!d.query.trim()) return 'Query Template must not be blank';
+  for(let i=0;i<d.variables.length;i++){
+    const v = d.variables[i];
+    if(!v.name.trim()) return `Variable Name for ${i} index is mandatory`;
+    if(!v.displayName.trim()) return `Field Name for ${i} index is mandatory`;
+    if(!v.type.trim()) return `Data Type for ${i} index is mandatory`;
+  }
+  return '';
+}
+function qtCreate(){
+  const d = qt.draft;
+  if(!d.scope) return showToast('Query Scope (Issuer) is mandatory','error');
+  if(!d.name.trim()) return showToast('Template Name is mandatory','error');
+  const err = qtValidate();
+  if(err) return showToast(err,'error');
+  const now = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) + ', ' +
+              new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const id = 'QT-' + (300 + QUERY_TEMPLATES.filter(t=>t.id.startsWith('QT-3')).length + 1);
+  QUERY_TEMPLATES.push({ id, scope:d.scope, name:d.name.trim(), description:d.description.trim(),
+    query:d.query, variables:JSON.parse(JSON.stringify(d.variables)),
+    createdOn:now, updatedOn:now, usedBySmartTags:[] });
+  showToast('Query template created','success');
+  openQtView(id);
+}
+
+/* ---- Test Query ------------------------------------------------------ */
+// Substitutes whatever values are in hand into the query, leaving any
+// placeholder that has no value still visible as ${name} so the gap shows.
+function queryResolved(query, variables, values){
+  return (variables||[]).reduce((acc,v)=>{
+    const val = (values||{})[v.name];
+    return acc.split('${'+v.name+'}').join(val ? `'${val}'` : '${'+v.name+'}');
+  }, String(query||''));
+}
+// The real flow when no values have been entered yet: ask for one value per
+// variable, then show the result. Two steps, one drawer.
+let qtTestValues = {};
+function openQtTestDrawer(){
+  const err = qtValidate();
+  if(err) return showToast(err,'error');
+  qtTestValues = {};
+  qt.draft.variables.forEach(v=>{ qtTestValues[v.name]=''; });
+  renderQtTestDrawer();
+}
+function qtTestSet(name, v){ qtTestValues[name]=v; }
+function renderQtTestDrawer(ran){
+  const d = qt.draft;
+  const missing = d.variables.filter(v=>!String(qtTestValues[v.name]||'').trim()).map(v=>v.displayName);
+  openSideDrawer(`
+    <div class="sd-head"><div class="sd-title">Test Query</div><div class="sd-icon-btn" onclick="closeSideDrawer()">✕</div></div>
+    <div class="sd-body">
+      <div class="f-group"><label class="f-label">Query</label>
+        <div class="card mono" style="box-shadow:none;background:var(--gray-25);font-size:12px;padding:10px 12px;">${escIncentiveText(queryResolved(d.query, d.variables, qtTestValues))}</div>
+      </div>
+      ${d.variables.length ? `<div class="f-group"><label class="f-label">Values</label>
+        ${d.variables.map(v=>`
+          <div class="f-group" style="margin-bottom:8px;">
+            <label class="f-label" style="font-weight:500;">${v.displayName}${v.isListType?' (one or more, comma separated)':''}</label>
+            ${v.description ? `<div class="f-hint" style="margin:0 0 4px;">${v.description}</div>` : ''}
+            <input class="f-input" type="${queryVarInputType(v)}" value="${qtTestValues[v.name]||''}" oninput="qtTestSet('${v.name}',this.value)">
+          </div>`).join('')}
+      </div>` : `<div class="f-hint" style="margin:0;">This query takes no variables.</div>`}
+      ${ran ? `<div class="f-group"><label class="f-label">Result</label>
+        <div class="card" style="box-shadow:none;background:var(--gray-25);padding:10px 12px;font-size:13px;">Matched <b>4,218</b> accounts. Illustrative only — nothing runs against a real database here.</div>
+      </div>` : ''}
+    </div>
+    <div class="sd-foot">
+      <button class="btn secondary" onclick="closeSideDrawer()">Cancel</button>
+      <button class="btn primary" onclick="${missing.length ? `showToast('${(missing[0]||'').replace(/'/g,"")} is mandatory','error')` : 'renderQtTestDrawer(true)'}">Run Query</button>
+    </div>`, 550);
+}
+
+// The view screen's own Test Query, where the query itself cannot be edited
+// (isDisabled on the real component) and the values are still asked for.
+let qtViewTest = { id:'', values:{} };
+function openQtViewTest(id){
+  const t = queryTemplateById(id);
+  if(!t) return;
+  qtViewTest = { id, values:{} };
+  t.variables.forEach(v=>{ qtViewTest.values[v.name]=''; });
+  renderQtViewTest();
+}
+function qtViewTestSet(name, v){ qtViewTest.values[name]=v; }
+function renderQtViewTest(ran){
+  const t = queryTemplateById(qtViewTest.id);
+  const missing = t.variables.filter(v=>!String(qtViewTest.values[v.name]||'').trim()).map(v=>v.displayName);
+  openSideDrawer(`
+    <div class="sd-head"><div class="sd-title">Test Query</div><div class="sd-icon-btn" onclick="closeSideDrawer()">✕</div></div>
+    <div class="sd-body">
+      <div class="f-group"><label class="f-label">${t.name}</label><div class="f-hint" style="margin:0;">${t.description}</div></div>
+      <div class="f-group"><label class="f-label">Query</label>
+        <div class="card mono" style="box-shadow:none;background:var(--gray-25);font-size:12px;padding:10px 12px;">${escIncentiveText(queryResolved(t.query, t.variables, qtViewTest.values))}</div>
+        <div class="f-hint" style="margin:4px 0 0;">The query cannot be changed from here.</div>
+      </div>
+      ${t.variables.length ? `<div class="f-group"><label class="f-label">Values</label>
+        ${t.variables.map(v=>`
+          <div class="f-group" style="margin-bottom:8px;">
+            <label class="f-label" style="font-weight:500;">${v.displayName}${v.isListType?' (one or more, comma separated)':''}</label>
+            <div class="f-hint" style="margin:0 0 4px;">${v.description}</div>
+            <input class="f-input" type="${queryVarInputType(v)}" value="${qtViewTest.values[v.name]||''}" oninput="qtViewTestSet('${v.name}',this.value)">
+          </div>`).join('')}
+      </div>` : `<div class="f-hint" style="margin:0;">This query takes no variables.</div>`}
+      ${ran ? `<div class="f-group"><label class="f-label">Result</label>
+        <div class="card" style="box-shadow:none;background:var(--gray-25);padding:10px 12px;font-size:13px;">Matched <b>4,218</b> accounts. Illustrative only — nothing runs against a real database here.</div>
+      </div>` : ''}
+    </div>
+    <div class="sd-foot">
+      <button class="btn secondary" onclick="closeSideDrawer()">Cancel</button>
+      <button class="btn primary" onclick="${missing.length ? `showToast('${(missing[0]||'').replace(/'/g,"")} is mandatory','error')` : 'renderQtViewTest(true)'}">Run Query</button>
+    </div>`, 550);
+}
+
+/* ---- View ------------------------------------------------------------ */
+function openQtView(id){
+  const t = queryTemplateById(id);
+  if(!t) return;
+  const row = (k, v) => `<div class="rev-field-row"><div class="rev-field-key">${k}</div><div class="rev-field-val">${v||'—'}</div></div>`;
+  document.getElementById('qtViewRoot').innerHTML = `
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px;">Manage Query / ${t.name}</div>
+    <h1 class="page-title" style="margin-bottom:16px;">${t.name}</h1>
+    <div class="card" style="max-width:760px;">
+      ${row('Query Template ID', t.id)}
+      ${row('Query Template Description', t.description)}
+      <div class="f-group" style="margin-top:12px;"><label class="f-label">Query</label>
+        <div class="card mono" style="box-shadow:none;background:var(--gray-25);font-size:12px;padding:10px 12px;">${escIncentiveText(t.query)}</div>
+      </div>
+      ${row('Scope', queryScopeHtml(t.scope))}
+      ${row('Created On', t.createdOn)}
+      ${row('Last Modified On', t.updatedOn)}
+      ${row('Associated Smart Tag(s)', (t.usedBySmartTags||[]).join(', '))}
+      ${t.variables.length ? `
+        <div class="f-group" style="margin-top:16px;"><label class="f-label">Query Variables</label>
+          <table class="tbl" style="margin-top:6px;"><thead><tr><th>Variable</th><th>Field Name</th><th>Data Type</th><th>Description</th></tr></thead>
+          <tbody>${t.variables.map(v=>`<tr><td class="mono">${v.name}</td><td>${v.displayName}</td><td>${queryDataTypeLabel(v.type)}${v.isListType?' (list)':''}</td><td>${v.description||'—'}</td></tr>`).join('')}</tbody></table>
+        </div>` : ''}
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button class="btn secondary" onclick="switchPage('qt-list')">Back</button>
+        <button class="btn secondary" onclick="openQtViewTest('${t.id}')">▶ Test Query</button>
+      </div>
+    </div>`;
+  switchPage('qt-view');
 }
 
 /* =========================================================================
