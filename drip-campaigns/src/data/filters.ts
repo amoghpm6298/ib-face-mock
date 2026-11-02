@@ -124,12 +124,26 @@ export function dcFiltersOf(type: string, p: any): DripFilterRow[] {
 
 // Branch shares one question across its arms, so it reads a single row's
 // what rather than a list.
+//
+// `source` and `customSource` are the same field under two names — the
+// Branch form writes one, a designer file may carry either. Ingest has
+// always read both; this reads both too, so the two cannot disagree about
+// the same node. They did: a who-split filed as customSource alone fell to
+// the default below, and because ingest asks this function for the what it
+// then WROTE that Account answer onto the node, baking the smash in.
 export function dcBranchWhatOf(p: any): { group: string; field: string } {
   if (!p) return { group: 'Account', field: '' };
   if (p.what && p.what.group) return p.what;
-  switch (p.source) {
+  switch (p.source ?? p.customSource) {
     case 'Previous step outcome':
       return { group: 'Previous message', field: PREV_MESSAGE_FIELD };
+    // The designer files a who-split as "{Entity} attribute" plus the
+    // attribute itself. Transaction has a real group in the Branch picker
+    // now, so it resolves to it — ticket size reads as Transaction Amount
+    // rather than falling through to the default below, which would smash
+    // it onto Account.
+    case 'Transaction attribute':
+      return { group: 'Transaction', field: p.attribute || '' };
     case 'Entry event attribute':
       // Same rule on a Branch: the what clears and the arms stay.
       return { group: '', field: '' };

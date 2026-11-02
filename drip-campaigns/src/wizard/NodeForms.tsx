@@ -423,6 +423,9 @@ export function DecisionSplitForm({ p, onChange, previousStepChannel }: FormProp
           group={what.group}
           field={what.field}
           previousMessage
+          // A Branch routes on the event in hand, so one transaction's own
+          // attributes are a real question here — ticket size, for one.
+          transactionAttributes
           onPick={(group, field) =>
             // A new question makes every arm's comparison and value stale,
             // not merely hidden: the operator vocabularies are disjoint

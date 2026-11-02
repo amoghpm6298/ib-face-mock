@@ -495,7 +495,7 @@ export function deliveryStatusOptionsForSend(send: PrevStepSend): string[] {
 // lookback window", Milestone is still one benefit and a progress
 // comparison, Previous message is still the previous send's outcome.
 // ---------------------------------------------------------------------------
-export type FilterGroup = 'Account' | 'Card' | 'Card controls' | 'Customer' | 'Transactions' | 'Milestone' | 'App activity' | 'Previous message';
+export type FilterGroup = 'Account' | 'Card' | 'Card controls' | 'Customer' | 'Transaction' | 'Transactions' | 'Milestone' | 'App activity' | 'Previous message';
 export const TXN_EXISTS = 'a matching transaction exists';
 export const TXN_NONE = 'no matching transaction exists';
 export const PREV_MESSAGE_FIELD = 'Outcome';
@@ -516,7 +516,7 @@ export interface FilterOptionGroup {
 // There is no Entry event group. The entry event and its details belong to
 // the entry step, where the manager says who starts; a later Condition or
 // Branch does not ask about that same event again.
-export function dcFilterOptionGroups(opts?: { previousMessage?: boolean }): FilterOptionGroup[] {
+export function dcFilterOptionGroups(opts?: { previousMessage?: boolean; transactionAttributes?: boolean }): FilterOptionGroup[] {
   const fromEntity = (g: FilterGroup, entity: string): FilterOptionGroup => ({
     group: g,
     options: Object.keys(ELIGIBILITY_META[entity] || {}).map((field) => ({ group: g, field, label: field })),
@@ -527,8 +527,19 @@ export function dcFilterOptionGroups(opts?: { previousMessage?: boolean }): Filt
     // Sits next to Card because it is the same card, just its controls.
     fromEntity('Card controls', 'Card controls'),
     fromEntity('Customer', 'Customer'),
-    { group: 'Transactions', options: [{ group: 'Transactions', field: '', label: 'Transactions' }] },
   ];
+  // Transaction, singular: one transaction's own attributes — the ticket
+  // size of the purchase this branch is routing on. Deliberately NOT
+  // `Transactions` below, which asks whether a matching transaction exists
+  // in a lookback window. Two different questions, so two groups, listed
+  // next to each other with the singular one first.
+  //
+  // Only offered where a single transaction is the thing in hand: a Branch
+  // routing on the event that started the journey. An audience or a
+  // condition has no one transaction to mean, which is what the lookback
+  // row is for.
+  if (opts?.transactionAttributes) groups.push(fromEntity('Transaction', 'Transaction'));
+  groups.push({ group: 'Transactions', options: [{ group: 'Transactions', field: '', label: 'Transactions' }] });
   // Omitted entirely when the program has no milestone offers configured —
   // an empty group would read as a dead end, and there is nothing honest to
   // put in it.
@@ -553,7 +564,7 @@ export function dcFilterOptionGroups(opts?: { previousMessage?: boolean }): Filt
 // The entity whose attribute metadata backs a group, for the three groups
 // that are plain attribute lookups. The other three carry their own shape.
 export function dcEntityForGroup(group: string): string | null {
-  return group === 'Account' || group === 'Card' || group === 'Card controls' || group === 'Customer' ? group : null;
+  return group === 'Account' || group === 'Card' || group === 'Card controls' || group === 'Customer' || group === 'Transaction' ? group : null;
 }
 export function dcFilterAttrMeta(group: string, field: string): AttrMeta | null {
   const entity = dcEntityForGroup(group);

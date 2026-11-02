@@ -48,6 +48,7 @@ test.describe('Bare connector pill (the original "what is this?" bug)', () => {
   test('a bare (unlabeled) connector chip is invisible at rest and only reveals on hover', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+    await page.getByRole('button', { name: /Create from scratch/ }).click();
     await page.locator('input[type=text]').first().fill('Bare Chip Regression');
     await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
     await page.getByText('Continue to Goal →').click();

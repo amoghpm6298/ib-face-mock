@@ -38,14 +38,16 @@ export function WhatSelect({
   group,
   field,
   previousMessage,
+  transactionAttributes,
   onPick,
 }: {
   group: string;
   field: string;
   previousMessage?: boolean;
+  transactionAttributes?: boolean;
   onPick: (group: string, field: string) => void;
 }) {
-  const groups = dcFilterOptionGroups({ previousMessage });
+  const groups = dcFilterOptionGroups({ previousMessage, transactionAttributes });
   // App activity stores the chosen EVENT in `field`, but the group list
   // carries a single entry for it, so the select matches on the group alone.
   // Picking the event is a search, on the row.

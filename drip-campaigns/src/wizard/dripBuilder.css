@@ -20,6 +20,14 @@
 .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left 0.15s; box-shadow: var(--shadow-sm); }
 .toggle.on::after { left: 18px; }
 .dcb-rail .add-link { margin-bottom: 18px; }
+.create-choose { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+.create-choose-card {
+  text-align: left; padding: 20px; border: 1px solid var(--gray-200); border-radius: 12px;
+  background: #fff; cursor: pointer; display: flex; flex-direction: column; gap: 8px;
+}
+.create-choose-card:hover { border-color: var(--blue-cta); }
+.create-choose-card strong { font-size: 15px; color: var(--neutral-900); }
+.create-choose-card span { font-size: 13px; color: var(--gray-500); }
 .wiz-heading { font-size: 20px; font-weight: 700; color: var(--neutral-900); margin: 0 0 4px; }
 .wiz-sub { font-size: 13px; color: var(--gray-500); margin: 0 0 22px; }
 /* Spacing BETWEEN sections (the structural grouping), tighter than the

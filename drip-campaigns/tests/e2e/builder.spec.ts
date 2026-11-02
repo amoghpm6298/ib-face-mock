@@ -13,6 +13,7 @@ import { MILESTONE_OFFERS } from '../../src/data/sharedConstants';
 async function startNewCampaign(page: import('@playwright/test').Page, name: string) {
   await page.goto('/');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill(name);
   await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
   // "Skip to Builder" was removed — Continue to Goal is always enabled
@@ -30,6 +31,7 @@ async function startNewCampaign(page: import('@playwright/test').Page, name: str
 async function startNewCampaignWithGoal(page: import('@playwright/test').Page, name: string, eventCategory: string, eventType: string) {
   await page.goto('/');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill(name);
   await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
   await page.getByText('Continue to Goal →').click();
@@ -659,6 +661,7 @@ test('Goal Definition: Journey Events shows its own scoping fields + a locked-at
   // drawer — unlike every node's own config form.
   await page.goto('/');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Builder Spec: Journey Events Goal');
   await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
   await page.getByText('Continue to Goal →').click();

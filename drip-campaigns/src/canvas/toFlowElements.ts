@@ -29,8 +29,15 @@ function formatAbsTime(t: string): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function formatSendTiming(p: any): string {
   if (p.timing === 'Absolute') return formatAbsTime(p.absTime);
-  if (Number(p.relativeDuration) === 0) return 'Immediately after previous step';
-  return `${p.relativeDuration} ${p.relativeUnit} after previous step`;
+  // An imported Send can arrive with no timing filed at all. Say nothing
+  // rather than "undefined undefined after previous step", and do not
+  // invent a send time or a delay to fill the gap — the card simply has no
+  // timing line until someone sets one.
+  const d = p.relativeDuration;
+  if (d === undefined || d === null || d === '' || Number.isNaN(Number(d))) return '';
+  if (Number(d) === 0) return 'Immediately after previous step';
+  if (!p.relativeUnit) return '';
+  return `${d} ${p.relativeUnit} after previous step`;
 }
 
 export interface DripCanvasMetrics {

@@ -9,6 +9,7 @@ import { dcResetIdCounters, dcSeedIdCountersFrom } from './reducer/idGen';
 import { DripList } from './list/DripList';
 import { DripView } from './list/DripView';
 import { DripBuilder, type DripBuilderPayload } from './wizard/DripBuilder';
+import { CreateFlow } from './wizard/CreateFlow';
 import { Toast, type ToastState } from './components/Toast';
 import { Sidebar } from './components/Sidebar';
 
@@ -102,7 +103,19 @@ export function DripCampaignsApp() {
   if (view.kind === 'list') {
     body = <DripList campaigns={campaigns} onOpen={openRow} onCreate={openCreate} />;
   } else if (view.kind === 'create') {
-    body = <DripBuilder onBack={() => setView({ kind: 'list' })} onSaveDraft={handleSaveDraft} onSubmit={handleSubmit} />;
+    body = (
+      <CreateFlow
+        nextId={nextId(campaigns)}
+        onBack={() => setView({ kind: 'list' })}
+        onSaveDraft={handleSaveDraft}
+        onSubmit={handleSubmit}
+        onImported={(c) => {
+          setCampaigns((cs) => [...cs, c]);
+          if (c.root) dcSeedIdCountersFrom(c.root);
+          setView({ kind: 'editDraft', id: c.id });
+        }}
+      />
+    );
   } else if (view.kind === 'editDraft') {
     const c = campaigns.find((x) => x.id === view.id)!;
     body = <DripBuilder initial={c} onBack={() => setView({ kind: 'list' })} onSaveDraft={handleSaveDraft} onSubmit={handleSubmit} />;

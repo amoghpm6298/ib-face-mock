@@ -71,6 +71,7 @@ test('Kill Switch requires real confirmation; Cancel does not kill, confirming d
 test('full create -> build -> submit flow lands in the list as Pending Approval', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('App Flow Spec Campaign');
   await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
   await page.getByText('Continue to Goal →').click();
@@ -112,6 +113,7 @@ test('full create -> build -> submit flow lands in the list as Pending Approval'
 test('Save as Draft is always available from any step, even with open branches, and resuming a draft lands back on the Builder step', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Draft Spec Campaign');
   // Save straight from Basic Details — no entry added at all, still
   // genuinely incomplete, and still allowed.
