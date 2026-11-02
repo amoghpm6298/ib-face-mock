@@ -5660,13 +5660,18 @@ function queryDetailsHtml(d){
               <div class="f-group" style="margin-bottom:8px;">
                 <label class="f-label" style="font-weight:500;">${v.displayName}${v.isListType?' (one or more, comma separated)':''}</label>
                 <div class="f-hint" style="margin:0 0 4px;">${v.description}</div>
-                <input class="f-input" type="${queryVarInputType(v)}" value="${cfg.variables[v.name]||''}"
-                  oninput="wiz.draft.queryTemplateConfig.variables['${v.name}']=this.value">
+                <input class="f-input" type="${queryVarInputType(v)}" value="${escIncentiveText(cfg.variables[v.name]||'')}"
+                  oninput="qtNudgeVarSet(${picked.variables.indexOf(v)},this.value)">
               </div>`).join('')}
           </div>` : ''}
         <div class="add-link" onclick="openQueryTestDrawer()">${ic('workflow')} Test Query</div>
       ` : ''}`}
     </div>`;
+}
+function qtNudgeVarSet(i, val){
+  const cfg = wiz.draft.queryTemplateConfig;
+  const t = queryTemplateById(cfg.queryTemplateId);
+  if(t && t.variables[i]) cfg.variables[t.variables[i].name] = val;
 }
 function qtPick(id){
   const t = queryTemplateById(id);
@@ -8903,7 +8908,7 @@ function renderQtList(){
   const byId = !!qtList.fId.trim();
   const issuers = Object.keys(PROGRAM_OPTIONS);
   const a = qtList.applied;
-  const chip = (k, label, val) => `<div class="msel-chip" style="background:var(--gray-100);color:var(--gray-600);">${label}: ${val}
+  const chip = (k, label, val) => `<div class="msel-chip" style="background:var(--gray-100);color:var(--gray-600);">${label}: ${escIncentiveText(val)}
     <span style="cursor:pointer;margin-left:6px;color:var(--gray-500);" onclick="qtFilterRemove('${k}')">✕</span></div>`;
 
   document.getElementById('qtFilters').innerHTML = `
@@ -8918,9 +8923,9 @@ function renderQtList(){
         <div class="card" style="margin-top:10px;">
           <div class="modal-grid" style="grid-template-columns:1fr 1fr 1fr;">
             <div class="f-group" style="margin:0;"><label class="f-label">Query Template Id</label>
-              <input class="f-input" type="text" value="${qtList.fId}" oninput="qtFilterSet('fId',this.value)" onchange="renderQtList()"></div>
+              <input class="f-input" type="text" value="${escIncentiveText(qtList.fId)}" oninput="qtFilterSet('fId',this.value)" onchange="renderQtList()"></div>
             <div class="f-group" style="margin:0;"><label class="f-label">Query Template Name</label>
-              <input class="f-input" type="text" ${byId?'disabled':''} value="${qtList.fName}" oninput="qtFilterSet('fName',this.value)"></div>
+              <input class="f-input" type="text" ${byId?'disabled':''} value="${escIncentiveText(qtList.fName)}" oninput="qtFilterSet('fName',this.value)"></div>
             <div class="f-group" style="margin:0;"><label class="f-label">Issuer Name</label>
               <select class="f-input" ${byId?'disabled':''} onchange="qtFilterSet('fIssuer',this.value)">
                 <option value="">All issuers</option>${issuers.map(i=>`<option ${qtList.fIssuer===i?'selected':''}>${i}</option>`).join('')}
@@ -8941,7 +8946,7 @@ function renderQtList(){
 
   document.getElementById('qtListBody').innerHTML = list.map(t=>`
     <tr onclick="openQtView('${t.id}')">
-      <td><b>${t.id}</b></td><td>${t.name}</td><td>${queryScopeHtml(t.scope)}</td>
+      <td><b>${t.id}</b></td><td>${escIncentiveText(t.name)}</td><td>${queryScopeHtml(t.scope)}</td>
       <td>${t.createdOn}</td><td>${t.updatedOn}</td>
       <td onclick="event.stopPropagation()">
         <div class="dropdown-wrap">
@@ -8981,7 +8986,10 @@ function qtSetQuery(v){
   if(!qt.draft.variables.length) qt.draft.variables = [qtBlankVar()];
   renderQtVariables();
 }
-function qtVarSet(i, k, v){ qt.draft.variables[i][k] = v; if(k==='name'||k==='type') renderQtVariables(); }
+// A re-render replaces the box being typed into, so only the select — which
+// cannot lose a caret — refreshes from here. The name box refreshes the
+// header label and the orphan warning on blur, through its own onchange.
+function qtVarSet(i, k, v){ qt.draft.variables[i][k] = v; if(k==='type') renderQtVariables(); }
 function qtVarToggleList(i){ const vr = qt.draft.variables[i]; vr.isListType = !vr.isListType; renderQtVariables(); }
 function qtVarAdd(){ qt.draft.variables.push(qtBlankVar()); renderQtVariables(); }
 function qtVarRemove(i){ qt.draft.variables.splice(i,1); if(!qt.draft.variables.length) qt.draft.variables=[qtBlankVar()]; renderQtVariables(); }
@@ -9002,24 +9010,24 @@ function renderQtVariables(){
       <label class="f-label">Query Variables</label>
       <div class="f-hint" style="margin:0 0 10px;">Writing <span class="mono">\${name}</span> in the query adds its variable here. Each one needs a field name and a data type before the query can run.</div>
       ${orphans.length ? `<div class="f-hint" style="background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:8px;padding:10px 14px;color:var(--warning-text);margin:0 0 10px;">
-        ${orphans.length===1?'This variable is':'These variables are'} no longer in the query: ${orphans.map(n=>`<span class="mono">${n}</span>`).join(', ')}. Put ${orphans.length===1?'it':'them'} back or remove the row.</div>` : ''}
+        ${orphans.length===1?'This variable is':'These variables are'} no longer in the query: ${orphans.map(n=>`<span class="mono">${escIncentiveText(n)}</span>`).join(', ')}. Put ${orphans.length===1?'it':'them'} back or remove the row.</div>` : ''}
       ${vars.map((v,i)=>`
         <div class="cond-group">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
-            <div class="toggle-row-label">Variable ${i+1}${v.name?` · ${v.name}`:''}</div>
+            <div class="toggle-row-label">Variable ${i+1}${v.name?` · ${escIncentiveText(v.name)}`:''}</div>
             ${vars.length>1 ? `<div class="cond-remove" title="Remove this variable" onclick="qtVarRemove(${i})">✕</div>` : ''}
           </div>
           <div class="modal-grid" style="grid-template-columns:1fr 1fr;margin-top:10px;">
             <div class="f-group" style="margin:0;"><label class="f-label">Variable Name</label>
-              <input class="f-input mono" type="text" placeholder="minScore" value="${v.name}" oninput="qtVarSet(${i},'name',this.value)" onchange="renderQtVariables()"></div>
+              <input class="f-input mono" type="text" placeholder="minScore" value="${escIncentiveText(v.name)}" oninput="qtVarSet(${i},'name',this.value)" onchange="renderQtVariables()"></div>
             <div class="f-group" style="margin:0;"><label class="f-label">Field Name</label>
-              <input class="f-input" type="text" placeholder="Minimum score" value="${v.displayName}" oninput="qtVarSet(${i},'displayName',this.value)"></div>
+              <input class="f-input" type="text" placeholder="Minimum score" value="${escIncentiveText(v.displayName)}" oninput="qtVarSet(${i},'displayName',this.value)"></div>
             <div class="f-group" style="margin:0;"><label class="f-label">Data Type</label>
               <select class="f-input" onchange="qtVarSet(${i},'type',this.value)">
                 <option value="">Select data type</option>${QUERY_DATA_TYPES.map(([k,l])=>`<option value="${k}" ${v.type===k?'selected':''}>${l}</option>`).join('')}
               </select></div>
             <div class="f-group" style="margin:0;"><label class="f-label">Variable Description</label>
-              <input class="f-input" type="text" value="${v.description}" oninput="qtVarSet(${i},'description',this.value)"></div>
+              <input class="f-input" type="text" value="${escIncentiveText(v.description)}" oninput="qtVarSet(${i},'description',this.value)"></div>
           </div>
           <div class="toggle-row" style="margin-top:10px;">
             <div><div class="toggle-row-label">Takes a list of values</div><div class="toggle-row-sub">The value is typed comma separated and the query compares against all of them.</div></div>
@@ -9041,9 +9049,9 @@ function renderQtCreate(){
           <option value="">Select issuer</option>${Object.keys(PROGRAM_OPTIONS).map(i=>`<option ${d.scope===i?'selected':''}>${i}</option>`).join('')}
         </select></div>
       <div class="f-group"><label class="f-label">Template Name</label>
-        <input class="f-input" type="text" value="${d.name}" oninput="qtField('name',this.value)"></div>
+        <input class="f-input" type="text" value="${escIncentiveText(d.name)}" oninput="qtField('name',this.value)"></div>
       <div class="f-group"><label class="f-label">Template Description</label>
-        <input class="f-input" type="text" value="${d.description}" oninput="qtField('description',this.value)"></div>
+        <input class="f-input" type="text" value="${escIncentiveText(d.description)}" oninput="qtField('description',this.value)"></div>
       <div class="f-group"><label class="f-label">Query Template</label>
         <textarea class="f-input mono" rows="6" placeholder="Write your query here..." style="font-size:12px;" oninput="qtSetQuery(this.value)">${escIncentiveText(d.query)}</textarea></div>
       <div id="qtVarsRoot"></div>
@@ -9104,10 +9112,20 @@ function openQtTestDrawer(){
   qt.draft.variables.forEach(v=>{ qtTestValues[v.name]=''; });
   renderQtTestDrawer();
 }
-function qtTestSet(name, v){ qtTestValues[name]=v; }
+// Addressed by position: a variable name is typed by the manager and can
+// carry a quote, which an inline handler built around the name could not
+// survive.
+function qtTestSet(i, v){ qtTestValues[qt.draft.variables[i].name]=v; }
+// validateTestQueryVariableValue, run on the click rather than at draw time:
+// the value boxes do not re-render as they are filled in, so a button that
+// baked in what was missing when the drawer opened could never be satisfied.
+function qtRunTest(){
+  const miss = qt.draft.variables.find(v=>!String(qtTestValues[v.name]||'').trim());
+  if(miss) return showToast(`${miss.displayName} is mandatory`,'error');
+  renderQtTestDrawer(true);
+}
 function renderQtTestDrawer(ran){
   const d = qt.draft;
-  const missing = d.variables.filter(v=>!String(qtTestValues[v.name]||'').trim()).map(v=>v.displayName);
   openSideDrawer(`
     <div class="sd-head"><div class="sd-title">Test Query</div><div class="sd-icon-btn" onclick="closeSideDrawer()">✕</div></div>
     <div class="sd-body">
@@ -9117,9 +9135,9 @@ function renderQtTestDrawer(ran){
       ${d.variables.length ? `<div class="f-group"><label class="f-label">Values</label>
         ${d.variables.map(v=>`
           <div class="f-group" style="margin-bottom:8px;">
-            <label class="f-label" style="font-weight:500;">${v.displayName}${v.isListType?' (one or more, comma separated)':''}</label>
-            ${v.description ? `<div class="f-hint" style="margin:0 0 4px;">${v.description}</div>` : ''}
-            <input class="f-input" type="${queryVarInputType(v)}" value="${qtTestValues[v.name]||''}" oninput="qtTestSet('${v.name}',this.value)">
+            <label class="f-label" style="font-weight:500;">${escIncentiveText(v.displayName)}${v.isListType?' (one or more, comma separated)':''}</label>
+            ${v.description ? `<div class="f-hint" style="margin:0 0 4px;">${escIncentiveText(v.description)}</div>` : ''}
+            <input class="f-input" type="${queryVarInputType(v)}" value="${escIncentiveText(qtTestValues[v.name]||'')}" oninput="qtTestSet(${d.variables.indexOf(v)},this.value)">
           </div>`).join('')}
       </div>` : `<div class="f-hint" style="margin:0;">This query takes no variables.</div>`}
       ${ran ? `<div class="f-group"><label class="f-label">Result</label>
@@ -9128,7 +9146,7 @@ function renderQtTestDrawer(ran){
     </div>
     <div class="sd-foot">
       <button class="btn secondary" onclick="closeSideDrawer()">Cancel</button>
-      <button class="btn primary" onclick="${missing.length ? `showToast('${(missing[0]||'').replace(/'/g,"")} is mandatory','error')` : 'renderQtTestDrawer(true)'}">Run Query</button>
+      <button class="btn primary" onclick="qtRunTest()">Run Query</button>
     </div>`, 550);
 }
 
@@ -9142,14 +9160,19 @@ function openQtViewTest(id){
   t.variables.forEach(v=>{ qtViewTest.values[v.name]=''; });
   renderQtViewTest();
 }
-function qtViewTestSet(name, v){ qtViewTest.values[name]=v; }
+function qtViewTestSet(i, v){ qtViewTest.values[queryTemplateById(qtViewTest.id).variables[i].name]=v; }
+function qtRunViewTest(){
+  const t = queryTemplateById(qtViewTest.id);
+  const miss = t.variables.find(v=>!String(qtViewTest.values[v.name]||'').trim());
+  if(miss) return showToast(`${miss.displayName} is mandatory`,'error');
+  renderQtViewTest(true);
+}
 function renderQtViewTest(ran){
   const t = queryTemplateById(qtViewTest.id);
-  const missing = t.variables.filter(v=>!String(qtViewTest.values[v.name]||'').trim()).map(v=>v.displayName);
   openSideDrawer(`
     <div class="sd-head"><div class="sd-title">Test Query</div><div class="sd-icon-btn" onclick="closeSideDrawer()">✕</div></div>
     <div class="sd-body">
-      <div class="f-group"><label class="f-label">${t.name}</label><div class="f-hint" style="margin:0;">${t.description}</div></div>
+      <div class="f-group"><label class="f-label">${escIncentiveText(t.name)}</label><div class="f-hint" style="margin:0;">${escIncentiveText(t.description)}</div></div>
       <div class="f-group"><label class="f-label">Query</label>
         <div class="card mono" style="box-shadow:none;background:var(--gray-25);font-size:12px;padding:10px 12px;">${escIncentiveText(queryResolved(t.query, t.variables, qtViewTest.values))}</div>
         <div class="f-hint" style="margin:4px 0 0;">The query cannot be changed from here.</div>
@@ -9157,9 +9180,9 @@ function renderQtViewTest(ran){
       ${t.variables.length ? `<div class="f-group"><label class="f-label">Values</label>
         ${t.variables.map(v=>`
           <div class="f-group" style="margin-bottom:8px;">
-            <label class="f-label" style="font-weight:500;">${v.displayName}${v.isListType?' (one or more, comma separated)':''}</label>
-            <div class="f-hint" style="margin:0 0 4px;">${v.description}</div>
-            <input class="f-input" type="${queryVarInputType(v)}" value="${qtViewTest.values[v.name]||''}" oninput="qtViewTestSet('${v.name}',this.value)">
+            <label class="f-label" style="font-weight:500;">${escIncentiveText(v.displayName)}${v.isListType?' (one or more, comma separated)':''}</label>
+            <div class="f-hint" style="margin:0 0 4px;">${escIncentiveText(v.description)}</div>
+            <input class="f-input" type="${queryVarInputType(v)}" value="${escIncentiveText(qtViewTest.values[v.name]||'')}" oninput="qtViewTestSet(${t.variables.indexOf(v)},this.value)">
           </div>`).join('')}
       </div>` : `<div class="f-hint" style="margin:0;">This query takes no variables.</div>`}
       ${ran ? `<div class="f-group"><label class="f-label">Result</label>
@@ -9168,7 +9191,7 @@ function renderQtViewTest(ran){
     </div>
     <div class="sd-foot">
       <button class="btn secondary" onclick="closeSideDrawer()">Cancel</button>
-      <button class="btn primary" onclick="${missing.length ? `showToast('${(missing[0]||'').replace(/'/g,"")} is mandatory','error')` : 'renderQtViewTest(true)'}">Run Query</button>
+      <button class="btn primary" onclick="qtRunViewTest()">Run Query</button>
     </div>`, 550);
 }
 
@@ -9178,11 +9201,11 @@ function openQtView(id){
   if(!t) return;
   const row = (k, v) => `<div class="rev-field-row"><div class="rev-field-key">${k}</div><div class="rev-field-val">${v||'—'}</div></div>`;
   document.getElementById('qtViewRoot').innerHTML = `
-    <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px;">Manage Query / ${t.name}</div>
-    <h1 class="page-title" style="margin-bottom:16px;">${t.name}</h1>
+    <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px;">Manage Query / ${escIncentiveText(t.name)}</div>
+    <h1 class="page-title" style="margin-bottom:16px;">${escIncentiveText(t.name)}</h1>
     <div class="card" style="max-width:760px;">
       ${row('Query Template ID', t.id)}
-      ${row('Query Template Description', t.description)}
+      ${row('Query Template Description', escIncentiveText(t.description))}
       <div class="f-group" style="margin-top:12px;"><label class="f-label">Query</label>
         <div class="card mono" style="box-shadow:none;background:var(--gray-25);font-size:12px;padding:10px 12px;">${escIncentiveText(t.query)}</div>
       </div>
@@ -9193,7 +9216,7 @@ function openQtView(id){
       ${t.variables.length ? `
         <div class="f-group" style="margin-top:16px;"><label class="f-label">Query Variables</label>
           <table class="tbl" style="margin-top:6px;"><thead><tr><th>Variable</th><th>Field Name</th><th>Data Type</th><th>Description</th></tr></thead>
-          <tbody>${t.variables.map(v=>`<tr><td class="mono">${v.name}</td><td>${v.displayName}</td><td>${queryDataTypeLabel(v.type)}${v.isListType?' (list)':''}</td><td>${v.description||'—'}</td></tr>`).join('')}</tbody></table>
+          <tbody>${t.variables.map(v=>`<tr><td class="mono">${escIncentiveText(v.name)}</td><td>${escIncentiveText(v.displayName)}</td><td>${queryDataTypeLabel(v.type)}${v.isListType?' (list)':''}</td><td>${escIncentiveText(v.description||'—')}</td></tr>`).join('')}</tbody></table>
         </div>` : ''}
       <div style="display:flex;gap:10px;margin-top:20px;">
         <button class="btn secondary" onclick="switchPage('qt-list')">Back</button>
