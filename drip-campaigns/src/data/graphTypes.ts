@@ -194,4 +194,15 @@ export interface DripCampaign {
   // small keyed object rather than a flat field per list so adding a new
   // exclusion type later is one more key, not a new top-level field.
   guardrails?: { dnc: boolean; npa: boolean };
+  // The file this campaign was imported from, kept verbatim.
+  //
+  // An imported campaign is meant to be edited — renamed, re-routed, added
+  // to, until it may share nothing with what arrived. That is exactly why
+  // the original is worth keeping: once it has been edited there is no
+  // other way to see what the designer actually proposed, or to hand the
+  // file to someone else. Stored as the raw text rather than a re-encoding
+  // of the parsed object, so what comes back out is byte-for-byte what came
+  // in, including the blocks this app does not read.
+  importedJson?: string;
+  importedAt?: string;
 }

@@ -91,7 +91,28 @@ function txnRowFrom(t: DripTxnHistoryCriteria | undefined): DripFilterRow {
   return { group: 'Transactions', field: '', operator: txn.existence === 'none' ? TXN_NONE : TXN_EXISTS, txn };
 }
 
+// Eligibility is an OR of ANDs — "(cond1 and cond2) or (cond3)" — which is
+// the shape the real nudge screen uses too: an outer OR group whose children
+// are AND groups, exactly two levels deep. Deeper nesting is deliberately
+// not offered; sum-of-products covers real targeting without a tree builder
+// nobody can read.
+//
+// A config saved before grouping has a flat `filters` list, which IS one AND
+// group, so it reads as `[rows]` with nothing to migrate on disk — the same
+// read-time rule every other legacy shape here follows.
+export function dcFilterGroupsOf(type: string, p: any): DripFilterRow[][] {
+  if (p && Array.isArray(p.filterGroups)) {
+    return (p.filterGroups as DripFilterRow[][])
+      .map((grp) => (grp || []).map((r) => (r.group === 'Entry event' ? { ...r, group: '', field: '' } : r)));
+  }
+  const flat = dcFiltersOf(type, p);
+  return flat.length ? [flat] : [];
+}
+
+// Every row across every group, for the readers that only count or scan and
+// do not care how the rows are grouped.
 export function dcFiltersOf(type: string, p: any): DripFilterRow[] {
+  if (p && Array.isArray(p.filterGroups)) return dcFilterGroupsOf(type, p).flat();
   if (!p) return [];
   // A row saved under the retired Entry event group opens with its what
   // cleared, left in place to be picked again.
@@ -277,6 +298,30 @@ export function dcFilterSentences(rows: DripFilterRow[] | undefined): string[] {
   return dcCompleteFilters(rows).map((r) => dcFilterSentence(r));
 }
 
+// Groups that still say something once incomplete rows are dropped. An
+// empty group is not a wildcard — it is a group nobody finished, so it is
+// ignored rather than treated as "anyone matches this arm of the OR".
+export function dcCompleteFilterGroups(groups: DripFilterRow[][] | undefined): DripFilterRow[][] {
+  return (groups || []).map((g) => dcCompleteFilters(g)).filter((g) => g.length > 0);
+}
+
+// Read back as sentences: rows within a group are AND'd, groups are OR'd.
+// One group reads exactly as it always did — no parentheses, no "or" — so
+// every campaign that predates grouping is unchanged on screen.
+export function dcFilterGroupSentences(groups: DripFilterRow[][] | undefined): string[] {
+  const kept = dcCompleteFilterGroups(groups);
+  if (kept.length <= 1) return (kept[0] || []).map((r) => dcFilterSentence(r));
+  return kept.map((g) => g.map((r) => dcFilterSentence(r)).join(' and '));
+}
+
+// "(A and B) or (C)" on one line, for somewhere with no room for a list.
+export function dcFilterGroupSentence(groups: DripFilterRow[][] | undefined): string {
+  const kept = dcCompleteFilterGroups(groups);
+  if (!kept.length) return '';
+  if (kept.length === 1) return kept[0].map((r) => dcFilterSentence(r)).join(' and ');
+  return kept.map((g) => `(${g.map((r) => dcFilterSentence(r)).join(' and ')})`).join(' or ');
+}
+
 // Entry · Event and Wait for Event narrow on their own event's attributes,
 // which are not filter rows and so never passed through dcFiltersOf — it
 // answers for ENTRY_SEGMENT and SPLIT and returns nothing for anything
@@ -305,8 +350,18 @@ export function dcEventConditionSentences(type: string, p: any): string[] {
 
 // Everything a step has to say, whichever shape it keeps it in. One entry
 // point so Review and the step panel cannot show different things.
+// One line per group. With more than one group the lines are alternatives,
+// not a list of requirements, so every line after the first says so — two
+// bare lines would read as AND, which is what they meant before grouping
+// existed and is the opposite of what they mean now.
 export function dcStepSentences(type: string, p: any): string[] {
-  const rows = dcFilterSentences(dcFiltersOf(type, p));
+  const all = dcFilterGroupsOf(type, p);
+  // Count GROUPS, not lines: one group returns a line per row, so counting
+  // lines would mark the second row of a single AND'd group as an
+  // alternative — the exact opposite of what it means.
+  const groupCount = dcCompleteFilterGroups(all).length;
+  const lines = dcFilterGroupSentences(all);
+  const rows = groupCount > 1 ? lines.map((g, i) => (i === 0 ? g : `or ${g}`)) : lines;
   return rows.length ? rows : dcEventConditionSentences(type, p);
 }
 

@@ -287,7 +287,62 @@ export function FilterComparison({ row, onPatch }: { row: DripFilterRow; onPatch
   );
 }
 
-export function FilterRows({ rows, onChange, previousMessage, previousStepChannel }: FilterRowsProps) {
+// Eligibility is an OR of ANDs: "(cond1 and cond2) or (cond3)". Each group
+// is an ordinary AND'd list — the same FilterRows every surface already
+// uses — and the groups are OR'd between. Two levels only, which is what
+// the real nudge screen offers and as deep as anyone can read at a glance.
+export function FilterGroups({
+  groups,
+  onChange,
+  previousMessage,
+  previousStepChannel,
+}: {
+  groups: DripFilterRow[][];
+  onChange: (groups: DripFilterRow[][]) => void;
+  previousMessage?: boolean;
+  previousStepChannel?: PrevStepSend | null;
+}) {
+  // Always show one group to type into, even before anything is added.
+  const shown = groups.length ? groups : [[]];
+  const setGroup = (i: number, rows: DripFilterRow[]) => onChange(shown.map((g, idx) => (idx === i ? rows : g)));
+  // Removing the last condition of an extra group removes the group too —
+  // an empty alternative is not a question, and leaving it would read as
+  // "or anyone".
+  const dropEmpty = (i: number, rows: DripFilterRow[]) =>
+    rows.length === 0 && shown.length > 1 ? onChange(shown.filter((_, idx) => idx !== i)) : setGroup(i, rows);
+
+  return (
+    <>
+      {shown.map((rows, i) => (
+        <div key={i}>
+          {i > 0 && (
+            <div className="filter-or">
+              <span>OR</span>
+            </div>
+          )}
+          <div className="filter-group">
+            <FilterRows
+              rows={rows}
+              onChange={(next) => dropEmpty(i, next)}
+              previousMessage={previousMessage}
+              previousStepChannel={previousStepChannel}
+              inGroup
+            />
+            {rows.length > 1 && <p className="f-hint" style={{ margin: '6px 0 0' }}>A customer must match all of them.</p>}
+          </div>
+        </div>
+      ))}
+      <div className="add-link" onClick={() => onChange([...shown, []])}>
+        + Add OR group
+      </div>
+      {shown.length > 1 && (
+        <p className="f-hint" style={{ margin: '4px 0 0' }}>A customer qualifies by matching any one group.</p>
+      )}
+    </>
+  );
+}
+
+export function FilterRows({ rows, onChange, previousMessage, previousStepChannel, inGroup }: FilterRowsProps & { inGroup?: boolean }) {
   const setRow = (i: number, patch: Partial<DripFilterRow>) => onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   const removeRow = (i: number) => onChange(rows.filter((_, idx) => idx !== i));
   const addRow = () => onChange([...rows, dcDefaultFilterRow()]);
@@ -359,7 +414,7 @@ export function FilterRows({ rows, onChange, previousMessage, previousStepChanne
       <div className="add-link" onClick={addRow}>
         + Add filter
       </div>
-      {rows.length > 1 && <p className="f-hint" style={{ margin: '4px 0 0' }}>A customer must match all of them.</p>}
+      {rows.length > 1 && !inGroup && <p className="f-hint" style={{ margin: '4px 0 0' }}>A customer must match all of them.</p>}
       {previousMessage && previousStepChannel && (
         <p className="f-hint" style={{ margin: '4px 0 0' }}>
           Previous message reads{' '}

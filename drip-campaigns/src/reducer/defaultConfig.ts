@@ -6,7 +6,7 @@ import type { DcNodeType } from '../data/nodeMeta';
 import type { DcAddingAt } from './campaignReducer';
 import { dcGoalLabel } from './labelMeta';
 import { dcNewBranchId } from './idGen';
-import { dcBranchWhatOf, dcCompleteFilters, dcFilterRowComplete, dcFiltersOf } from '../data/filters';
+import { dcBranchWhatOf, dcCompleteFilterGroups, dcFilterRowComplete, dcFilterGroupsOf } from '../data/filters';
 
 // Shared default for Condition's "Transaction history" source and Entry ·
 // Audience's own optional block — same starting shape for both, so neither
@@ -70,14 +70,19 @@ export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// Same rule as the label function: an imported node may carry no config, or
+// only part of one. An incomplete node is simply not valid yet — it must
+// never throw, because that would block the very drawer the manager needs in
+// order to complete it.
 export function dcAddFormValid(t: DcNodeType, p: any): boolean {
+  p = p || {};
   if (t === 'ENTRY_EVENT' || t === 'WAIT_UNTIL') return !!p.eventType;
   if (t === 'SEND') {
     if (!(p.account && p.templateId)) return false;
     if (!p.fallbackChannel) return true;
     return p.fallbackChannel !== p.channel && !!(p.fallbackAccount && p.fallbackTemplateId);
   }
-  if (t === 'RANDOM_SPLIT') return p.branches.reduce((s: number, b: { pct: number }) => s + Number(b.pct || 0), 0) === 100;
+  if (t === 'RANDOM_SPLIT') return (p.branches || []).reduce((s: number, b: { pct: number }) => s + Number(b.pct || 0), 0) === 100;
   if (t === 'DECISION_SPLIT') {
     // One shared question, then every arm needs a complete comparison
     // against it. Each arm is checked as a filter row carrying the shared
@@ -85,8 +90,8 @@ export function dcAddFormValid(t: DcNodeType, p: any): boolean {
     const what = dcBranchWhatOf(p);
     if (what.group !== 'Transactions' && what.group !== 'Previous message' && !what.field) return false;
     return (
-      p.branches.length > 0 &&
-      p.branches.every((b: any) =>
+      (p.branches || []).length > 0 &&
+      (p.branches || []).every((b: any) =>
         dcFilterRowComplete({ ...what, operator: b.operator, value: b.value, value2: b.value2, values: b.values, details: b.details, txn: p.txn })
       )
     );
@@ -94,7 +99,9 @@ export function dcAddFormValid(t: DcNodeType, p: any): boolean {
   // A Condition has to actually check something — otherwise Yes/No is
   // meaningless. One complete filter row is enough; incomplete rows are
   // ignored here exactly as they are on Review.
-  if (t === 'SPLIT') return dcCompleteFilters(dcFiltersOf('SPLIT', p)).length > 0;
+  // One finished group is enough — the groups are OR'd, so a second,
+  // half-typed alternative does not make the first one meaningless.
+  if (t === 'SPLIT') return dcCompleteFilterGroups(dcFilterGroupsOf('SPLIT', p)).length > 0;
   // Entry · Audience stays valid with no filters at all: an audience with
   // none targets everyone, which is a real answer. A half-typed row is a
   // normal intermediate state, so it is ignored rather than blocking.

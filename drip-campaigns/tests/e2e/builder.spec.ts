@@ -696,7 +696,13 @@ test('Goal Definition: Journey Events shows its own scoping fields + a locked-at
   // attribute Pageload has.
   const condRow = page.locator('.cond-row').first();
   await expect(condRow.locator('input:disabled')).toHaveValue('Page Name');
-  await condRow.locator('input[placeholder="Value"]').fill('EMI Offer Page');
+  // And its VALUE is a closed list, not free text — pageNameOptions in the
+  // real screen. This test used to type "EMI Offer Page", which was never a
+  // real page name; being able to save it was the bug.
+  await expect(condRow.locator('input[placeholder="Value"]')).toHaveCount(0);
+  const valueSelect = condRow.locator('select').last();
+  await expect(valueSelect.locator('option')).toHaveText([/Value|Select/, 'landing', 'success', 'error']);
+  await valueSelect.selectOption('landing');
 
   await page.getByText('Continue to Builder →').click();
   await page.waitForTimeout(300);
@@ -716,7 +722,7 @@ test('Goal Definition: Journey Events shows its own scoping fields + a locked-at
   await expect(page.locator('select').filter({ hasText: 'Onboarding' })).toHaveCount(1);
   const reopenedCondRow = page.locator('.cond-row').first();
   await expect(reopenedCondRow.locator('input:disabled')).toHaveValue('Page Name');
-  await expect(reopenedCondRow.locator('input[placeholder="Value"]')).toHaveValue('EMI Offer Page');
+  await expect(reopenedCondRow.locator('select').last()).toHaveValue('landing');
 });
 
 

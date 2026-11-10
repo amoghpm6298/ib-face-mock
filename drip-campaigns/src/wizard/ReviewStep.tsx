@@ -6,6 +6,7 @@
 import { dcGoalLabel } from '../reducer/labelMeta';
 import { DC_NODE_META } from '../data/nodeMeta';
 import { FilterReadback } from '../components/FilterReadback';
+import { ImportedFilePanel } from '../components/ImportedFilePanel';
 import type { DripGoal, DripGraph } from '../data/graphTypes';
 
 export function ReviewStep({
@@ -27,6 +28,8 @@ export function ReviewStep({
   validationMessage,
   onSaveDraft,
   onSubmit,
+  importedJson,
+  importedAt,
 }: {
   name: string;
   description: string;
@@ -46,6 +49,8 @@ export function ReviewStep({
   validationMessage: string | null;
   onSaveDraft: () => void;
   onSubmit: () => void;
+  importedJson?: string;
+  importedAt?: string;
 }) {
   const entryNode = graph.rootId ? graph.nodes[graph.rootId] : null;
   const stepCount = Object.keys(graph.nodes).length;
@@ -122,6 +127,12 @@ export function ReviewStep({
           {dnc || npa ? [dnc && 'DNC', npa && 'NPA'].filter(Boolean).join(', ') : <span className="dl-row-sub">No exclusion lists applied</span>}
         </div>
       </div>
+
+      {/* An imported campaign lands in the builder, so the file it came from
+          has to be reachable from here too — not only from the read-only
+          view a submitted campaign opens in. Above the footer, because that
+          footer is sticky to the viewport bottom and would cover it. */}
+      <ImportedFilePanel campaign={{ name, importedJson, importedAt }} />
 
       <div className="dcb-step-footer">
         <button className="btn secondary" onClick={onSaveDraft}>

@@ -4716,6 +4716,38 @@ const EVENT_CATEGORIES = {
 const EVENT_ATTR_BY_TYPE = {
   'Journey Progress':'Status', 'Pageload':'Page Name', 'Button Click':'Button Name', 'Outcome Issuance':'Outcome Status',
 };
+// The real values each locked attribute accepts, from smartNudgesConstants.ts
+// (progressStatusOptions / pageNameOptions / buttonNameOptions /
+// outcomeStatusOptions). Every one of these is a closed list in the real
+// screen, which renders a picker — typing the value free-hand was this
+// prototype's own shortcut, and it let you save a status that does not exist.
+//
+// 'Not Started' is deliberately absent from Status: it is commented out at
+// source with "Uncomment when NOT_STARTED is supported in backend", so
+// offering it here would promise something the backend cannot do.
+const EVENT_ATTR_VALUE_OPTIONS = {
+  'Status': [['IN_PROGRESS','In Progress'], ['COMPLETED','Completed']],
+  'Page Name': [['LANDING','landing'], ['SUCCESS','success'], ['ERROR','error']],
+  'Button Name': [['START','Start'], ['VERIFY_OTP','Verify OTP'], ['REQUEST_OTP','Request OTP']],
+  'Outcome Status': [['POSTED','Posted'], ['POSTING_PENDING','Posting Pending'], ['CANCELLED','Cancelled'], ['CLAWBACK_PENDING','Pending Clawback'], ['CLAWBACK','Clawback']],
+};
+function eventAttrValueOptions(attr){ return EVENT_ATTR_VALUE_OPTIONS[attr] || null; }
+// A closed list is a question of identity, so it takes Is / Is Not and
+// nothing else — the real screen's own operatorOptions. "Greater than" on a
+// status was meaningless.
+function eventAttrOperators(attr){
+  return eventAttrValueOptions(attr) ? ['Is','Is Not'] : ['Equals','Not Equals','Greater than','Less than','Is'];
+}
+// The value cell: a picker when the attribute has a closed list, free text
+// otherwise.
+function eventCondValueCell(attr, cond, idx){
+  const opts = eventAttrValueOptions(attr);
+  if(!opts) return `<input type="text" class="f-input" placeholder="Value" value="${escIncentiveText(cond.value||'')}" oninput="wizCondUpdate('triggerConditions',${idx},'value',this.value)">`;
+  return `<select class="f-input" onchange="wizCondUpdate('triggerConditions',${idx},'value',this.value)">
+    <option value="">Select ${attr==='Outcome Status'?'status':'value'}</option>
+    ${opts.map(([v,l])=>`<option value="${v}" ${cond.value===v?'selected':''}>${l}</option>`).join('')}
+  </select>`;
+}
 const OFFER_TYPE_OPTIONS = ['CVP','Campaign Offers','3rd Party Offers','Merchant Offers','Bank Offers','Activation Offers'];
 // Maker-checker is never determined by scope type alone — it's the
 // issuer's own config OR any specifically-selected program's own flag.
@@ -6281,16 +6313,16 @@ function renderWizStep(stepId){
       <div class="f-group"><label class="f-label">Event Conditions</label>
         <div class="cond-row" style="grid-template-columns:1fr 1fr 1fr auto;">
           <input class="f-input" type="text" value="${lockedAttr||'Select an event first'}" disabled>
-          <select class="f-input" onchange="wizCondUpdate('triggerConditions',0,'operator',this.value)"><option value="">Operator</option>${['Equals','Not Equals','Greater than','Less than','Is'].map(o=>`<option ${d.triggerConditions[0].operator===o?'selected':''}>${o}</option>`).join('')}</select>
-          <input type="text" class="f-input" placeholder="Value" value="${d.triggerConditions[0].value||''}" oninput="wizCondUpdate('triggerConditions',0,'value',this.value)">
+          <select class="f-input" onchange="wizCondUpdate('triggerConditions',0,'operator',this.value)"><option value="">Operator</option>${eventAttrOperators(lockedAttr).map(o=>`<option ${d.triggerConditions[0].operator===o?'selected':''}>${o}</option>`).join('')}</select>
+          ${eventCondValueCell(lockedAttr, d.triggerConditions[0], 0)}
           <div></div>
         </div>
         ${d.triggerConditions.slice(1).map((c,i)=>`
           <div class="cond-and">AND</div>
           <div class="cond-row" style="grid-template-columns:1fr 1fr 1fr auto;">
             <input class="f-input" type="text" value="${lockedAttr}" disabled>
-            <select class="f-input" onchange="wizCondUpdate('triggerConditions',${i+1},'operator',this.value)"><option value="">Operator</option>${['Equals','Not Equals','Greater than','Less than','Is'].map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}</select>
-            <input type="text" class="f-input" placeholder="Value" value="${c.value||''}" oninput="wizCondUpdate('triggerConditions',${i+1},'value',this.value)">
+            <select class="f-input" onchange="wizCondUpdate('triggerConditions',${i+1},'operator',this.value)"><option value="">Operator</option>${eventAttrOperators(lockedAttr).map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}</select>
+            ${eventCondValueCell(lockedAttr, c, i+1)}
             <div class="cond-remove" onclick="wizCondRemove('triggerConditions',${i+1})">✕</div>
           </div>`).join('')}
         <div class="add-link" onclick="wiz.draft.triggerConditions.push({attribute:'${lockedAttr}',operator:'',value:''});renderWizStep('EVENT_TRIGGER')">${ic('workflow')} Add Condition</div>

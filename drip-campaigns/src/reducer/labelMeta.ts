@@ -4,7 +4,7 @@
 import type { DripGoal, DripGoalCondition, DripTxnHistoryCriteria } from '../data/graphTypes';
 import type { DcNodeType } from '../data/nodeMeta';
 import { TXN_NONE, appEventLabel, dcCardEventPhrase, dcNormalizeOperator, dcValidEventType, milestoneOfferName } from '../data/sharedConstants';
-import { dcAppDetailPhrase, dcBranchWhatOf, dcCompleteFilters, dcFilterSentence, dcFiltersOf, dcMilestoneValue } from '../data/filters';
+import { dcAppDetailPhrase, dcBranchWhatOf, dcCompleteFilterGroups, dcFilterSentence, dcFilterGroupsOf, dcMilestoneValue } from '../data/filters';
 
 // Short readable summary of a condition array for a node's meta line —
 // "Amount = 2000, MCC = 5411" rather than making a reviewer open the
@@ -154,7 +154,28 @@ export function dcRecurrenceLabel(p: ScheduledEntryConfig): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // Entry · Audience keeps showing only recurrence on the canvas: filters are
 // configuration detail, and the canvas is an execution map.
+// An imported node can arrive with no `_config` at all, or with only some
+// of its keys filled in — the designer leaves out what it does not know, and
+// a file is not guaranteed to be complete. So nothing here may assume a
+// field is present. A missing one reads as a type-named placeholder (the
+// same `|| 'Event Trigger'` convention this function already used), never as
+// a crash and never as the literal word "undefined" on a card. The drawer is
+// then where the manager fills it in.
+// "Wait 3 days", or just "Wait" when no duration has been filed in yet —
+// never "Wait undefined undefined", which is what an imported node with no
+// duration used to render.
+// `whenUnset` is what to say with nothing filed: a Pause still has to name
+// itself on the canvas ("Wait"), while an optional meta line is better
+// absent than half-written — the same rule a non-repeating audience already
+// follows by getting no recurrence line at all.
+function dcDurationPhrase(prefix: string, duration: unknown, unit: unknown, whenUnset: string): string {
+  const d = duration === undefined || duration === null || duration === '' ? null : Number(duration);
+  if (d === null || Number.isNaN(d) || !unit) return whenUnset;
+  return `${prefix} ${d} ${unit}`;
+}
+
 export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | null): { label: string; meta: string } {
+  p = p || {};
   if (type === 'ENTRY_SEGMENT') {
     // Canvas-vs-drawer principle: the canvas is an execution map, not a
     // configuration database (node-design refinement pass) — entity and
@@ -164,14 +185,14 @@ export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | 
     // gets no meta line at all rather than a sentence restating "this is
     // a static snapshot," which the absence of a recurrence line already
     // implies.
-    return { label: p.cohortDesc, meta: p.repeat ? dcRecurrenceLabel(p) : '' };
+    return { label: p.cohortDesc || 'Audience', meta: p.repeat ? dcRecurrenceLabel(p) : '' };
   }
   if (type === 'ENTRY_EVENT') {
     // Conditions are configuration detail (P2, drawer-only) — only the
     // event category (P1) earns a glance on the canvas. A card event's own
     // detail is part of which event this is, so it rides on the label.
     const card = dcCardEventPhrase(p.eventType, p.cardDetails);
-    return { label: card || dcValidEventType(p.eventCategory, p.eventType) || 'Event Trigger', meta: p.eventCategory };
+    return { label: card || dcValidEventType(p.eventCategory, p.eventType) || 'Event Trigger', meta: p.eventCategory || '' };
   }
   if (type === 'SEND') {
     // meta is deliberately unused for Send's own canvas rendering —
@@ -181,15 +202,17 @@ export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | 
     // here (node-design refinement pass). Still returned as '' rather
     // than removed from this function's total Record, matching every
     // other node type's shape.
-    return { label: p.name, meta: '' };
+    return { label: p.name || 'Send', meta: '' };
   }
-  if (type === 'PAUSE') return { label: `Wait ${p.duration} ${p.unit}`, meta: '' };
+  // A wait with no duration filed yet says only that it is a wait. Nothing
+  // is invented to fill the gap.
+  if (type === 'PAUSE') return { label: dcDurationPhrase('Wait', p.duration, p.unit, 'Wait'), meta: '' };
   if (type === 'WAIT_UNTIL') {
     // Event category and conditions are P2/unclassified configuration
     // detail — only the timeout (P1) earns a canvas line alongside the
     // event type itself.
     const card = dcCardEventPhrase(p.eventType, p.cardDetails);
-    return { label: card || dcValidEventType(p.eventCategory, p.eventType) || 'Wait for Event', meta: `Timeout after ${p.duration} ${p.unit}` };
+    return { label: card || dcValidEventType(p.eventCategory, p.eventType) || 'Wait for Event', meta: dcDurationPhrase('Timeout after', p.duration, p.unit, '') };
   }
   if (type === 'SPLIT') {
     // A Condition has no "Goal reached" basis anymore (Phase 1) — it's
@@ -201,7 +224,12 @@ export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | 
     // question. Two or more collapse to a count (Phase 1 §9: counts, not
     // joined expressions), which is the fix for the literal bug a joined
     // multi-condition string produced on canvas.
-    const rows = dcCompleteFilters(dcFiltersOf('SPLIT', p));
+    // Grouped conditions collapse to a count the same way several AND'd
+    // rows always have — the canvas is an execution map, and "(A and B) or
+    // C" is exactly the long expression it must not print.
+    const groups = dcCompleteFilterGroups(dcFilterGroupsOf('SPLIT', p));
+    if (groups.length > 1) return { label: 'Custom condition', meta: `${groups.flat().length} filters in ${groups.length} groups` };
+    const rows = groups[0] || [];
     if (rows.length === 0) return { label: 'Custom condition', meta: '' };
     if (rows.length === 1) return { label: dcFilterSentence(rows[0]) + '?', meta: '' };
     return { label: 'Custom condition', meta: `${rows.length} filters` };
@@ -218,16 +246,18 @@ export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | 
             : what.group === 'App activity'
               ? appEventLabel(what.field) || 'App activity'
               : what.field || 'Branch';
-    return { label, meta: `${p.branches.length} branch${p.branches.length === 1 ? '' : 'es'} + catch-all` };
+    const branchCount = (p.branches || []).length;
+    return { label, meta: `${branchCount} branch${branchCount === 1 ? '' : 'es'} + catch-all` };
   }
   if (type === 'RANDOM_SPLIT') {
     // Count always; the per-branch allocation only tags along when it's
     // short enough not to become the same "long expression on canvas"
     // problem Phase 1 §9 exists to prevent (a 2-way 50/50 test reads
     // fine inline, a 6-variant test would not).
-    const allocation = p.branches.map((b: { label: string; pct: number }) => `${b.label} ${b.pct}%`).join(' / ');
-    const countLabel = `${p.branches.length} variant${p.branches.length === 1 ? '' : 's'}`;
-    return { label: p.name, meta: allocation.length <= 24 ? `${countLabel} — ${allocation}` : countLabel };
+    const branches: { label: string; pct: number }[] = p.branches || [];
+    const allocation = branches.map((b) => `${b.label} ${b.pct}%`).join(' / ');
+    const countLabel = `${branches.length} variant${branches.length === 1 ? '' : 's'}`;
+    return { label: p.name || 'Experiment', meta: allocation && allocation.length <= 24 ? `${countLabel} — ${allocation}` : countLabel };
   }
   // GOAL_CHECK carries no `_config` at all (always null) — nothing to
   // recompute FROM, so its question is derived live from the campaign's
@@ -235,6 +265,7 @@ export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | 
   // every existing Goal Check's label for free, with no second copy of
   // the goal stored on any node.
   if (type === 'GOAL_CHECK') return { label: (dcGoalLabel(goal) || 'Goal') + '?', meta: '' };
-  if (type === 'GOAL_EXIT' || type === 'EXIT') return { label: p.reason, meta: '' };
+  if (type === 'GOAL_EXIT') return { label: p.reason || 'Goal reached', meta: '' };
+  if (type === 'EXIT') return { label: p.reason || 'Exit', meta: '' };
   return { label: '', meta: '' };
 }

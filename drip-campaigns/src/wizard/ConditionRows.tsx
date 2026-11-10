@@ -3,7 +3,7 @@
 // dcCondUpdate / dcCondToggleMulti — React-idiomatic version: takes the
 // conditions array + an onChange callback instead of a global containerKey
 // lookup (dcCondArrayFor), since each caller now owns its own local state.
-import { ELIGIBILITY_META, DC_PROMOTED_ATTR, ON_OFF, SMART_TAG_OPTIONS, YES_NO, dcOperatorsForAttribute, type AttrType } from '../data/sharedConstants';
+import { ELIGIBILITY_META, DC_PROMOTED_ATTR, ON_OFF, SMART_TAG_OPTIONS, YES_NO, dcLockedAttrMeta, dcOperatorsForAttribute, type AttrType } from '../data/sharedConstants';
 import type { DripGoalCondition } from '../data/graphTypes';
 import { MultiSelectDropdown } from '../components/MultiSelectDropdown';
 
@@ -126,7 +126,9 @@ export function ConditionRows({
   return (
     <>
       {conditions.map((c, i) => {
-        const attrMeta = meta ? meta[c.attribute] : null;
+        // A locked attribute carries no entity, so its metadata comes from
+        // its own closed list when it has one.
+        const attrMeta = (meta ? meta[c.attribute] : null) ?? dcLockedAttrMeta(lockedAttribute);
         // The rule itself lives in sharedConstants, so there is one answer
         // to what an attribute can be compared with.
         const opOptions: string[] = dcOperatorsForAttribute(attrMeta, { locked: Boolean(lockedAttribute) });

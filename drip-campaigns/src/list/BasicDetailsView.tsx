@@ -3,6 +3,7 @@
 // read-back, not a second place to change them.
 import type { DripCampaign } from '../data/graphTypes';
 import { dcGoalLabel } from '../reducer/labelMeta';
+import { ImportedFilePanel } from '../components/ImportedFilePanel';
 
 function Row({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
@@ -76,6 +77,8 @@ export function BasicDetailsView({ campaign }: { campaign: DripCampaign }) {
           <Row label="Exclusion lists" value={none('No exclusion lists are applied')} />
         )}
       </section>
+
+      <ImportedFilePanel campaign={c} />
     </div>
   );
 }

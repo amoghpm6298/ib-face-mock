@@ -9,7 +9,7 @@
 // right there under it.
 import type { DripCampaign, DripNode, DripGraph } from '../data/graphTypes';
 import { DC_NODE_META } from '../data/nodeMeta';
-import { dcEventConditionSentences, dcFilterSentences, dcFiltersOf, dcBranchWhatOf } from '../data/filters';
+import { dcEventConditionSentences, dcFilterGroupSentences, dcFilterGroupsOf, dcBranchWhatOf } from '../data/filters';
 import { dcGoalLabel, dcRecurrenceLabel } from '../reducer/labelMeta';
 import {
   CHANNEL_CONFIG_LABELS,
@@ -57,7 +57,7 @@ function StepConfig({ node, campaign, graph }: { node: DripNode; campaign: DripC
     case 'ENTRY_SEGMENT':
       return (
         <>
-          <Row label="Who qualifies" value={<Lines items={dcFilterSentences(dcFiltersOf(node.type, p))} empty="Everyone who matches the entry." />} />
+          <Row label="Who qualifies" value={<Lines items={dcFilterGroupSentences(dcFilterGroupsOf(node.type, p))} empty="Everyone who matches the entry." />} />
           <Row label="Repeats" value={p.repeat ? dcRecurrenceLabel(p) : 'Runs once, as a static snapshot'} />
         </>
       );
@@ -97,7 +97,7 @@ function StepConfig({ node, campaign, graph }: { node: DripNode; campaign: DripC
     case 'PAUSE':
       return <Row label="Waits" value={`${p.duration} ${p.unit}`} />;
     case 'SPLIT':
-      return <Row label="Yes when" value={<Lines items={dcFilterSentences(dcFiltersOf(node.type, p))} empty="Nothing set." />} />;
+      return <Row label="Yes when" value={<Lines items={dcFilterGroupSentences(dcFilterGroupsOf(node.type, p))} empty="Nothing set." />} />;
     case 'DECISION_SPLIT': {
       const what = dcBranchWhatOf(p);
       const question =

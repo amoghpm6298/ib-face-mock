@@ -59,6 +59,8 @@ function DripCanvasInner({ graph, editable, onEditNode, onRemoveRoot, onReplaceA
   const nodesInitialized = useNodesInitialized();
   const { getNodes, fitView, getViewport, setViewport } = useReactFlow();
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  // How many renders we have waited for card measurements on this layout pass.
+  const measureWaitsRef = useRef(0);
 
   // Re-seed React Flow's own state whenever the underlying graph changes
   // (a different campaign selected, or — in the builder — a real edit).
@@ -67,15 +69,38 @@ function DripCanvasInner({ graph, editable, onEditNode, onRemoveRoot, onReplaceA
     setNodes(next.nodes);
     setEdges(next.edges);
     setLaidOut(false);
+    measureWaitsRef.current = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, pathNodeIds, pathEdgeIds, metrics]);
 
   useEffect(() => {
     if (!nodesInitialized || laidOut) return;
+    const cards = getNodes().filter((n) => n.type === 'dcCard');
     const measuredHeights: Record<string, number> = {};
-    getNodes().forEach((n) => {
-      if (n.type === 'dcCard' && n.measured?.height) measuredHeights[n.id] = n.measured.height;
+    let unmeasured = 0;
+    cards.forEach((n) => {
+      if (n.measured?.height) measuredHeights[n.id] = n.measured.height;
+      else unmeasured++;
     });
+    // Laying out before every card has reported its height puts the whole
+    // graph on DC_CARD_H_FALLBACK, which gives every rank the same pitch no
+    // matter how tall its cards are — and a tall Send then runs into the
+    // step below it. That used to stick, because this effect latches
+    // `laidOut` and nothing re-ran it once the real heights arrived.
+    //
+    // It bites on an EDIT rather than first paint: the graph changes, the
+    // node objects are replaced with fresh unmeasured ones, and
+    // `nodesInitialized` is still true from the previous set. So wait for
+    // the measurements and let the effect re-run — `nodes` is a dependency
+    // for exactly that. The bound stops a card that never reports from
+    // leaving the canvas unlaid forever.
+    if (cards.length && unmeasured) {
+      if (measureWaitsRef.current < 6) {
+        measureWaitsRef.current += 1;
+        return;
+      }
+    }
+    measureWaitsRef.current = 0;
     const relaid = graphToFlowElements(graph, { ...opts, measuredHeights });
     setNodes(relaid.nodes);
     setEdges(relaid.edges);
@@ -103,7 +128,7 @@ function DripCanvasInner({ graph, editable, onEditNode, onRemoveRoot, onReplaceA
       }, 260);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodesInitialized, laidOut, graph]);
+  }, [nodesInitialized, laidOut, graph, nodes]);
 
   return (
     <div className="dc-graph-wrap" ref={wrapRef} style={{ width: '100%', height: '100%' }}>

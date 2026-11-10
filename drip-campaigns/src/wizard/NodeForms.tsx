@@ -18,8 +18,8 @@ import type { DripGoal } from '../data/graphTypes';
 import { dcOrdinal, dcRecurrenceLabel, dcGoalLabel } from '../reducer/labelMeta';
 import { dcNewBranchId } from '../reducer/idGen';
 import { ConditionsSection, ConditionRows } from './ConditionRows';
-import { FilterRows, WhatSelect, FilterComparison, FilterValue, AppEventFields, AppOfferDetail, MilestoneOfferField } from './FilterRows';
-import { dcFiltersOf, dcBranchWhatOf, dcDefaultTxnForRow, dcDetailsForEvent } from '../data/filters';
+import { FilterGroups, WhatSelect, FilterComparison, FilterValue, AppEventFields, AppOfferDetail, MilestoneOfferField } from './FilterRows';
+import { dcFilterGroupsOf, dcBranchWhatOf, dcDefaultTxnForRow, dcDetailsForEvent } from '../data/filters';
 import { TxnLookbackFields } from './TxnHistoryFields';
 import { EventScopingFields, CardEventDetailFields } from './EventScopingFields';
 
@@ -32,7 +32,7 @@ export function EntrySegmentForm({ p, onChange }: FormProps) {
   // Reads the new shape when there is one and the old entity blocks when
   // there isn't, so a campaign saved before the rewrite opens with its
   // filters already listed as rows.
-  const filters = dcFiltersOf('ENTRY_SEGMENT', p);
+  const filterGroups = dcFilterGroupsOf('ENTRY_SEGMENT', p);
   return (
     <>
       <div className="f-group">
@@ -100,12 +100,12 @@ export function EntrySegmentForm({ p, onChange }: FormProps) {
       )}
       <div className="f-group">
         <label className="f-label">Who qualifies</label>
-        {filters.length === 0 ? (
+        {filterGroups.flat().length === 0 ? (
           <p className="f-hint" style={{ margin: '0 0 6px' }}>
             No filters are set. This targets everyone{p.repeat ? ' matching this schedule' : ''}.
           </p>
         ) : null}
-        <FilterRows rows={filters} onChange={(rows) => onChange({ filters: rows })} />
+        <FilterGroups groups={filterGroups} onChange={(groups) => onChange({ filterGroups: groups, filters: undefined })} />
       </div>
       {p.repeat && <p className="f-hint">This re-evaluates fresh every time the schedule fires. It isn't a one-time snapshot.</p>}
     </>
@@ -367,13 +367,13 @@ export function WaitUntilForm({ p, onChange }: FormProps) {
 // Condition and Branch no longer take the entry event: it is settled on the
 // entry step, and a later filter does not ask about it again.
 export function SplitForm({ p, onChange, previousStepChannel }: FormProps & { previousStepChannel: PrevStepSend | null }) {
-  const filters = dcFiltersOf('SPLIT', p);
+  const filterGroups = dcFilterGroupsOf('SPLIT', p);
   return (
     <div className="f-group">
       <label className="f-label">Yes when</label>
-      <FilterRows
-        rows={filters}
-        onChange={(rows) => onChange({ filters: rows })}
+      <FilterGroups
+        groups={filterGroups}
+        onChange={(groups) => onChange({ filterGroups: groups, filters: undefined })}
         previousMessage
         previousStepChannel={previousStepChannel}
       />
@@ -391,6 +391,11 @@ function BranchInsertRow({ onInsert }: { onInsert: () => void }) {
 }
 
 export function DecisionSplitForm({ p, onChange, previousStepChannel }: FormProps & { previousStepChannel: PrevStepSend | null }) {
+  // An imported Branch may carry no arms at all — the file is not
+  // guaranteed to be complete. Read as an empty list so the form renders
+  // and the manager can add the arms, rather than throwing on the click
+  // that was meant to fill them in.
+  const branches: any[] = p.branches || [];
   // Branch routes rather than narrows, so it shares one question across its
   // arms instead of taking a list of AND'd rows. The question is picked from
   // the same grouped list every other step uses, which is what replaced its
@@ -401,14 +406,14 @@ export function DecisionSplitForm({ p, onChange, previousStepChannel }: FormProp
   const appEvent = appEventById(what.field);
   const sharedTxn = p.txn ?? dcDefaultTxnForRow();
 
-  const setBranch = (i: number, patch: any) => onChange({ branches: p.branches.map((b: any, idx: number) => (idx === i ? { ...b, ...patch } : b)) });
-  const removeBranch = (i: number) => onChange({ branches: p.branches.filter((_: any, idx: number) => idx !== i) });
+  const setBranch = (i: number, patch: any) => onChange({ branches: branches.map((b: any, idx: number) => (idx === i ? { ...b, ...patch } : b)) });
+  const removeBranch = (i: number) => onChange({ branches: branches.filter((_: any, idx: number) => idx !== i) });
   const newBranch = (n: number) => ({ id: dcNewBranchId(), label: 'Branch ' + n, operator: '', value: '', value2: '', values: [] });
-  const addBranch = () => onChange({ branches: [...p.branches, newBranch(p.branches.length + 1)] });
+  const addBranch = () => onChange({ branches: [...branches, newBranch(branches.length + 1)] });
   const insertBranch = (i: number) => {
-    const branches = [...p.branches];
-    branches.splice(i + 1, 0, newBranch(branches.length + 1));
-    onChange({ branches });
+    const next = [...branches];
+    next.splice(i + 1, 0, newBranch(next.length + 1));
+    onChange({ branches: next });
   };
 
   return (
@@ -433,7 +438,7 @@ export function DecisionSplitForm({ p, onChange, previousStepChannel }: FormProp
             onChange({
               what: { group, field },
               txn: group === 'Transactions' ? dcDefaultTxnForRow() : undefined,
-              branches: p.branches.map((b: any) => ({ ...b, operator: '', value: '', value2: '', values: [] })),
+              branches: branches.map((b: any) => ({ ...b, operator: '', value: '', value2: '', values: [] })),
             })
           }
         />
@@ -456,7 +461,7 @@ export function DecisionSplitForm({ p, onChange, previousStepChannel }: FormProp
                   what: { group: 'App activity', field: patch.field ?? what.field },
                   // A new event invalidates every arm's details, since the
                   // questions it asks are different ones.
-                  branches: p.branches.map((b: any) => ({ ...b, details: dcDetailsForEvent(patch.field ?? what.field, b.details) })),
+                  branches: branches.map((b: any) => ({ ...b, details: dcDetailsForEvent(patch.field ?? what.field, b.details) })),
                 })
               }
             />
@@ -478,7 +483,7 @@ export function DecisionSplitForm({ p, onChange, previousStepChannel }: FormProp
       {what.field || isTxn || what.group === 'Previous message' ? (
         <div className="f-group">
           <label className="f-label">Branches</label>
-          {p.branches.map((b: any, i: number) => {
+          {branches.map((b: any, i: number) => {
             // Each arm carries its own comparison and value against the one
             // shared what; valueUnit rides along for a Milestone arm.
             const row = { group: what.group, field: what.field, operator: b.operator, value: b.value, value2: b.value2, values: b.values, valueUnit: b.valueUnit, details: b.details, txn: sharedTxn };
@@ -493,7 +498,7 @@ export function DecisionSplitForm({ p, onChange, previousStepChannel }: FormProp
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <FilterValue row={row} previousStepChannel={previousStepChannel} hideTxnLookback onPatch={(patch) => setBranch(i, patch)} />
                   </div>
-                  {p.branches.length > 1 && (
+                  {branches.length > 1 && (
                     <div className="cond-remove" onClick={() => removeBranch(i)}>
                       ✕
                     </div>
@@ -529,14 +534,16 @@ function CatchAllRow() {
 }
 
 export function RandomSplitForm({ p, onChange }: FormProps) {
-  const total = p.branches.reduce((s: number, b: any) => s + Number(b.pct || 0), 0);
-  const setBranch = (i: number, patch: any) => onChange({ branches: p.branches.map((b: any, idx: number) => (idx === i ? { ...b, ...patch } : b)) });
-  const removeBranch = (i: number) => onChange({ branches: p.branches.filter((_: any, idx: number) => idx !== i) });
-  const addBranch = () => onChange({ branches: [...p.branches, { id: dcNewBranchId(), label: String.fromCharCode(65 + p.branches.length), pct: 0 }] });
+  // As on Branch: an imported Experiment may carry no variants yet.
+  const branches: any[] = p.branches || [];
+  const total = branches.reduce((s: number, b: any) => s + Number(b.pct || 0), 0);
+  const setBranch = (i: number, patch: any) => onChange({ branches: branches.map((b: any, idx: number) => (idx === i ? { ...b, ...patch } : b)) });
+  const removeBranch = (i: number) => onChange({ branches: branches.filter((_: any, idx: number) => idx !== i) });
+  const addBranch = () => onChange({ branches: [...branches, { id: dcNewBranchId(), label: String.fromCharCode(65 + branches.length), pct: 0 }] });
   const insertBranch = (i: number) => {
-    const branches = [...p.branches];
-    branches.splice(i + 1, 0, { id: dcNewBranchId(), label: String.fromCharCode(65 + branches.length), pct: 0 });
-    onChange({ branches });
+    const next = [...branches];
+    next.splice(i + 1, 0, { id: dcNewBranchId(), label: String.fromCharCode(65 + next.length), pct: 0 });
+    onChange({ branches: next });
   };
   return (
     <>
@@ -546,14 +553,14 @@ export function RandomSplitForm({ p, onChange }: FormProps) {
       </div>
       <div className="f-group">
         <label className="f-label">Branches</label>
-        {p.branches.map((b: any, i: number) => (
+        {branches.map((b: any, i: number) => (
           <div key={b.id || i}>
             <BranchInsertRow onInsert={() => insertBranch(i - 1)} />
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <input className="f-input" type="text" style={{ flex: 2 }} placeholder="Label" value={b.label} onChange={(e) => setBranch(i, { label: e.target.value })} />
               <input className="f-input" type="number" min={1} max={99} style={{ flex: 1 }} value={b.pct} onChange={(e) => setBranch(i, { pct: e.target.value })} />
               <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>%</span>
-              {p.branches.length > 2 && (
+              {branches.length > 2 && (
                 <div className="cond-remove" onClick={() => removeBranch(i)}>
                   ✕
                 </div>

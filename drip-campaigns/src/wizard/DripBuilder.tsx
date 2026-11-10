@@ -418,6 +418,8 @@ export function DripBuilder({
               validationMessage={validationMessage}
               onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))}
               onSubmit={handleSubmitClick}
+              importedJson={initial?.importedJson}
+              importedAt={initial?.importedAt}
             />
           </div>
         )}

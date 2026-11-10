@@ -344,6 +344,28 @@ export const EVENT_ATTR_BY_TYPE: Record<string, string> = {
 // The source list had both 'Equals' and 'Is', which are the same question;
 // lowercased they collapse to one, so this is four rather than five.
 export const LOCKED_ATTR_OPERATORS = ['is', 'is not', 'is more than', 'is less than'];
+// The values each locked attribute actually accepts, from the real screen's
+// own progressStatusOptions / pageNameOptions / buttonNameOptions /
+// outcomeStatusOptions. Each is a closed list there, rendered as a picker —
+// free text was this port's shortcut, and it let a status be saved that does
+// not exist.
+//
+// 'Not Started' is deliberately absent from Status: it is commented out at
+// source ("Uncomment when NOT_STARTED is supported in backend"), so offering
+// it would promise what the backend cannot do.
+export const EVENT_ATTR_VALUE_OPTIONS: Record<string, string[]> = {
+  Status: ['In Progress', 'Completed'],
+  'Page Name': ['landing', 'success', 'error'],
+  'Button Name': ['Start', 'Verify OTP', 'Request OTP'],
+  'Outcome Status': ['Posted', 'Posting Pending', 'Cancelled', 'Pending Clawback', 'Clawback'],
+};
+// A locked attribute with a closed list behaves like any other select
+// attribute, so it resolves real metadata and gets the ordinary select
+// widget and comparisons rather than the free-text fallback.
+export function dcLockedAttrMeta(attr: string | null | undefined): AttrMeta | null {
+  const options = attr ? EVENT_ATTR_VALUE_OPTIONS[attr] : undefined;
+  return options ? { type: 'select', options } : null;
+}
 // Every operator this app has ever stored, mapped onto the wording above, so
 // a campaign saved before the rewrite still reads correctly.
 export const LEGACY_OPERATORS: Record<string, string> = {
@@ -373,7 +395,11 @@ export function dcNormalizeOperator(op: string | undefined): string {
 export const NUMBER_COMPARISONS = ['is', 'is more than', 'is at least', 'is less than', 'is at most', 'is between'];
 export const DATE_COMPARISONS = ['is', 'is after', 'is before', 'is between'];
 export function dcOperatorsForAttribute(meta: AttrMeta | null | undefined, opts?: { locked?: boolean }): string[] {
-  if (opts?.locked) return LOCKED_ATTR_OPERATORS;
+  // A locked attribute falls back to the free-text operator list ONLY when
+  // it has no metadata of its own. One with a closed list is an ordinary
+  // select and takes select comparisons — "is more than" on a status is
+  // meaningless, and the real screen offers IS / IS NOT there.
+  if (opts?.locked && !meta) return LOCKED_ATTR_OPERATORS;
   // Two-valued fields get one comparison. "is not Yes" is just "is No", and
   // offering both would be a choice with no meaning behind it.
   if (meta?.type === 'bool' || meta?.type === 'onoff') return ['is'];

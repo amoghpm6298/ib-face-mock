@@ -20,8 +20,9 @@
 // A who-split filed against any entity the picker has no group for is left
 // untouched instead: there is no field to light up, so resolving it would
 // only produce the Account smash.
-import type { DripCampaign, DripGraph, DripNode } from './graphTypes';
+import type { DripCampaign, DripGoal, DripGraph, DripNode } from './graphTypes';
 import { dcBranchWhatOf, dcFiltersOf } from './filters';
+import { dcRecomputeLabelMeta } from '../reducer/labelMeta';
 
 const ENTITY_ATTRIBUTE = /^(.+) attribute$/i;
 
@@ -77,13 +78,26 @@ function normalizeNode(node: DripNode): DripNode {
   return node;
 }
 
-function normalizeGraph(root: DripGraph): DripGraph {
+// A file is not guaranteed to name its steps — the designer may omit a
+// node's label entirely, and a card with no name on it is unreadable. The
+// name is DERIVED from the config the file did supply, through the app's own
+// label function, so nothing is invented: a Send called nothing reads
+// "Send", an Experiment with two arms reads "Experiment". The manager
+// renames it in the drawer like any other step. A label the file DID supply
+// is never overwritten — that is the designer's own wording and it stays.
+function withDerivedLabel(node: DripNode, goal: DripGoal | null): DripNode {
+  if (node.label && node.meta) return node;
+  const { label, meta } = dcRecomputeLabelMeta(node.type, node._config, goal);
+  return { ...node, label: node.label || label, meta: node.meta || meta };
+}
+
+function normalizeGraph(root: DripGraph, goal: DripGoal | null): DripGraph {
   const nodes: DripGraph['nodes'] = {};
-  for (const [id, node] of Object.entries(root.nodes)) nodes[id] = normalizeNode(node);
+  for (const [id, node] of Object.entries(root.nodes)) nodes[id] = withDerivedLabel(normalizeNode(node), goal);
   return { ...root, nodes };
 }
 
-export function ingestCampaignJson(raw: unknown, nextId: string): IngestResult {
+export function ingestCampaignJson(raw: unknown, nextId: string, sourceText?: string): IngestResult {
   const parsed = asCampaign(raw);
   if (!parsed?.root || typeof parsed.root.nodes !== 'object' || !Array.isArray(parsed.root.edges)) {
     return { ok: false, error: 'This is not a drip campaign.' };
@@ -100,10 +114,14 @@ export function ingestCampaignJson(raw: unknown, nextId: string): IngestResult {
     goal: src.goal ?? null,
     controlPct: typeof src.controlPct === 'number' ? src.controlPct : 10,
     status: 'DRAFT',
-    root: normalizeGraph(parsed.root),
+    root: normalizeGraph(parsed.root, src.goal ?? null),
     startDate: src.startDate ?? '',
     endDate: src.endDate ?? '',
     versionOf: null,
+    // Verbatim when we have the original text; otherwise a faithful
+    // re-encoding of what was handed in.
+    importedJson: sourceText ?? JSON.stringify(raw, null, 2),
+    importedAt: new Date().toISOString(),
     allowReEntry: src.allowReEntry,
     reEntryCooloffDuration: src.reEntryCooloffDuration,
     reEntryCooloffUnit: src.reEntryCooloffUnit,
@@ -119,5 +137,7 @@ export function parseCampaignFile(text: string, nextId: string): IngestResult {
   } catch {
     return { ok: false, error: 'This is not a drip campaign.' };
   }
-  return ingestCampaignJson(raw, nextId);
+  // The text itself is kept, not a re-encoding of the parse, so the file can
+  // be handed back out exactly as it arrived.
+  return ingestCampaignJson(raw, nextId, text);
 }
