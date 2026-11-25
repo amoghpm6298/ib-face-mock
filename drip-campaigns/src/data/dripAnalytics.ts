@@ -219,7 +219,12 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
   // The held-back group converts on its own, at a materially lower rate —
   // 45-70% of the messaged rate, from the same seeded sequence. Rounded
   // down so it can never tie the treatment result at small numbers.
-  const controlRate = conversionRate * (0.45 + rand() * 0.25);
+  // Derived from its own seed, not from the treatment rate. The previous
+  // form was conversionRate * (0.45..0.70), which made control strictly
+  // lower than treatment every time — so uplift was positive by
+  // construction and the dashboard could never show that a campaign had
+  // failed. An independent draw can land either side.
+  const controlRate = Math.max(0, Math.min(1, 0.04 + rand() * 0.16));
   const controlReachedGoal = Math.floor(control * controlRate);
 
   return {

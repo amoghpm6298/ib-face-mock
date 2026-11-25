@@ -76,7 +76,16 @@ export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
 // order to complete it.
 export function dcAddFormValid(t: DcNodeType, p: any): boolean {
   p = p || {};
-  if (t === 'ENTRY_EVENT' || t === 'WAIT_UNTIL') return !!p.eventType;
+  // A wait with no duration is not a wait. Both of these used to fall
+  // through to `true` — Wait For Event checked only its event, and Pause
+  // was not checked at all — so a timeout of 0, blank or negative reached
+  // the backend contract, meaning either an instant timeout or a run that
+  // waits forever. Durations are also stored as strings by the form, so
+  // this coerces rather than comparing a string to a number.
+  const positiveDuration = Number(p.duration) > 0 && !!p.unit;
+  if (t === 'ENTRY_EVENT') return !!p.eventType;
+  if (t === 'WAIT_UNTIL') return !!p.eventType && positiveDuration;
+  if (t === 'PAUSE') return positiveDuration;
   if (t === 'SEND') {
     if (!(p.account && p.templateId)) return false;
     if (!p.fallbackChannel) return true;

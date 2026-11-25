@@ -46,7 +46,12 @@ export function dcRemoveEdge(graph: DripGraph, edgeId: string): void {
   if (!edge) return;
   const parent = graph.nodes[edge.from];
   const targetId = edge.to;
-  if (parent && ['SPLIT', 'RANDOM_SPLIT', 'WAIT_UNTIL', 'GOAL_CHECK'].includes(parent.type)) {
+  // DECISION_SPLIT belongs here too. Without it, removing a Branch arm
+  // deleted the edge outright instead of reverting it to an open slot —
+  // and since reconcile never recreates a missing catch-all, anyone
+  // matching no branch had nowhere to go, with no open slot for the
+  // publish check to catch.
+  if (parent && ['SPLIT', 'RANDOM_SPLIT', 'DECISION_SPLIT', 'WAIT_UNTIL', 'GOAL_CHECK'].includes(parent.type)) {
     edge.to = null;
   } else {
     graph.edges = graph.edges.filter((e) => e.id !== edgeId);

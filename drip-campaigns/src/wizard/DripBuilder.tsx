@@ -12,7 +12,7 @@ import { DC_STEP_TYPES, type DcNodeType } from '../data/nodeMeta';
 import { DC_ENTRY_TYPES } from '../data/typeSub';
 import type { PrevStepSend } from '../data/sharedConstants';
 import { dcConfirmAddNode, dcConfirmEditNode, dcRemoveEdge, dcRemoveGoalCheck, dcRemoveRoot, dcRenameEdge, type DcAddingAt } from '../reducer/campaignReducer';
-import { dcGraphHasOpenBranches } from '../reducer/graphOps';
+import { dcReconcileGoal, dcValidateCampaign } from '../reducer/campaignReducer';
 import { dcDefaultConfig, dcDefaultExitReason } from '../reducer/defaultConfig';
 import { dcPruneGraphForEvents } from '../reducer/programChange';
 import { dcAppEventsForPrograms } from '../data/sharedConstants';
@@ -43,7 +43,13 @@ const EMPTY_GRAPH: DripGraph = { nodes: {}, edges: [], rootId: null };
 // edge to reattach to. The reducer itself is defensive about this too
 // (see campaignReducer.ts) — this list is what the UI disables/explains.
 const MID_EDGE_DISABLED_REASON = "Branching and terminal steps can't be inserted mid-chain — add this after the step above instead.";
-const MID_EDGE_RESTRICTED_TYPES: DcNodeType[] = ['DECISION_SPLIT', 'RANDOM_SPLIT', 'GOAL_EXIT', 'EXIT'];
+// Anything that leaves MORE THAN ONE open arm cannot be spliced into an
+// existing edge: the reducer reattaches the original target only when
+// exactly one dangling edge remains, so with two arms the rest of the
+// chain was silently orphaned — still in `nodes`, unreachable, counted in
+// Review's totals and saved in the payload. Condition and Wait For Event
+// both leave two.
+const MID_EDGE_RESTRICTED_TYPES: DcNodeType[] = ['DECISION_SPLIT', 'RANDOM_SPLIT', 'SPLIT', 'WAIT_UNTIL', 'GOAL_EXIT', 'EXIT'];
 
 // Goal Reached is only a legitimate manual pick on an already-forked
 // branch arm (Phase 1 §5) — anywhere else it would silently mark
@@ -113,6 +119,16 @@ export function DripBuilder({
   // app-activity filter pointing at an event the new program does not have
   // is cleared. The row stays put, visibly waiting for a new event, rather
   // than disappearing along with the window and direction already set on it.
+  // The goal is editable after the graph is built, and auto-generated goal
+  // wiring was derived from whatever the goal was when each node was added.
+  // Re-derive it here so the two cannot drift — same shape as changePrograms
+  // below, which already does this for app events.
+  function changeGoal(next: DripGoal | null) {
+    setGoal(next);
+    const reconciled = dcReconcileGoal(graph, next);
+    if (reconciled !== graph) pushGraph(reconciled);
+  }
+
   function changePrograms(next: string[]) {
     setPrograms(next);
     const available = dcAppEventsForPrograms(next).map((e) => e.id);
@@ -260,8 +276,12 @@ export function DripBuilder({
   }
 
   const isEntry = graph.rootId === null;
-  const open = dcGraphHasOpenBranches(graph);
-  const canSubmit = !!name && !!issuer && graph.rootId !== null && !open;
+  // Every reachable node is re-checked against the same rule its own drawer
+  // enforces, plus the structural ones. Submit used to check only name,
+  // issuer, root and open slots, so anything that got into the graph by a
+  // route other than the drawer was never examined again.
+  const issues = dcValidateCampaign(graph, goal && goal.eventType ? goal : null);
+  const canSubmit = !!name && !!issuer && graph.rootId !== null && issues.length === 0;
 
   const validationMessage: string | null = !showValidation
     ? null
@@ -271,8 +291,10 @@ export function DripBuilder({
         ? 'Set an issuer first — see Edit Setup.'
         : graph.rootId === null
           ? 'Add an entry step before submitting.'
-          : open
-            ? 'Some branches still need a next step before this can be submitted.'
+          : issues.length > 0
+            ? issues.length === 1
+              ? issues[0].message
+              : `${issues[0].message} (and ${issues.length - 1} more to resolve)`
             : null;
 
   function buildPayload(status: 'DRAFT' | 'PENDING_REVIEW'): DripBuilderPayload {
@@ -348,7 +370,7 @@ export function DripBuilder({
 
         {step === 'goalDefinition' && (
           <div className="dcb-step-body">
-            <GoalDefinitionStep goal={goal} onGoalChange={setGoal} onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))} onContinue={() => setStep('builder')} />
+            <GoalDefinitionStep goal={goal} onGoalChange={changeGoal} onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))} onContinue={() => setStep('builder')} />
           </div>
         )}
 
