@@ -727,12 +727,30 @@
   .binary-pick .pick-card{flex:1;}
 
   .cond-group{border:1px solid var(--gray-200);border-radius:10px;padding:14px;margin-bottom:12px;background:var(--gray-25);}
-  .cond-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:8px;}
+  /* Rows must separate from each other more than their own cells do, or a
+     row that wraps (the expiring-points row carries an extra cell) reads as
+     two rows. Inner gap 8px, row separation 16px. */
+  .cond-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:16px;}
+  .cond-row:last-child{margin-bottom:0;}
   .cond-and{font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:8px 0;}
+  /* OR separates whole groups, so it reads across the full width rather than
+     sitting inline like AND does between two rows of one group. */
+  .cond-or{display:flex;align-items:center;gap:10px;margin:14px 0;font-size:11px;font-weight:700;
+    color:var(--blue-cta);text-transform:uppercase;letter-spacing:.05em;}
+  .cond-or::before,.cond-or::after{content:"";flex:1;height:1px;background:var(--gray-200);}
   .cond-remove{width:26px;height:26px;border-radius:6px;color:var(--gray-400);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
   .cond-remove:hover{background:var(--error-bg);color:var(--error-text);}
   .msel-trigger{width:100%;font-family:inherit;font-size:13.5px;color:var(--neutral-800);
     border:1px solid var(--gray-300);border-radius:8px;padding:9px 11px;box-shadow:var(--shadow-sm);}
+  /* A searchable single-pick list: the offer picker on the promotional User
+     Base step, and the query-template picker. Both used these two class
+     names with no CSS behind them at all, so the panel rendered as bare
+     divs — no border, no hover, no padding. Styled to match the real
+     multi-select panel, which carries the same look inline. */
+  .msel-panel{border:1px solid var(--gray-300);border-radius:8px;background:#fff;box-shadow:var(--shadow-sm);overflow:hidden;}
+  .msel-option{padding:8px 11px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--gray-100);}
+  .msel-option:last-child{border-bottom:none;}
+  .msel-option:hover{background:var(--gray-50);}
   .add-link{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--blue-cta);cursor:pointer;margin-top:2px;}
   .add-link:hover{text-decoration:underline;}
 
@@ -782,6 +800,37 @@
   .rev-field-row:last-child{border-bottom:none;}
   .rev-field-key{color:var(--gray-500);font-weight:500;flex-shrink:0;}
   .rev-field-val{color:var(--neutral-800);font-weight:600;text-align:right;}
+  /* PRD 2 §8.4 — an event nudge reads back as prose, not as a key/value
+     table. Left-aligned and full width on purpose: a sentence that is
+     right-aligned against a label column stops reading as a sentence. */
+  .rev-sentence{font-size:13px;line-height:1.65;color:var(--neutral-800);}
+  /* A condition reads left to right as a sentence. Widgets size to their
+     content instead of sitting in columns, because conditions take four,
+     five or six inputs and a grid can only promise alignment it then
+     breaks — a wrapped grid row reads as two rows. */
+  .cond-sentence{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:10px 12px;border:1px solid var(--gray-200);border-radius:10px;background:#fff;margin-bottom:10px;}
+  .cond-sentence:hover{border-color:var(--gray-300);}
+  /* The base rule is input[type=text].f-input{width:100%}, which out-weighs
+     a bare .cond-sentence .f-input — so these have to match its specificity
+     or every widget claims a full line and the sentence becomes a column. */
+  .cond-sentence input.f-input,.cond-sentence select.f-input{width:auto;min-width:0;padding:7px 9px;}
+  .cond-sentence input[type=number].f-input{width:104px;}
+  /* A connecting word and the control it introduces are one phrase. Without
+     this the row wrapped between them — "with status" ending a line and its
+     value starting the next — which reads as two broken rows rather than one
+     sentence. Breaks now fall between phrases, where they read as a wrap. */
+  .cond-chunk{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+  .cond-sentence input[type=text].f-input{width:150px;}
+  .cond-sentence input[type=date].f-input{width:150px;}
+  .cond-sentence select.f-input{max-width:190px;}
+  .cond-word{font-size:13.5px;color:var(--gray-600);white-space:nowrap;}
+  .cond-what{font-weight:600;width:178px;}
+  /* The remove control follows the last widget rather than being pushed to
+     the far edge: on a sentence that wraps, margin-left:auto strands it
+     alone on a final line and it reads as a rendering fault. */
+  .cond-sentence .cond-remove{align-self:center;opacity:.55;}
+  .cond-sentence:hover .cond-remove{opacity:1;}
+  .rev-sentence b{font-weight:600;}
 
   .view-header-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:16px;}
   .view-status-row{display:flex;align-items:center;gap:10px;margin:6px 0 20px;}
@@ -794,6 +843,16 @@
     background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:10px;
     padding:12px 16px;margin-bottom:18px;font-size:12.5px;color:var(--warning-text);
   }
+  .cadence-ok{
+    background:#eef6ff;border:1px solid #bcd9fb;border-radius:10px;
+    padding:12px 14px;margin:0 0 18px;font-size:12.5px;line-height:1.55;color:#1c4e86;
+  }
+  .f-opt{font-weight:400;color:var(--gray-500);}
+  .wiz-warn{
+    background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:10px;
+    padding:12px 14px;margin:0 0 18px;font-size:12.5px;line-height:1.55;color:var(--warning-text);
+  }
+  .wiz-warn b{font-weight:700;} .wiz-warn code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;}
   .approve-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--gray-100);}
   .approve-avatar{width:26px;height:26px;border-radius:50%;background:var(--indigo);color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 </style>
@@ -4565,21 +4624,69 @@ function renderAnalytics(){
    groupings are taken directly from there, not invented.
    ========================================================================= */
 
+// What this nudge does — replaces the seven-value nudge type.
+//
+// The old types (System / File Upload / Journey / Promotional / Cross
+// Sell-Up Sell / Other / External Source) were carrying three unrelated
+// jobs at once:
+//   1. which service supplied the targeting data — system→ironbank,
+//      journey→nimbus, promotional→doraemon. This is what made filters
+//      unable to cross sources and sent the campaign team to SQL.
+//   2. which steps the wizard showed (HIDDEN_STEPS_BY_NUDGE_TYPE).
+//   3. that File Upload and External Source assemble the audience in a
+//      structurally different way.
+// Warehouse-backed targeting removes (1), this question answers (2), and
+// the Start-from picker on User Base answers (3). With all three
+// reassigned the type itself has no job left, so it is gone.
+//
+// Verified against ironbank-face @75f6fe8: HIDDEN_STEPS_BY_NUDGE_TYPE
+// never hides DISPLAY_ELEMENTS for any of the seven types, so every
+// production nudge must configure in-app display today. "Sends a message
+// and shows nothing in the app" is therefore NEW capability here, not a
+// relabelling of something that already existed.
+//
+// Cross Sell/Up Sell is deliberately absent: being removed (Amogh,
+// 2026-11-18, "doesn't work"). Its two entities went with it.
+// The pre-migration nudge types. Cross Sell/Up Sell is gone from this list
+// permanently — being removed (Amogh, 2026-11-18, "doesn't work") — which
+// is independent of the migration.
 const NUDGE_TYPES = [
   {id:'SYSTEM', label:'System Nudge', icon:'ops', sub:'Use system based triggers to send a nudge'},
   {id:'FILE_UPLOAD', label:'File Upload', icon:'file', sub:'Upload a file in a .csv format to trigger nudges'},
   {id:'JOURNEY', label:'Journey Nudge', icon:'workflow', sub:'Use touchpoints within a journey to send a nudge'},
   {id:'PROMOTION', label:'Promotional Nudge', icon:'gift', sub:'Use datapoints across offers to trigger a nudge'},
-  {id:'CROSS_SELL_UP_SELL', label:'Cross Sell/Up Sell', icon:'repeat', sub:'Use EMI related attributes to create a nudge'},
   {id:'OTHER', label:'Other', icon:'compass', sub:'Deliver value with gift vouchers'},
-  // New, proposed nudge type (2026-09-24) — not yet real in the actual
-  // product, unlike every other entry above (all verified against the
-  // real nudgesStepperConstants.tsx). Eligibility is decided entirely by
-  // a bank API at PWA-load time (via Grimlock), not by any condition
-  // Quibbler evaluates itself — see ELIGIBILITY step's own EXTERNAL_SOURCE
-  // branch below for the real mechanics.
   {id:'EXTERNAL_SOURCE', label:'External Source Nudge', icon:'landmark', sub:'Bank API decides eligibility and supplies placeholder values live', isNew:true},
 ];
+function nudgeTypeLabel(id){ return (NUDGE_TYPES.find(t=>t.id===id)||{}).label || ''; }
+// Pre-migration: which subjects each nudge type may filter on. This is the
+// function the migration deletes — the branching is the thing that stops a
+// filter crossing services.
+const ELIGIBILITY_ENTITY_BY_TYPE = {
+  SYSTEM: ['Customer','Account','Card','Card Control'],
+  OTHER: ['Customer','Account','Card','Card Control'],
+  EXTERNAL_SOURCE: ['Customer','Account','Card','Card Control'],
+  // Release 1's actual change: a promotional nudge gains Offer and Rewards,
+  // where it previously had a single dangling 'Milestone' entity with no
+  // attributes behind it.
+  //
+  // Scoped to those two for now (Amogh, 2026-11-18) — the ordinary
+  // Customer/Account/Card/Card Control rows are NOT added to this type yet.
+  // The cost is use case G2, "exclude customers in collections", which is
+  // any offer or reward condition AND Days Past Due is 0 AND NPA Flag is
+  // No. It is the only release 1 use case that needs a subject outside
+  // these two, and it comes back when the ordinary rows are added here —
+  // either later in this release or with the migration.
+  PROMOTION: ['Offer','Rewards'],   // Outcomes is phase 2+
+};
+const HIDDEN_STEPS_BY_NUDGE_TYPE = {
+  OTHER: ['DELIVERY','COMMUNICATION'],
+  EXTERNAL_SOURCE: ['COMMUNICATION'],
+};
+
+function isBankApiNudge(d){
+  return d.nudgeType==='EXTERNAL_SOURCE';
+}
 // A real select, not a locked/disabled field — dropped the earlier
 // "which API" picker entirely (2026-09-24, tech team pushback relayed by
 // Amogh) in favor of this plain condition-row shape. The API concept
@@ -4681,15 +4788,52 @@ const NUDGE_STATUS_META = {
   INACTIVE:         {label:'Inactive',           badge:'gray'},
   DELETED:          {label:'Delete',             badge:'gray'},
 };
-const ELIGIBILITY_ENTITY_BY_TYPE = {
-  SYSTEM: ['Customer','Account','Card','Card Control'],
-  OTHER: ['Customer','Account','Card','Card Control'],
-  CROSS_SELL_UP_SELL: ['Transaction EMI','Total Outstanding EMI'],
-  PROMOTION: ['Milestone'],
-};
+// One subject list for every batch nudge, in place of
+// eligibilityTypeList(nudgeType)'s three branches. A condition row can now
+// name any subject regardless of which service owns the data, which is the
+// whole point of the warehouse: the query the campaign team writes SQL for
+// ("mid-journey AND no transactions in 30 days AND offer progress short")
+// crosses nimbus, the warehouse and doraemon in one AND group.
+//
+// Order is deliberate: the four that exist today first (so nothing a
+// current operator knows moved), then the two warehouse additions, then
+// the two that used to be whole nudge types, then the offer/rewards pair
+// built for PRD 1.
 const EVENT_CATEGORIES = {
   'Journey Events': {fields:['Journey','Batch'], events:['Journey Progress','Pageload','Button Click']},
-  'Offer Events': {fields:['Offer Type','Offer Name'], events:['Outcome Issuance']},
+  // PRD 2 §8.1 — the one existing event plus the eight the PRD scopes.
+  // rowConditions: these use the ordinary condition rows, not the
+  // single-locked-attribute pattern they used before. Each event's
+  // attributes are its own facts (ELIGIBILITY_META, keyed by event name).
+  // PRD 2 §7.2, after §7.1's test cut the catalogue in half. Seven proposed
+  // events were removed because stored state already answers them — five
+  // were already release 1 use cases (A1, B1, B3, C6, H4). See §7.1a.
+  //
+  // What survives fails the test in one of three ways: the before-value is
+  // not stored, the moment is invisible in state, or it needs one message
+  // per occurrence.
+  // Phase 1 needs Outcome Issuance only — split by status it serves both
+  // "earned, not yet credited" and "reward posted". The other three are
+  // phase 2+ and each needs something the offers system does not record.
+  'Offer Events': {fields:['Offer Type','Offer Name'], rowConditions:true, events:[
+    'Outcome Issuance',
+    // PHASE 2+ · 'Offer extended or end date changed',
+    // PHASE 2+ · 'Milestone threshold crossed',
+    // PHASE 2+ · 'Level changed',
+  ]},
+  // PRD 2 §7.3. None of the four is published today. Points expired and
+  // Balance crossed a threshold were cut — both are answerable from the
+  // rewards ledger, which records typed, dated entries carrying opening and
+  // closing balance.
+  // Phase 1 needs one reward event — AU's TWID redemption confirmation.
+  // The other three are phase 2+: each needs the rewards service to publish
+  // an event it does not publish today.
+  'Reward Events': {fields:[], rowConditions:true, isNew:true, events:[
+    'Points redeemed',                  // one confirmation per redemption
+    // PHASE 2+ · 'Points credited',
+    // PHASE 2+ · 'Partner points transferred',
+    // PHASE 2+ · 'Rewards account status changed',
+  ]},
   // Proposed, not real in Quibbler today — see the Transaction Event-Based
   // Nudges PRD (journeysnudgesemi/Transaction-Event-Based-Nudges-PRD.md).
   // Marked isNew so the wizard visibly flags these as not-yet-built rather
@@ -4713,6 +4857,39 @@ const EVENT_CATEGORIES = {
 };
 // Event Conditions are attribute-based per event type, not entity-based —
 // the attribute is effectively locked once the event is chosen.
+// PRD 2 §7.5 — one occurrence, but every eligible customer is affected, so
+// the nudge is a bulk send to the offer's enrolled base rather than one
+// message per event.
+//
+// One event, not three: offer-went-live and offer-withdrawn both moved to
+// release 1 (§7.1a), since activeFrom and status/lastStatus answer them from
+// stored state. The bulk-send machinery is still needed, for this one.
+const OFFER_WIDE_EVENTS = ['Offer extended or end date changed'];
+// PRD 2 §7.4 — the fourteen differ by orders of magnitude in how often they
+// fire. Surfaced on the step because the quiet-hours and frequency choices
+// downstream mean different things for a burst than for a trickle.
+const EVENT_VOLUME = {
+  'Offer extended or end date changed':'rare',
+  'Level changed':'steady', 'Rewards account status changed':'steady', 'Partner points transferred':'steady',
+  'Milestone threshold crossed':'bursty', 'Points credited':'bursty',
+  'Points redeemed':'txnrate',
+};
+const EVENT_VOLUME_TEXT = {
+  rare: 'Fires rarely — once per offer, not once per customer.',
+  steady: 'Fires steadily through the day, roughly in proportion to enrolment.',
+  bursty: 'Arrives in large batches when upstream processing runs — a settlement file can push a whole day of these through in minutes. Check the quiet-hours choice on the Timing step.',
+  txnrate: 'Fires as often as redemptions happen — continuous, all day.',
+};
+function eventIsOfferWide(ev){ return OFFER_WIDE_EVENTS.includes(ev); }
+// The entity whose attributes a trigger condition row reads. Transaction and
+// EMI events share one entity per category; offer and reward events each
+// carry their own facts, so the event name IS the entity.
+function triggerEntityFor(d){
+  if(d.eventCategory==='Transaction Events') return 'Transaction';
+  if(d.eventCategory==='EMI Events') return 'EMI Request';
+  return d.eventType || '';
+}
+
 const EVENT_ATTR_BY_TYPE = {
   'Journey Progress':'Status', 'Pageload':'Page Name', 'Button Click':'Button Name', 'Outcome Issuance':'Outcome Status',
 };
@@ -4759,6 +4936,66 @@ function computeMakerCheckerFlag(issuer, programs){
 }
 
 const NUDGES = [
+  /* ---------------- PRD 1 use cases, seeded ----------------
+     One nudge per use case from Offer-and-Rewards-Conditions-PRD.md §3, so
+     the conditions can be opened and read rather than described. Each name
+     carries its use-case code.
+
+     These are built the way the wizard builds them: `conditions` rows with
+     entity/attribute/operator/value, `grp` where a case needs OR, `window`
+     for the two attributes that carry one, and `offerId` where the case is
+     about an offer. A rewards case has no offerId at all — which is the
+     point of the offer being optional.
+
+     Offer kinds matter: OF-1/OF-2 are milestone offers (progress, cycles,
+     variant upgrade), OF-6/OF-10 are transactional (usage). A case cannot
+     mix the two, and these seeds respect that. */
+  /* AU's reward-expiry BRD asks for reminders at 60 days and 30 days. That is
+     TWO nudges, not one condition with two windows — and the pair is why
+     "in exactly N days" is the right shape rather than "within N days".
+     Running daily, a customer whose points expire on a given date matches the
+     60-day nudge once and the 30-day nudge once, on their own two days.
+     "Within 60 days" would have matched them every day for two months.
+
+     The statement condition in AU's BRD is deliberately NOT built
+     (Amogh, 2026-11-25). These send on expiring points and an active rewards
+     account alone. */
+  { id:'ND-90001', triggerType:'standard', nudgeType:'PROMOTION', name:'[AU] Reward points expiring in 30 days', description:'AU Bank: points expiring in exactly 30 days, active rewards account. No offer — a rewards nudge has none.',
+    scopeType:'Issuer', scopeName:'AU Small Finance Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['PRD1','Rewards','AU'],
+    createdBy:'Product', createdOn:'16 Nov 2026', variant:null, channels:['SMS','EMAIL'],
+    cycle:'Current', conditions:[
+      {entity:'Rewards', attribute:'Points expiring', operator:'Greater than', value:'0', window:'30'},
+      {entity:'Rewards', attribute:'Rewards account status', operator:'Equals', value:'Active'},
+    ] },
+  { id:'ND-90037', triggerType:'standard', nudgeType:'PROMOTION', name:'[AU] Reward points expiring in 60 days', description:'The earlier of AU\'s two reminders. Identical to the 30-day nudge but for the window — which is why it is a second nudge, not a second condition.',
+    scopeType:'Issuer', scopeName:'AU Small Finance Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['PRD1','Rewards','AU'],
+    createdBy:'Product', createdOn:'25 Nov 2026', variant:null, channels:['SMS','EMAIL'],
+    cycle:'Current', conditions:[
+      {entity:'Rewards', attribute:'Points expiring', operator:'Greater than', value:'0', window:'60'},
+      {entity:'Rewards', attribute:'Rewards account status', operator:'Equals', value:'Active'},
+    ] },
+  { id:'ND-90005', triggerType:'standard', nudgeType:'PROMOTION', name:'[A2] Offer expires in exactly 7 days', description:'A reminder anchored to each customer\'s own expiry date, so a daily run reaches each of them once.',
+    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['PRD1','Offer'],
+    createdBy:'Product', createdOn:'16 Nov 2026', variant:null, channels:['WHATSAPP'],
+    offerId:'OF-6', conditions:[
+      {entity:'Offer', attribute:'Offer end date', operator:'Is in exactly', value:'7'},
+    ] },
+  { id:'ND-90009', triggerType:'standard', nudgeType:'PROMOTION', name:'[H7] Dormant points — large balance, no recent redemption', description:'At least 5,000 points available and nothing redeemed since May. Last redemption date is flagged New — the backend does not supply it yet.',
+    scopeType:'Issuer', scopeName:'Yes Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'SCHEDULED', labels:['PRD1','Rewards'],
+    createdBy:'Product', createdOn:'16 Nov 2026', variant:null, channels:['EMAIL'],
+    conditions:[
+      {entity:'Rewards', attribute:'Points available', operator:'Greater than or equal to', value:'5000'},
+      {entity:'Rewards', attribute:'Last redemption date', operator:'Is before', value:'2026-05-01'},
+    ] },
+  { id:'ND-90012', triggerType:'standard', nudgeType:'PROMOTION', name:'[F5] Everyone eligible for the offer', description:'An offer chosen and no conditions at all — the simplest case, and the one that needed a spreadsheet before.',
+    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'DRAFT', labels:['PRD1','Offer'],
+    createdBy:'Product', createdOn:'16 Nov 2026', variant:null, channels:['EMAIL'],
+    offerId:'OF-6', conditions:[] },
   // Demo entry, retry config attached directly to its WhatsApp trigger —
   // rebuilt 2026-09-23 from "[Demo — Has Fallback Nudge]" (a real, separate
   // NUDGES entry, EV-48001) once retry was reverted from a standalone
@@ -4767,16 +5004,42 @@ const NUDGES = [
   // built only to exercise the now-removed Source Trigger picker) were
   // both removed outright — neither has a purpose left. Bracketed name so
   // it's easy to spot in the Nudges list.
-  { id:'ND-88998', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'[Demo — Has Fallback] EMI Conversion — WhatsApp Push', description:'Demo nudge with a real Fallback attached to its WhatsApp trigger — open Analytics to see the fallback funnel and its own engagement shown automatically.',
-    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
-    startDate:'05 Sep 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Demo'],
-    createdBy:'Ananya Iyer', createdOn:'17 Sep 2026', variant:'BANNER', eligibilityEntity:'Transaction EMI',
-    channels:['WHATSAPP'],
-    commBlocks:[
-      { name:'', sendDate:'', repeatable:'without repeat', everyN:'7',
-        configured:{ WHATSAPP:{ account:'IBL-Karix-Txns', templateId:'CT-3310', templateName:'Auth-to-EMI Consent WhatsApp', tracking:false, userAttribution:false, utmParams:[],
-          retry:{ channel:'SMS', account:'IBL-Karix-Txns', templateId:'CT-3301', templateName:'EMI Conversion SMS', statuses:['FAILED','FAILED_TO_CONNECT'] } } } },
+  // ── Use-case seeds, one per row of the agreed table ──────────────────
+  // Added 2026-11-24. Each is named for the row it demonstrates. Rows the
+  // prototype cannot yet express are listed in UNBUILT_USE_CASES below with
+  // the reason, rather than faked.
+  { id:'ND-90020', triggerType:'standard', nudgeType:'PROMOTION', name:'[Lifecycle] Teaser — offer starts in 3 days', description:'Offer start date is in exactly 3 days. Needs the audience to be computable before the offer is active, which is unconfirmed.',
+    scopeType:'Issuer', scopeName:'AU Small Finance Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'DRAFT', labels:['UseCase','Lifecycle'],
+    createdBy:'Product', createdOn:'24 Nov 2026', variant:null, channels:['SMS'],
+    offerId:'OF-2', cycle:'Current', conditions:[
+      {entity:'Offer', attribute:'Offer start date', operator:'Is in exactly', value:'3'},
     ] },
+  { id:'ND-90038', triggerType:'standard', nudgeType:'PROMOTION', name:'[Lifecycle] Live 7 days — a reminder', description:'Offer start date was exactly 7 days ago. Parity with the offer wizard\'s "after offer goes live + N days" trigger, which has no audience filter — so neither does this. Narrowing it to customers who have not used the offer needs a usage condition (phase 2).',
+    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['UseCase','Lifecycle'],
+    createdBy:'Product', createdOn:'25 Nov 2026', variant:null, channels:['SMS'],
+    offerId:'OF-5', conditions:[
+      {entity:'Offer', attribute:'Offer start date', operator:'Was exactly', value:'7'},
+    ] },
+  { id:'ND-90021', triggerType:'standard', nudgeType:'PROMOTION', name:'[Lifecycle] On the day an offer goes live', description:'Offer start date was exactly 0 days ago — today.',
+    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['UseCase','Lifecycle'],
+    createdBy:'Product', createdOn:'24 Nov 2026', variant:null, channels:['SMS','EMAIL'],
+    offerId:'OF-2', cycle:'Current', conditions:[
+      {entity:'Offer', attribute:'Offer start date', operator:'Was exactly', value:'0'},
+    ] },
+  { id:'ND-90029', triggerType:'standard', nudgeType:'PROMOTION', name:'[Rewards] Points expired — what was lost', description:'Points expired is more than zero. Sent after the fact, as a prompt to redeem sooner.',
+    scopeType:'Issuer', scopeName:'AU Small Finance Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['UseCase','Rewards'],
+    createdBy:'Product', createdOn:'24 Nov 2026', variant:null, channels:['SMS'],
+    conditions:[
+      {entity:'Rewards', attribute:'Points expired', operator:'Greater than', value:'0'},
+    ] },
+  // The five Outcomes rows. Each is a single condition: an outcome's status
+  // is one current value, so "verified for posting 3 days ago" already
+  // means "and still not posted" — a second does-not-exist row would be
+  // restating it.
   // Demo entry for the new (2026-09-24, proposed) External Source Nudge
   // type — real content from Amogh's own action-code table (CCQC001,
   // "Quick Loan" cross-sell). Eligibility here isn't a condition Quibbler
@@ -4788,110 +5051,104 @@ const NUDGES = [
   // per source API (per Amogh, 2026-09-24) — final field names/mapping
   // still to be confirmed in the PRD; the "_api1" suffix here is
   // illustrative.
-  { id:'ND-88997', triggerType:'standard', nudgeType:'EXTERNAL_SOURCE', name:'[Demo — External Source] Quick Loan Cross-Sell', description:'Bank API decides eligibility and supplies the loan limit live — no condition configured here matches it.',
-    scopeType:'Issuer', scopeName:'Yes Bank (All Programs)', issuer:'Yes Bank', programs:[],
-    startDate:'20 Sep 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Demo'],
-    createdBy:'Ananya Iyer', createdOn:'20 Sep 2026', variant:'BANNER',
-    externalSourceAttribute:'Eligibility Code (API 1)', eligibilityCode:'CCQC001',
-    heading:'Need some extra cash?', subtext:'Get a Quick loan of up to ${maxquickloan_api1}',
-    ctaText:'Apply now', redirectLink:'https://irisbyyes-af.onelink.me/JFBa/QuickLoan' },
-  { id:'ND-88214', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'EMI Cross-Sell — Festive Push', description:'Nudge eligible cardholders toward converting recent authorizations to EMI during the festive window.',
-    scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
-    startDate:'01 Aug 2026', endDate:'30 Sep 2026', status:'ACTIVE', labels:['EMI','Festive','Cross-Sell'],
-    createdBy:'Ananya Iyer', createdOn:'22 Jul 2026', variant:'BANNER', eligibilityEntity:'Transaction EMI',
-    channels:['SMS','WHATSAPP'] },
-  { id:'ND-88201', triggerType:'standard', nudgeType:'JOURNEY', name:'OS-to-EMI Journey Nudge', description:'Nudge customers mid-journey in the OS-to-EMI batch to complete consent.',
-    scopeType:'Program', scopeName:'IBL — Signature Rewards', issuer:'IndusInd Bank (IBL)', programs:['Signature Rewards'],
-    startDate:'15 Jul 2026', endDate:'15 Oct 2026', status:'ACTIVE', labels:['EMI','Journey'],
-    createdBy:'Rohan Gupta', createdOn:'10 Jul 2026', variant:'PILL', channels:['SMS'] },
-  { id:'ND-88189', triggerType:'standard', nudgeType:'PROMOTION', name:'Milestone — 5th Transaction Reward', description:'Congratulate and cross-promote once a customer crosses their 5th transaction this cycle.',
-    scopeType:'Issuer', scopeName:'Yes Bank (All Programs)', issuer:'Yes Bank', programs:[],
-    startDate:'01 Jul 2026', endDate:'31 Dec 2026', status:'SCHEDULED', labels:['Milestone'],
-    createdBy:'Simran Kaur', createdOn:'28 Jun 2026', variant:'MODAL', channels:['EMAIL'] },
-  { id:'ND-88176', triggerType:'standard', nudgeType:'FILE_UPLOAD', name:'Q3 Reactivation List', description:'Uploaded list of dormant accounts for a targeted reactivation push.',
-    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) — All Programs', issuer:'IndusInd Bank (IBL)', programs:[],
-    startDate:'—', endDate:'—', status:'DRAFT', labels:[], createdBy:'Devendra Rao', createdOn:'26 Aug 2026', variant:'BANNER', channels:[] },
-  { id:'ND-88160', triggerType:'standard', nudgeType:'SYSTEM', name:'Low Balance Alert Nudge', description:'System-triggered nudge when available credit limit drops below a threshold.',
-    scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
-    startDate:'12 Jun 2026', endDate:'12 Jun 2026', status:'PENDING_REVIEW', labels:['Risk'],
-    createdBy:'Priya Nair', createdOn:'05 Jun 2026', variant:'DRAWER', channels:['SMS','EMAIL'],
-    comments:[{by:'Aarav Mehta', role:'Approver', on:'11 Jun 2026, 4:12pm', text:'Please double-check the threshold value against the risk team\'s latest cutoff before resubmitting.'}] },
-  { id:'ND-88144', triggerType:'standard', nudgeType:'OTHER', name:'App Rating Prompt', description:'One-off prompt asking satisfied customers to rate the app.',
-    scopeType:'Issuer', scopeName:'Yes Bank (All Programs)', issuer:'Yes Bank', programs:[],
-    startDate:'01 May 2026', endDate:'31 May 2026', status:'EXPIRED', labels:[], createdBy:'Ananya Iyer', createdOn:'22 Apr 2026', variant:'MODAL', channels:[] },
-  { id:'ND-88130', triggerType:'standard', nudgeType:'SYSTEM', name:'Card Activation Reminder', description:'Nudge new cardholders who haven\'t activated within 7 days of dispatch.',
-    scopeType:'Program', scopeName:'IBL — Signature Rewards', issuer:'IndusInd Bank (IBL)', programs:['Signature Rewards'],
-    startDate:'20 May 2026', endDate:'—', status:'CHANGES_REQUESTED', labels:['Activation'],
-    createdBy:'Rohan Gupta', createdOn:'18 May 2026', variant:'PILL', channels:['SMS'],
-    comments:[{by:'Simran Kaur', role:'Approver', on:'19 May 2026, 11:02am', text:'DNC bypass is enabled here — confirm that\'s intentional for an activation nudge before resubmitting.'}] },
 
-  { id:'EV-41032', triggerType:'event-based', nudgeType:'CROSS_SELL_UP_SELL', name:'EMI Conversion — Auth Trigger', description:'Fire an EMI conversion SMS the moment an eligible authorization transaction lands.',
-    scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
-    startDate:'01 Aug 2026', endDate:'Ongoing', status:'ACTIVE', labels:['EMI','Event-Based'],
-    createdBy:'Ananya Iyer', createdOn:'30 Jul 2026', channels:['SMS'],
-    eventCategory:'Journey Events', eventType:'Journey Progress', journey:'Txn-to-EMI', delay:'0', delayUnit:'minutes' },
-  { id:'EV-41028', triggerType:'event-based', nudgeType:'JOURNEY', name:'Post-Booking Thank You', description:'Follow-up nudge sent once an EMI booking is confirmed.',
-    scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
-    startDate:'01 Aug 2026', endDate:'Ongoing', status:'ACTIVE', labels:['EMI'],
-    createdBy:'Rohan Gupta', createdOn:'29 Jul 2026', channels:['WHATSAPP'],
-    eventCategory:'Journey Events', eventType:'Journey Progress', journey:'OS-to-EMI', delay:'10', delayUnit:'minutes' },
-  { id:'EV-40990', triggerType:'event-based', nudgeType:'OTHER', name:'Cart Abandon Nudge', description:'Draft experiment for a PWA drop-off nudge.',
-    scopeType:'Program', scopeName:'IBL — Signature Rewards', issuer:'IndusInd Bank (IBL)', programs:['Signature Rewards'],
-    startDate:'—', endDate:'—', status:'DRAFT', labels:[], createdBy:'Devendra Rao', createdOn:'25 Aug 2026', channels:[],
-    eventCategory:'Offer Events', eventType:'Outcome Issuance', delay:'30', delayUnit:'minutes' },
-  { id:'EV-40955', triggerType:'event-based', nudgeType:'SYSTEM', name:'Fraud Hold Notice', description:'Immediate notice sent when a transaction is put on fraud hold.',
-    scopeType:'Issuer', scopeName:'Yes Bank (All Programs)', issuer:'Yes Bank', programs:[],
-    startDate:'01 Mar 2026', endDate:'Ongoing', status:'INACTIVE', labels:['Risk'], createdBy:'Priya Nair', createdOn:'20 Feb 2026', channels:['SMS','EMAIL'],
-    eventCategory:'Journey Events', eventType:'Journey Progress', delay:'0', delayUnit:'minutes' },
+  { id:'EV-41120', triggerType:'event-based', nudgeType:'PROMOTION', name:'[AU] Welcome Benefit points credited', description:'AU BRD — Reward Points Credited. Fires when the outcome posts. One nudge per benefit type, because a nudge carries one offer; {offerName} supplies the benefit type in the copy.',
+    scopeType:'Issuer', scopeName:'AU Small Finance Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['AU','Event','Rewards'],
+    createdBy:'Product', createdOn:'25 Nov 2026', channels:['SMS','EMAIL'],
+    eventCategory:'Offer Events', eventType:'Outcome Issuance', offerId:'OF-17', delayType:'Immediate', delay:'0', delayUnit:'minutes',
+    commBlocks:[{name:'Reward credited', sendTime:'', configured:{
+      SMS:   {templateName:'AU — reward credited (SMS)',   message:'Dear ${firstName}, ${outcomeValue} Reward Points for ${offerName} are credited and available for redemption. Redeem on the AU Bank app or net banking. Balance: ${pointsAvailable}. Queries: 1800 1200 1200. - AU Bank'},
+      EMAIL: {templateName:'AU — reward credited (Email)', message:'Dear ${firstName}, ${outcomeValue} Reward Points for ${offerName} are credited and available for redemption. Redeem on the AU Bank app or net banking. Balance: ${pointsAvailable}. Queries: 1800 1200 1200. - AU Bank'},
+    }}],
+    triggerConditions:[{entity:'Outcome Issuance', attribute:'Outcome Status', operator:'Equals', value:'Posted'}] },
+  { id:'EV-41121', triggerType:'event-based', nudgeType:'PROMOTION', name:'[AU] Birthday Benefit points credited', description:'AU BRD — Reward Points Credited. Fires when the outcome posts. One nudge per benefit type, because a nudge carries one offer; {offerName} supplies the benefit type in the copy.',
+    scopeType:'Issuer', scopeName:'AU Small Finance Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['AU','Event','Rewards'],
+    createdBy:'Product', createdOn:'25 Nov 2026', channels:['SMS','EMAIL'],
+    eventCategory:'Offer Events', eventType:'Outcome Issuance', offerId:'OF-18', delayType:'Immediate', delay:'0', delayUnit:'minutes',
+    commBlocks:[{name:'Reward credited', sendTime:'', configured:{
+      SMS:   {templateName:'AU — reward credited (SMS)',   message:'Dear ${firstName}, ${outcomeValue} Reward Points for ${offerName} are credited and available for redemption. Redeem on the AU Bank app or net banking. Balance: ${pointsAvailable}. Queries: 1800 1200 1200. - AU Bank'},
+      EMAIL: {templateName:'AU — reward credited (Email)', message:'Dear ${firstName}, ${outcomeValue} Reward Points for ${offerName} are credited and available for redemption. Redeem on the AU Bank app or net banking. Balance: ${pointsAvailable}. Queries: 1800 1200 1200. - AU Bank'},
+    }}],
+    triggerConditions:[{entity:'Outcome Issuance', attribute:'Outcome Status', operator:'Equals', value:'Posted'}] },
+  { id:'EV-41122', triggerType:'event-based', nudgeType:'PROMOTION', name:'[AU] Anniversary Benefit points credited', description:'AU BRD — Reward Points Credited. Fires when the outcome posts. One nudge per benefit type, because a nudge carries one offer; {offerName} supplies the benefit type in the copy.',
+    scopeType:'Issuer', scopeName:'AU Small Finance Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['AU','Event','Rewards'],
+    createdBy:'Product', createdOn:'25 Nov 2026', channels:['SMS','EMAIL'],
+    eventCategory:'Offer Events', eventType:'Outcome Issuance', offerId:'OF-19', delayType:'Immediate', delay:'0', delayUnit:'minutes',
+    commBlocks:[{name:'Reward credited', sendTime:'', configured:{
+      SMS:   {templateName:'AU — reward credited (SMS)',   message:'Dear ${firstName}, ${outcomeValue} Reward Points for ${offerName} are credited and available for redemption. Redeem on the AU Bank app or net banking. Balance: ${pointsAvailable}. Queries: 1800 1200 1200. - AU Bank'},
+      EMAIL: {templateName:'AU — reward credited (Email)', message:'Dear ${firstName}, ${outcomeValue} Reward Points for ${offerName} are credited and available for redemption. Redeem on the AU Bank app or net banking. Balance: ${pointsAvailable}. Queries: 1800 1200 1200. - AU Bank'},
+    }}],
+    triggerConditions:[{entity:'Outcome Issuance', attribute:'Outcome Status', operator:'Equals', value:'Posted'}] },
+  { id:'EV-41123', triggerType:'event-based', nudgeType:'PROMOTION', name:'[AU] Milestone Benefit points credited', description:'AU BRD — Reward Points Credited. Fires when the outcome posts. One nudge per benefit type, because a nudge carries one offer; {offerName} supplies the benefit type in the copy.',
+    scopeType:'Issuer', scopeName:'AU Small Finance Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['AU','Event','Rewards'],
+    createdBy:'Product', createdOn:'25 Nov 2026', channels:['SMS','EMAIL'],
+    eventCategory:'Offer Events', eventType:'Outcome Issuance', offerId:'OF-20', delayType:'Immediate', delay:'0', delayUnit:'minutes',
+    commBlocks:[{name:'Reward credited', sendTime:'', configured:{
+      SMS:   {templateName:'AU — reward credited (SMS)',   message:'Dear ${firstName}, ${outcomeValue} Reward Points for ${offerName} are credited and available for redemption. Redeem on the AU Bank app or net banking. Balance: ${pointsAvailable}. Queries: 1800 1200 1200. - AU Bank'},
+      EMAIL: {templateName:'AU — reward credited (Email)', message:'Dear ${firstName}, ${outcomeValue} Reward Points for ${offerName} are credited and available for redemption. Redeem on the AU Bank app or net banking. Balance: ${pointsAvailable}. Queries: 1800 1200 1200. - AU Bank'},
+    }}],
+    triggerConditions:[{entity:'Outcome Issuance', attribute:'Outcome Status', operator:'Equals', value:'Posted'}] },
+  { id:'EV-41104', triggerType:'event-based', nudgeType:'PROMOTION', name:'[Event] Reward or cashback posted', description:'Outcome Issuance with status Posted — works on the event track today.',
+    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['UseCase','Event','Outcome'],
+    createdBy:'Product', createdOn:'24 Nov 2026', channels:['SMS'],
+    eventCategory:'Offer Events', eventType:'Outcome Issuance', offerId:'OF-2', delayType:'Immediate', delay:'0', delayUnit:'minutes',
+    triggerConditions:[{entity:'Outcome Issuance', attribute:'Outcome Status', operator:'Equals', value:'Posted'}] },
+  { id:'EV-41105', triggerType:'event-based', nudgeType:'PROMOTION', name:'[Event] Earned, not yet credited', description:'Outcome Issuance with status Pending. An event rather than a condition: "not posted and posting date in future" stays true every day until it posts.',
+    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) (All Programs)', issuer:'IndusInd Bank (IBL)', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['UseCase','Event','Outcome'],
+    createdBy:'Product', createdOn:'24 Nov 2026', channels:['SMS'],
+    eventCategory:'Offer Events', eventType:'Outcome Issuance', offerId:'OF-2', delayType:'Immediate', delay:'0', delayUnit:'minutes',
+    triggerConditions:[{entity:'Outcome Issuance', attribute:'Outcome Status', operator:'Equals', value:'Pending'}] },
+  { id:'EV-41109', triggerType:'event-based', nudgeType:'PROMOTION', name:'[Event] Points redeemed — AU, TWID only', description:'The requirement driving the rewards half. Targeted to redemption channel = Partner (TWID); the message uses points, merchant, card last four and reference.',
+    scopeType:'Issuer', scopeName:'AU Small Finance Bank (All Programs)', issuer:'Yes Bank', programs:[],
+    startDate:'01 Nov 2026', endDate:'Ongoing', status:'ACTIVE', labels:['UseCase','Event','Rewards','AU'],
+    createdBy:'Product', createdOn:'24 Nov 2026', channels:['SMS'],
+    eventCategory:'Reward Events', eventType:'Points redeemed', delayType:'Immediate', delay:'0', delayUnit:'minutes',
+    // AU's BRD supplies this template verbatim and it must not be
+    // reworded, including the trailing sign-off and the fourteen-X card
+    // mask. See OQ-4.
+    commBlocks:[{name:'TWID redemption', sendTime:'', configured:{
+      SMS: {templateName:'AU — TWID redemption (SMS)', message:"Alert! You've successfully redeemed ${pointsRedeemed} Reward Points using your AU Bank Credit Card XXXXXXXXXXXXXX${cardLast4} on ${merchantName}. Transaction Ref No: ${txnRef}. - AU Bank"},
+    }}],
+    triggerConditions:[{entity:'Points redeemed', attribute:'Redemption channel', operator:'Equals', value:'Partner (TWID)'}] },
 
   // Additional mock data — deliberately spans every status and a range of
   // channel-count permutations (0/1/2/3/4 channels) across both trigger
   // types, so Analytics-tab qualification (and every other status-gated
   // behavior) has more than one example to click through.
-  { id:'ND-88250', triggerType:'standard', nudgeType:'SYSTEM', name:'Balance Threshold Alert', description:'Nudge sent when available credit drops below a configured threshold.',
-    scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
-    startDate:'05 Aug 2026', endDate:'05 Nov 2026', status:'ACTIVE', labels:['Risk'], createdBy:'Priya Nair', createdOn:'01 Aug 2026', variant:'PILL', channels:['RCS'] },
-  { id:'ND-88245', triggerType:'standard', nudgeType:'SYSTEM', name:'Statement Ready Notice', description:'Nudge sent when a new statement is generated.',
-    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) — All Programs', issuer:'IndusInd Bank (IBL)', programs:[],
-    startDate:'01 Aug 2026', endDate:'Ongoing', status:'ACTIVE', labels:[], createdBy:'Rohan Gupta', createdOn:'28 Jul 2026', variant:'BANNER', channels:['EMAIL','RCS'] },
-  { id:'ND-88238', triggerType:'standard', nudgeType:'FILE_UPLOAD', name:'VIP Reactivation Push', description:'Uploaded list of high-value dormant accounts for a full-channel win-back push.',
-    scopeType:'Program', scopeName:'IBL — Signature Rewards', issuer:'IndusInd Bank (IBL)', programs:['Signature Rewards'],
-    startDate:'10 Aug 2026', endDate:'10 Sep 2026', status:'ACTIVE', labels:['Reactivation'], createdBy:'Ananya Iyer', createdOn:'05 Aug 2026', variant:'MODAL', channels:['SMS','EMAIL','WHATSAPP'] },
-  { id:'ND-88230', triggerType:'standard', nudgeType:'FILE_UPLOAD', name:'Spring Clearance List', description:'One-off uploaded list for a clearance-sale push, now expired.',
-    scopeType:'Issuer', scopeName:'Yes Bank (All Programs)', issuer:'Yes Bank', programs:[],
-    startDate:'01 Mar 2026', endDate:'31 Mar 2026', status:'EXPIRED', labels:[], createdBy:'Devendra Rao', createdOn:'25 Feb 2026', variant:'DRAWER', channels:['WHATSAPP'] },
-  { id:'ND-88222', triggerType:'standard', nudgeType:'JOURNEY', name:'Onboarding Completion Nudge', description:'Full-channel push to customers stalled mid-onboarding journey, now expired.',
-    scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
-    startDate:'01 Feb 2026', endDate:'28 Feb 2026', status:'EXPIRED', labels:['Onboarding'], createdBy:'Simran Kaur', createdOn:'20 Jan 2026', variant:'OFFERSTATE', channels:['SMS','EMAIL','RCS','WHATSAPP'] },
-  { id:'ND-88215', triggerType:'standard', nudgeType:'PROMOTION', name:'10th Transaction Milestone', description:'Congratulatory nudge once a customer crosses 10 transactions this cycle.',
-    scopeType:'Program', scopeName:'IBL — Signature Rewards', issuer:'IndusInd Bank (IBL)', programs:['Signature Rewards'],
-    startDate:'01 Aug 2026', endDate:'31 Dec 2026', status:'ACTIVE', labels:['Milestone'], createdBy:'Rohan Gupta', createdOn:'26 Jul 2026', variant:'MODAL', channels:['RCS','WHATSAPP'] },
-  { id:'ND-88208', triggerType:'standard', nudgeType:'PROMOTION', name:'Anniversary Offer', description:'Scheduled nudge for card-anniversary customers, not yet live.',
-    scopeType:'Issuer', scopeName:'Yes Bank (All Programs)', issuer:'Yes Bank', programs:[],
-    startDate:'01 Sep 2026', endDate:'30 Sep 2026', status:'SCHEDULED', labels:['Milestone'], createdBy:'Ananya Iyer', createdOn:'15 Aug 2026', variant:'BANNER', channels:['EMAIL'] },
-  { id:'ND-88195', triggerType:'standard', nudgeType:'CROSS_SELL_UP_SELL', name:'Outstanding Balance EMI Draft', description:'Draft EMI cross-sell nudge for outstanding balances, not yet configured.',
-    scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
-    startDate:'—', endDate:'—', status:'DRAFT', labels:['EMI'], createdBy:'Devendra Rao', createdOn:'27 Aug 2026', variant:null, eligibilityEntity:'Total Outstanding EMI', channels:[] },
-  { id:'ND-88182', triggerType:'standard', nudgeType:'OTHER', name:'Referral Bonus Alert', description:'One-off alert when a referral bonus is credited.',
-    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) — All Programs', issuer:'IndusInd Bank (IBL)', programs:[],
-    startDate:'01 Aug 2026', endDate:'Ongoing', status:'ACTIVE', labels:[], createdBy:'Priya Nair', createdOn:'29 Jul 2026', variant:'PILL', channels:['SMS'] },
 
-  { id:'EV-41050', triggerType:'event-based', nudgeType:'SYSTEM', name:'Suspicious Login Alert', description:'Immediate full-channel alert when a login from a new device is detected.',
-    scopeType:'Issuer', scopeName:'IndusInd Bank (IBL) — All Programs', issuer:'IndusInd Bank (IBL)', programs:[],
-    startDate:'15 Aug 2026', endDate:'Ongoing', status:'ACTIVE', labels:['Risk','Event-Based'], createdBy:'Priya Nair', createdOn:'12 Aug 2026', channels:['EMAIL','RCS','WHATSAPP'],
-    eventCategory:'Journey Events', eventType:'Journey Progress', delay:'0', delayUnit:'minutes' },
-  { id:'EV-41042', triggerType:'event-based', nudgeType:'OTHER', name:'Cart Recovery Nudge', description:'Fires when a customer abandons an in-PWA flow, currently deactivated.',
-    scopeType:'Program', scopeName:'IBL — Signature Rewards', issuer:'IndusInd Bank (IBL)', programs:['Signature Rewards'],
-    startDate:'01 Jun 2026', endDate:'Ongoing', status:'INACTIVE', labels:['Event-Based'], createdBy:'Rohan Gupta', createdOn:'25 May 2026', channels:['SMS','EMAIL'],
-    eventCategory:'Journey Events', eventType:'Pageload', delay:'15', delayUnit:'minutes' },
-  { id:'EV-41015', triggerType:'event-based', nudgeType:'PROMOTION', name:'Milestone Auto-Congrats', description:'Draft — auto-congratulate on milestone completion, not yet configured.',
-    scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
-    startDate:'—', endDate:'—', status:'DRAFT', labels:['Event-Based'], createdBy:'Simran Kaur', createdOn:'26 Aug 2026', channels:[],
-    eventCategory:'Offer Events', eventType:'Outcome Issuance', delay:'', delayUnit:'minutes' },
-  { id:'EV-41005', triggerType:'event-based', nudgeType:'CROSS_SELL_UP_SELL', name:'OS-to-EMI Trigger — Full Channel', description:'Full-channel variant of the OS-to-EMI conversion trigger, for A/B comparison against the SMS-only version.',
-    scopeType:'Program', scopeName:'IBL — Platinum Aura', issuer:'IndusInd Bank (IBL)', programs:['Platinum Aura'],
-    startDate:'10 Aug 2026', endDate:'Ongoing', status:'ACTIVE', labels:['EMI','Event-Based'], createdBy:'Ananya Iyer', createdOn:'08 Aug 2026', channels:['SMS','WHATSAPP','RCS'],
-    eventCategory:'Journey Events', eventType:'Journey Progress', journey:'Multi-Txn-to-EMI', delay:'5', delayUnit:'minutes' },
+];
+
+// Seeds predate the cross-sell removal, so retype those; and mark the
+// uploaded-list ones as having a file, since the File Upload screen reads
+// that flag.
+(function migrateSeedNudges(){
+  const JOURNEY_BY_SEED = {'ND-88201':'OS-to-EMI','ND-88222':'Onboarding','EV-41028':'Txn-to-EMI'};
+  NUDGES.forEach(n=>{
+    if(n.nudgeType==='CROSS_SELL_UP_SELL') n.nudgeType='OTHER';
+    if(n.nudgeType==='FILE_UPLOAD' && n.fileUploaded===undefined) n.fileUploaded = true;
+    if(n.nudgeType==='JOURNEY' && !n.journey && JOURNEY_BY_SEED[n.id]) n.journey = JOURNEY_BY_SEED[n.id];
+    if(n.eligibilityEntity==='Transaction EMI' || n.eligibilityEntity==='Total Outstanding EMI') delete n.eligibilityEntity;
+  });
+})();
+
+
+// Rows of the agreed use-case table the prototype cannot yet express, with
+// the reason. Listed rather than faked, so the gap stays visible.
+const UNBUILT_USE_CASES = [
+  {row:'Claimable, unclaimed for N days',      why:'deferred — derived from the data model, not asked for by any bank. Needs the Outcomes lookback row, which is switched off until the demand is confirmed'},
+  {row:'Qualified, nothing posted after N days', why:'deferred — same provenance as above'},
+  {row:'Reversed because the txn was refunded', why:'dropped — the same moment as the clawback event, which already covers it'},
+  {row:'No progress in N days',               why:'needs a last-progress timestamp doraemon does not store'},
+  {row:'Progress carries to a new card',      why:'AggregateProgressTransferEvent is published but is not in the event catalogue yet'},
+  {row:'Hit the usage cap',                   why:'doraemon records USAGE_LIMITS_EXHAUSTED but publishes no event for it'},
+  {row:'Cancelled, reason actionable',        why:'cancellation reason is not a fact on the event yet'},
+  {row:'Exclude anyone in collections',       why:'Account is not a subject on a promotional nudge in this cut'},
 ];
 
 let nlState = { tab:'standard', status:'', name:'', scope:'', program:'', issuerName:'', start:'', end:'', nudgeType:'', expanded:null, openDropdown:null };
@@ -4935,7 +5192,7 @@ function renderNudgesList(){
     </select>` : ''}
     ${nlState.tab==='standard' ? `<select onchange="nlOnFilterChange('nudgeType',this.value)">
       <option value="">Nudge Type: All</option>
-      ${NUDGE_TYPES.map(t=>`<option value="${t.id}">${t.label}</option>`).join('')}
+      ${NUDGE_TYPES.map(t=>`<option value="${t.id}" ${nlState.nudgeType===t.id?'selected':''}>${t.label}</option>`).join('')}
     </select>` : ''}
     <input type="date" class="f-input" style="width:150px;" onchange="nlOnFilterChange('start',this.value)" title="Nudge Start Date">
     <input type="date" class="f-input" style="width:150px;" onchange="nlOnFilterChange('end',this.value)" title="Nudge End Date">
@@ -5014,8 +5271,8 @@ let wiz = null; // { triggerType, stepIdx, draft, isEdit }
 function openNudgeCreate(){
   const type = nlState.tab; // pre-select trigger type from whichever list tab we're on
   wiz = { triggerType:type, stepIdx:0, isEdit:false,
-    draft:{ id:null, name:'', description:'', nudgeType:type==='event-based'?'CROSS_SELL_UP_SELL':null, scopeType:'Issuer', issuerScope:false, issuer:'', programs:[], isMakerCheckerEnabled:false,
-      startDate:'', endDate:'', journey:'', batch:'', isMilestone:false, offerType:'', offer:'',
+    draft:{ id:null, name:'', description:'', nudgeType:null, scopeType:'Issuer', issuerScope:false, issuer:'', programs:[], isMakerCheckerEnabled:false,
+      startDate:'', endDate:'', journey:'', batch:'', isMilestone:false, offerType:'', offer:'', offerId:'', offerScopeType:'',
       variant:null, location:'topShelf', displayOrder:null, dismissible:true, heading:'Activate your Card', subtext:'To start shopping and collect rewards', channels:[],
       eventCategory:'Journey Events', eventType:'', eventJourney:'', delayType:'Immediate', delay:'', delayUnit:'minutes', cancellationEnabled:false,
       cooldown:'', cooldownUnit:'hours', quietHours:'Queue to next slot', displayEnabled:false, conditions:[{entity:'',attribute:'',operator:'',value:''}],
@@ -5039,21 +5296,8 @@ function openNudgeEdit(id){
 }
 function wizSteps(){
   if(wiz.triggerType==='event-based') return EVENT_STEPS;
-  // Communication AND Interaction Limit are both hidden entirely for
-  // Cross-Sell/Up-Sell and Other nudge types in the real flow — not
-  // shown-with-a-note, actually removed from the stepper (verified against
-  // nudgesReviewSchema.tsx's DELIVERY/COMMUNICATION row conditions).
-  // External Source (2026-09-24, proposed) only drops Communication — it's
-  // a pure in-PWA nudge with no external comms channel at all (the whole
-  // point is the bank API supplies eligibility + placeholder values for an
-  // in-app header/sub-text, never an SMS/Email/WhatsApp send) — but
-  // Interaction Limit (reshow/frequency rules) still genuinely applies to
-  // an in-PWA nudge, so it's deliberately NOT excluded the same way.
-  return STANDARD_STEPS.filter(s => {
-    if(s.id==='COMMUNICATION' && ['CROSS_SELL_UP_SELL','OTHER','EXTERNAL_SOURCE'].includes(wiz.draft.nudgeType)) return false;
-    if(s.id==='DELIVERY' && ['CROSS_SELL_UP_SELL','OTHER'].includes(wiz.draft.nudgeType)) return false;
-    return true;
-  });
+  const hidden = HIDDEN_STEPS_BY_NUDGE_TYPE[wiz.draft.nudgeType] || [];
+  return STANDARD_STEPS.filter(s => !hidden.includes(s.id));
 }
 function wizGoStep(idx){ if(idx <= wiz.stepIdx || wiz.isEdit){ wiz.stepIdx = idx; renderWizard(); } }
 function wizNext(){ const steps = wizSteps(); if(wiz.stepIdx < steps.length-1){ wiz.stepIdx++; renderWizard(); } }
@@ -5091,6 +5335,18 @@ function renderWizard(){
 
 function fieldUpdate(key, val){ wiz.draft[key] = val; renderWizPreview(); }
 function toggleFieldBool(key){ wiz.draft[key] = !wiz.draft[key]; renderWizard(); }
+// Flip a draft boolean and re-render one step.
+//
+// Six inline handlers were written as fieldUpdate('k', !d.k) — but the
+// onclick attribute is a STRING evaluated at click time, in global scope,
+// where `d` (a local inside renderWizStep) does not exist. Every one of them
+// threw "d is not defined" and silently did nothing: DNC Override, Allow
+// Duplicate Accounts, Advanced Settings, Dismissible Nudge, Enable Nudge
+// Cancellation and Variant Upgrade Handling were all dead controls.
+//
+// The value has to be read when the handler RUNS, not when the markup is
+// built, which is what this does.
+function wizToggle(key, stepId){ wiz.draft[key] = !wiz.draft[key]; renderWizStep(stepId); }
 
 function wizFooter(nextLabel, disabled){
   return `<div class="wiz-footer">
@@ -5175,9 +5431,129 @@ const SYSTEM_GENERATED_TXN_TYPES = TRANSACTION_SUBTYPE_OPTIONS.filter(o=>!['AUTH
 // Real per-entity attribute metadata — eligibilityTotalList in smartNudgesConstants.ts.
 // Each attribute carries the real INPUT_TYPE, which drives both the operator
 // list (attributeTypeLabelMap) and the value widget (select/date/bool/list/
-// smartTag/highestTxnEMI) — SYSTEM/OTHER/CROSS_SELL_UP_SELL/PROMOTION only;
+// smartTag/highestTxnEMI) — batch nudges only;
 // JOURNEY's condition attributes aren't part of eligibilityTotalList and fall
 // back to the old generic (free-text) row below.
+// The offers a programme has configured, standing in for whatever the real
+// catalogue holds. Names carry NO amount and no day count: a target of
+// "spend 25,000 in 30 days" is the offer's own configuration, not its
+// identity, and baking it into the name means the name lies the moment the
+// configuration changes. (Same lesson already applied to MILESTONE_OFFERS
+// in the drip builder.)
+const OFFER_CATALOGUE = [
+  // valueType is the milestone's own ValueType, which decides what its
+  // progress is measured in. SUM and AVERAGE are money; COUNT is a number
+  // of events; STREAK counts consecutive DAYS, not events — a streak
+  // milestone with two days to go is not "two more transactions".
+  {id:'OF-1',  name:'Welcome Bonus',              type:'CVP',               milestone:true,  valueType:'SUM'},
+  {id:'OF-2',  name:'Quarterly Spend Target',     type:'CVP',               milestone:true,  valueType:'SUM'},
+  {id:'OF-3',  name:'Annual Fee Waiver',          type:'CVP',               milestone:true,  valueType:'SUM'},
+  {id:'OF-4',  name:'Card Activation Bonus',      type:'CVP',               milestone:true,  valueType:'COUNT'},
+  {id:'OF-5',  name:'Festive Spend Boost',        type:'Campaign Offers',   milestone:false},
+  {id:'OF-6',  name:'Weekend Dining Cashback',    type:'Campaign Offers',   milestone:false},
+  {id:'OF-7',  name:'Fuel Surcharge Waiver',      type:'Campaign Offers',   milestone:false},
+  {id:'OF-8',  name:'Travel Partner Bonus',       type:'3rd Party Offers',  milestone:false},
+  {id:'OF-9',  name:'Insurance Cross-Sell',       type:'3rd Party Offers',  milestone:false},
+  {id:'OF-10', name:'Electronics Store Offer',    type:'Merchant Offers',   milestone:false},
+  {id:'OF-11', name:'Grocery Chain Offer',        type:'Merchant Offers',   milestone:false},
+  {id:'OF-12', name:'Salary Account Bundle',      type:'Bank Offers',       milestone:false},
+  {id:'OF-13', name:'Locker Fee Waiver',          type:'Bank Offers',       milestone:false},
+  {id:'OF-14', name:'First Transaction Reward',   type:'Activation Offers', milestone:true,  valueType:'COUNT'},
+  // AU's four benefit types (BRD — Reward Points Credited). "Benefit type"
+  // in the BRD is the offer name, so each is an ordinary offer and each
+  // gets its own event nudge.
+  {id:'OF-17', name:'Welcome Benefit',            type:'CVP',               milestone:false},
+  {id:'OF-18', name:'Birthday Benefit',           type:'CVP',               milestone:false},
+  {id:'OF-19', name:'Anniversary Benefit',        type:'CVP',               milestone:false},
+  {id:'OF-20', name:'Milestone Benefit',          type:'CVP',               milestone:true,  valueType:'SUM'},
+  {id:'OF-15', name:'Daily Spend Streak',         type:'Campaign Offers',   milestone:true,  valueType:'STREAK'},
+  {id:'OF-16', name:'Average Ticket Size Reward', type:'CVP',               milestone:true,  valueType:'AVERAGE'},
+];
+// What the value field should ask for, and what a reader should be told the
+// offer measures. Four value types, three units — STREAK is a day count, so
+// it must not read as a number of transactions.
+// A tiered milestone offer pays a different reward per tier, so a typed
+// amount in the copy is wrong for some customers — and there is no clean
+// variable to substitute, because the configured reward is spread across the
+// benefit row, the capping config and the tier.
+// (doraemon: BenefitOutcomeConfig.isTieredMilestoneOffer)
+const TIERED_OFFER_IDS = ['OF-15','OF-16'];
+function offerIsTiered(id){ return TIERED_OFFER_IDS.includes(id); }
+// A tiered offer has a different threshold per tier, so every variable
+// derived from the threshold resolves to a different number for different
+// customers in the same send. The current value and the offer name are the
+// two that stay true, which is why the warning names them as the way out.
+const TIER_DEPENDENT_VARIABLES = ['milestoneThresholdValue','milestoneRemainingValue',
+  'milestoneCurrentPercentage','milestoneRemainingPercentage','benefitOutcomeValue'];
+function tieredOfferWarningHtml(offerId){
+  if(!offerIsTiered(offerId)) return '';
+  const name = (offerById(offerId)||{}).name || 'this offer';
+  return `<div class="wiz-warn tiered-warn">
+    <b>${name} has more than one tier.</b> Its target and its reward differ by tier, so
+    ${TIER_DEPENDENT_VARIABLES.map(v=>`<code>\${${v}}</code>`).join(', ')}
+    resolve to a different number for each customer in the same send — a message that
+    states one amount will be wrong for everyone outside that tier.
+    Write it against <code>\${milestoneCurrentValue}</code> and <code>\${benefitName}</code>,
+    which hold whichever tier the customer is on, or split the nudge by tier using a
+    progress condition on the User Base step.
+  </div>`;
+}
+
+const MILESTONE_VALUE_TYPES = {
+  SUM:     {unit:'₹ Amount', measures:'total spend'},
+  AVERAGE: {unit:'₹ Average', measures:'average transaction value'},
+  COUNT:   {unit:'Count',    measures:'number of qualifying events'},
+  STREAK:  {unit:'Days',     measures:'consecutive days'},
+};
+function offerValueType(o){ return (o && o.valueType) || null; }
+// The picker label and the read-back both use this, so an attribute is
+// named the same way wherever it appears. Only attributes that declare a
+// unit get one appended; everything else reads as its own key.
+function attrLabel(entity, attribute, draft){
+  const m = (ELIGIBILITY_META[entity]||{})[attribute];
+  if(!m) return attribute;
+  if(m.unitLabel) return `${attribute.replace(/ %$/,'')} (${m.unitLabel})`;
+  if(m.unitFromOffer){
+    const o = offerById(((draft||wiz&&wiz.draft)||{}).offerId);
+    return `${attribute} (${o ? offerUnit(o) : 'value'})`;
+  }
+  return attribute;
+}
+function offerUnit(o){ const v=MILESTONE_VALUE_TYPES[offerValueType(o)]; return v ? v.unit : 'Value'; }
+function offerMeasuresText(o){ const v=MILESTONE_VALUE_TYPES[offerValueType(o)]; return v ? v.measures : null; }
+// Nudges run only for offers that are active or scheduled, so the picker
+// does not list any other state. That is the whole staleness rule — a nudge
+// cannot be pointed at a dead offer in the first place.
+// Withdrawn and paused offers are out of scope (PRD 9b); a withdrawal is
+// served by file upload for now.
+const OFFER_SELECTABLE_STATUSES = ['Active','Scheduled'];
+function offerSelectable(o){ return !o.status || OFFER_SELECTABLE_STATUSES.includes(o.status); }
+function offersOfType(t){ return t ? OFFER_CATALOGUE.filter(o=>o.type===t) : OFFER_CATALOGUE; }
+function offerById(id){ return OFFER_CATALOGUE.find(o=>o.id===id) || null; }
+// Illustrative. A programme's real reward currencies are issuer config.
+// The periods an offer can cap usage over, each tracked separately.
+const USAGE_LIMIT_PERIODS = ['Day','Week','Month','Billing cycle','Quarter','Year','Lifetime'];
+const REWARD_CURRENCIES = ['Edge Rewards','Zenith Points','Partner Miles'];
+// Redemption modes, from the existing list the PRD names — airport lounge,
+// cashback, golf, voucher — plus TWID, the partner AU redeem through.
+// TWID is one more value on this list and nothing more: no TWID-specific
+// logic belongs anywhere in the dashboard (PRD 2 §7.3).
+// Everything a customer receives from an offer is one outcome with a type,
+// a status and a date. The types are doraemon's BenefitOutcome.OutcomeType.
+const OFFER_OUTCOME_TYPES = ['Reward','Cashback','Voucher','Smart tag','Partner points','Reward reversal','Cashback reversal'];
+// The TRACKER's eleven statuses, not the event's five. OutcomeComputedEvent
+// collapses CLAIMABLE, PARTIALLY_VERIFIED and VERIFIED_FOR_POSTING into one
+// POSTING_PENDING, which would make "claimable but unclaimed" unaskable.
+const OFFER_OUTCOME_STATUSES = ['Initiated','Settled','Verified for posting','Partially verified','Claimable','Pending','Posted','Cancelled','Reversed','Refunded','Reversal verified'];
+// Why an outcome was cancelled. Doraemon records all five; only the first is
+// published today.
+const OFFER_OUTCOME_CANCEL_REASONS = ['Usage limits exhausted','Confirmation not received','Variant upgrade pending','Ineligible for posting','Outcome posting disabled'];
+const REDEMPTION_CHANNELS = ['Airport lounge','Cashback','Golf','Voucher','Partner (TWID)'];
+const POINTS_CREDIT_REASONS = ['Transaction earn','Milestone payout','Promotional bonus','Goodwill adjustment','Partner transfer'];
+const REWARD_PARTNERS = ['Airline partner','Hotel partner','Retail partner'];
+const OFFER_LEVELS = ['Bronze','Silver','Gold','Platinum'];
+// (offer-withdrawal reasons removed with the event — §7.1a)
+
 const ELIGIBILITY_META = {
   'Customer': {
     'Date of Birth':{type:'date'}, 'KYC Status':{type:'select', options:['Small KYC','FKYC']},
@@ -5229,6 +5605,209 @@ const ELIGIBILITY_META = {
     'Physically Issued':{type:'bool'}, 'Virtually Issued':{type:'bool'}, 'Physical Card Activated':{type:'bool'},
     'Virtual Card Activated':{type:'bool'}, 'Is Ever Activated':{type:'bool'}, 'Locked':{type:'bool'}, 'Blocked':{type:'bool'},
     'Created On':{type:'date'}, 'Last Updated On':{type:'date'}, 'Card Block Codes':{type:'list'},
+  },
+  // The customer's own standing in the offer picked above the conditions —
+  // never the offer's definition. The offer is chosen once for the whole
+  // nudge, so a row here asks only attribute/comparison/value: two rows
+  // naming two different offers would leave "progress is at least 20%"
+  // with no referent.
+  //
+  // Nothing here is computed in the dashboard. Each value is read per
+  // customer when the nudge runs.
+  // Phase 1 needs two offer attributes, not four. The parity triggers are
+  // "offer goes live ± N days" and "offer expires − N days", which are the
+  // start and end dates. Offer status and Offer status changed served the
+  // withdrawn and paused use cases, both out of scope; and nudges already
+  // run only for Active or Scheduled offers, so a status filter adds
+  // nothing. Commented rather than deleted.
+  'Offer': {
+    // milestoneOnly — these read the customer's subscription record, and a
+    // subscription only exists for a milestone offer. Both generations of
+    // the backend prove it: creating either a BenefitSubscription or a
+    // BenefitSubscriptionPlan casts the offer's eligibility to
+    // MilestoneBenefitEligibility to read the progress value.
+    // Five values, matching one-to-one what the backend already computes for
+    // offer-communication placeholders: current value and percentage,
+    // remaining value and percentage, and the threshold. Splitting value
+    // from percentage matters — "remaining is under 5000" and "remaining is
+    // under 5%" are different questions, and an earlier version offered a
+    // percentage for current progress and a raw value for remaining, which
+    // was asymmetric and gave no way to ask about current value at all.
+    //
+    // unitFromOffer — the raw ones are rupees for a spend milestone and a
+    // plain count for a "make N transactions" one, so the field takes its
+    // unit from the chosen offer instead of assuming money.
+    // Five attributes across two axes — achieved / remaining / target, and
+    // percentage / value. Both axes have to be visible in the label or the
+    // list is undifferentiable: "Progress value", "Progress remaining" and
+    // "Progress target" gave the reader nothing to tell them apart at a
+    // glance. The state word now leads, and the unit is appended at render
+    // time by attrLabel() so it reads the real one off the chosen offer —
+    // ₹ Amount, Count or Days — which also says whether to type 40 or 5000.
+    //
+    // The KEY stays unit-free because it is stored on the condition. A key
+    // carrying the unit would change under a saved nudge when its offer
+    // changed.
+    // PHASE 2+ · 'Progress achieved %': {type:'progressNumber', placeholder:'%', milestoneOnly:true, unitLabel:'%'},
+    // PHASE 2+ · 'Progress achieved': {type:'progressNumber', unitFromOffer:true, milestoneOnly:true},
+    // PHASE 2+ · 'Progress remaining %': {type:'progressNumber', placeholder:'%', milestoneOnly:true, unitLabel:'%'},
+    // PHASE 2+ · 'Progress remaining': {type:'progressNumber', unitFromOffer:true, milestoneOnly:true},
+    // PHASE 2+ · 'Progress target': {type:'number', unitFromOffer:true, milestoneOnly:true},
+    // PHASE 2+ · 'Subscription status': {type:'select', options:['Active','Paused','Expired','Unsubscribed','Not enrolled'], milestoneOnly:true},
+    // PHASE 2+ · 'Enrolment date': {type:'date', milestoneOnly:true},
+    // PRD 1 §7.7. Reads BenefitSubscriptionCycle.activeFrom, which is why
+    // it is milestone-only: doraemon creates a subscription cycle only
+    // inside milestone subscription-plan creation, so a transactional offer
+    // has no cycle and no cycle start.
+    //
+    // This is what makes B3 (subscription auto-renews) and C6 (cycle rolled
+    // over) answerable as conditions rather than events — a cycle that
+    // started today is one that just rolled over.
+    // PHASE 2+ · 'Cycle start date': {type:'date', milestoneOnly:true},
+    // Usage is the mirror image of progress, not a companion to it. The one
+    // path that creates and increments a usage tracker sits inside
+    // `if (benefit.eligibilityType != MILESTONE)`, so a milestone offer
+    // never accrues usage and these would always read zero on one.
+    //
+    // usagePeriod — an offer can carry up to eight limits at once (daily,
+    // weekly, monthly, billing cycle, quarterly, annual, lifetime, plus
+    // opt-in custom periods), each with its own tracker and its own reset.
+    // So there is no single "usage count": the row has to say which period
+    // it means, or "usage count is 0" is two different audiences.
+    // PHASE 2+ · 'Usage count': {type:'usagePeriod', placeholder:'Count', transactionalOnly:true},
+    // PHASE 2+ · 'Usage value': {type:'usagePeriod', placeholder:'₹ Amount', transactionalOnly:true},
+    // The offer's own window. Per customer where the offer has one (a
+    // milestone subscription plan carries its own activeFrom/activeTo),
+    // global otherwise (the benefit's own dates). Same condition either way.
+    'Offer start date': {type:'date'},
+    'Offer end date': {type:'date'},
+    // PRD 1 §7.7. Benefit.status and Benefit.updatedAt. Together they make
+    // A4 (offer withdrawn) a condition: status Terminated, changed
+    // yesterday. Doraemon also keeps Benefit.lastStatus, the status before
+    // — which is exactly what it does NOT keep for the end date, and that
+    // asymmetry is why A4 is a condition and A3 stays an event.
+    //
+    // Only the customer-visible states are offered. Draft, Pending
+    // approval, Sent back and Rejected are states an offer passes through
+    // before anyone can be enrolled in it, so no nudge can be about them.
+    // PHASE 2+ · 'Offer status': {type:'select', options:['Active','Paused','Expired','Terminated']},
+    // PHASE 2+ · 'Offer status changed': {type:'date'},
+  },
+  // Reward points. A rewards nudge has no offer in it at all — which is why
+  // the offer above the conditions is optional.
+  // ---------------------------------------------------------------------
+  // PRD 2 event facts. Each event is its own entity so condRow can resolve
+  // its attributes the ordinary way, and so the attribute list is the facts
+  // THAT event carries rather than one list shared by a whole category.
+  //
+  // This replaces the single-locked-attribute pattern for offer events
+  // (PRD 2 §8.1): that pattern allowed exactly one attribute, repeated and
+  // AND-ed, which produces contradictions like "outcome status is Posted
+  // AND outcome status is Cancelled".
+  //
+  // isNew on an attribute marks a fact the backend does not publish yet.
+  // Of the fourteen, only Outcome Issuance is real today; two more publish
+  // something but not in a usable shape (PRD 2 §7.2).
+  // --- Offer events ---
+  'Outcome Issuance': {
+    'Outcome Status': {type:'select', options:['Posted','Pending','Cancelled','Reversed','Failed']},
+  },
+  'Offer extended or end date changed': {
+    'Previous end date': {type:'date', isNew:true},
+    'New end date': {type:'date', isNew:true},
+  },
+  // The most requested of the eight, and the one with no equivalent
+  // anywhere today: nothing compares a customer's progress against their
+  // threshold and announces the crossing, though both numbers already sit
+  // side by side in an existing response (PRD 2 §7.2).
+  'Milestone threshold crossed': {
+    'Threshold crossed': {type:'number', unitFromOffer:true, isNew:true},
+    'Current value': {type:'number', unitFromOffer:true, isNew:true},
+    'Current percentage': {type:'number', placeholder:'%', isNew:true},
+  },
+  'Level changed': {
+    'Previous level': {type:'select', options:OFFER_LEVELS, isNew:true},
+    'New level': {type:'select', options:OFFER_LEVELS, isNew:true},
+  },
+  // --- Reward events. None of the six exists today. ---
+  'Points credited': {
+    'Points': {type:'number', placeholder:'Points', isNew:true},
+    'Reason': {type:'select', options:POINTS_CREDIT_REASONS, isNew:true},
+    'Balance after': {type:'number', placeholder:'Points', isNew:true},
+  },
+  // The five facts are exactly the placeholders AU's own proposed message
+  // uses — points, last four, merchant, reference — plus the channel that
+  // identifies it as a partner redemption (PRD 2 §7.3).
+  'Points redeemed': {
+    // Card last four digits and transaction reference are message content,
+    // not audience filters. Both identify a single card or a single
+    // transaction, so neither can narrow a population — "customers whose
+    // card ends 4821" is not a segment. They remain available to the
+    // message editor as {cardLast4} and {txnRef}.
+    'Redemption channel': {type:'select', options:REDEMPTION_CHANNELS, isNew:true},
+    'Points redeemed': {type:'number', placeholder:'Points', isNew:true},
+    'Merchant name': {type:'freeText', placeholder:'Merchant', isNew:true},
+    // NOT A FILTER · 'Card last four digits': {type:'freeText', placeholder:'e.g. 4821', isNew:true},
+    // NOT A FILTER · 'Transaction reference': {type:'freeText', placeholder:'Reference', isNew:true},
+  },
+  'Rewards account status changed': {
+    'Previous status': {type:'select', options:['Active','Blocked','Inactive','Closed'], isNew:true},
+    'New status': {type:'select', options:['Active','Blocked','Inactive','Closed'], isNew:true},
+  },
+  'Partner points transferred': {
+    'Partner': {type:'select', options:REWARD_PARTNERS, isNew:true},
+    'Points': {type:'number', placeholder:'Points', isNew:true},
+  },
+
+  // A lookback over a set, not single-value attributes: a customer has many
+  // outcomes. Reward balances are aggregates over this same set, which is
+  // why both subjects exist.
+  //
+  // Every use case needs only type, status and age — no value ranges, no
+  // merchant filters, no sub-query — so it fits one sentence row.
+  'Outcomes': {
+    // DEFERRED, not deleted. The lookback row — "an outcome of type X with
+    // status Y exactly N days old exists" — was built for two use cases
+    // (claimable-unclaimed and qualified-nothing-posted) that nobody has
+    // asked for: both were derived from what the system records, not from a
+    // bank requirement. It is the most complex control in the builder and
+    // two bugs were found in it on the day it was written, so it is not
+    // worth carrying on speculative demand.
+    //
+    // The machinery below is intentionally left in place — the outcomeMatch
+    // and outcomeLookback renderers, operators and read-back all still
+    // work. Re-enabling is uncommenting these two lines. The decision to
+    // defer is about demand, not feasibility, so the cost of being wrong
+    // should stay low.
+    //
+    //   'An outcome': {type:'outcomeMatch', options:OFFER_OUTCOME_TYPES, statusOptions:OFFER_OUTCOME_STATUSES, isNew:true},
+    //   'An outcome cancelled because': {type:'outcomeLookback', options:OFFER_OUTCOME_CANCEL_REASONS, isNew:true},
+    // The one forward-looking fact in this subject. PostingComputation
+    // writes postingDate onto the tracker and the outcome when the outcome
+    // is created, so a batch read — which queries the table — can compare
+    // it in either direction: "is in exactly 2 days" is the heads-up before
+    // a credit lands, "was exactly 1 days ago" is a credit that is overdue.
+    // The event track cannot do this: postingDate is not in outcomePayload.
+    // PHASE 2+ · 'Outcome posting date': {type:'date', isNew:true},
+  },
+  'Rewards': {
+    'Points available': {type:'number', placeholder:'Points'},
+    // The one attribute that carries its own extra input: expiry means
+    // nothing without a horizon. Deliberately "in exactly N days" and not
+    // "within N days" — a cumulative figure stays true every day for a
+    // month, so a daily nudge would reach the same customer thirty times.
+    // Same exactly-N rule DATE_OPERATORS_GENERAL already applies.
+    'Points expiring': {type:'expiringPoints', placeholder:'Points'},
+    // PHASE 2+ · 'Points pending': {type:'number', placeholder:'Points'},
+    'Points expired': {type:'number', placeholder:'Points'},
+    'Points redeemed': {type:'number', placeholder:'Points'},
+    // PHASE 2+ · 'Points reversed': {type:'number', placeholder:'Points'},
+    // PHASE 2+ · 'Lifetime earned': {type:'number', placeholder:'Points'},
+    'Rewards account status': {type:'select', options:['Active','Blocked','Inactive','Closed']},
+    'Reward currency': {type:'select', options:REWARD_CURRENCIES},
+    // The only reward figure the existing read does not return. Flagged so
+    // nobody plans a campaign on it before the backend supplies it.
+    'Last redemption date': {type:'date', isNew:true},
   },
   'Card Control': Object.fromEntries(['Domestic Contact','Domestic Contactless','Domestic Ecommerce','Domestic Magnetic','Domestic Moto','Domestic Cash','International Contact','International Contactless','International Ecommerce','International Magnetic','International Moto','International Cash'].map(k=>[k,{type:'bool'}])),
   'Transaction EMI': {
@@ -5335,12 +5914,42 @@ const DATE_OPERATORS_SHARED = ['Is','Is before','Is on or before','Is after','Is
 // 'Birthday is within the next N days' stays a window, not a single day.
 const DATE_OPERATORS_DOB = [...DATE_OPERATORS_SHARED,
   'Birthday is ' + CURRENT_DAY_TOKEN,
-  'Birthday is in exactly N days', 'Birthday was exactly N days ago',
-  'Birthday is within the next N days',
+  'Birthday is in exactly', 'Birthday was exactly',
+  'Birthday is within the next',
   'Age is','Age is at least','Age is at most'];
+// Phrased from the date's point of view, not from today's.
+//
+// "Is exactly N days after {current-day}" was literally accurate and read
+// backwards: to remind someone ten days BEFORE their offer expires you had
+// to pick AFTER, because the expiry sits ten days after today. The operator
+// described where the attribute sits relative to today while the campaign
+// manager was thinking about where today sits relative to the attribute.
+//
+// These two now match the wording Date of Birth has always used
+// ("Birthday is in exactly N days" / "was exactly N days ago"), which was
+// clear all along and simply never carried across. The {current-day} token
+// is gone from both labels too — it was jargon in a sentence that no longer
+// needs it.
 const DATE_OPERATORS_GENERAL = [...DATE_OPERATORS_SHARED,
-  'Is exactly N days before ' + CURRENT_DAY_TOKEN, 'Is exactly N days after ' + CURRENT_DAY_TOKEN,
-  'Is within the last N days','Is within the next N days'];
+  'Was exactly', 'Is in exactly',
+  'Is within the last','Is within the next'];
+// A day-count operator is the first half of a sentence the row completes:
+//   Offer end date · Is in exactly · [10] · days
+// The label used to carry "N days" itself, which left the row reading
+// "Is in exactly N days [__] days" — the unit twice and nothing saying what
+// the box wanted. Age already worked this way ("Age is at least" [30]
+// "years"); these now match it. The value each one needs is the trailing
+// unit, which differs: "days" counts forward, "days ago" counts back.
+const DAY_COUNT_OPERATORS = {
+  'Was exactly':'days ago',
+  'Is in exactly':'days',
+  'Is within the last':'days',
+  'Is within the next':'days',
+  'Birthday was exactly':'days ago',
+  'Birthday is in exactly':'days',
+  'Birthday is within the next':'days',
+};
+function dateOpUnit(op){ return DAY_COUNT_OPERATORS[op] || 'days'; }
 function dateOperatorsFor(attribute){
   return attribute==='Date of Birth' ? DATE_OPERATORS_DOB : DATE_OPERATORS_GENERAL;
 }
@@ -5351,19 +5960,34 @@ function dateOpKind(op){
   if(!op) return '';
   if(op==='Is between') return 'two-dates';
   if(op==='Birthday is ' + CURRENT_DAY_TOKEN) return 'fixed-token';
-  if(/\bN days\b/.test(op)) return 'days';
+  if(DAY_COUNT_OPERATORS[op]) return 'days';
   if(op==='Age is' || op==='Age is at least' || op==='Age is at most') return 'years';
   return 'one-date';
 }
 const OPERATORS_BY_TYPE = {
   select:['Equals'], bool:['Equals'], date:DATE_OPERATORS_GENERAL,
+  // A journey-declared STRING field. buildCustomerAttributeOptions falls
+  // back to STRING_COMPARATORS (EQ/NEQ) for exactly this case.
+  freeText:['Equals','Not Equals'],
   list:['Allowed','Denied'], smartTag:['Allowed','Denied'], highestTxnEMI:['Greater than','Greater than or equal to'],
   number:['Equals','Greater than','Greater than or equal to','Less than','Less than or equal to'],
+  // Progress drops the bare "at most": it silently includes every customer
+  // with no progress row, which is rarely what a falling-behind campaign
+  // means. A range needs a lower bound, so it excludes them by construction.
+  progressNumber:['Equals','Greater than','Greater than or equal to','Between'],
+  // Same comparisons as a number; the difference is the day-count input the
+  // row renders alongside it (condRow's windowCell).
+  expiringPoints:['Equals','Greater than','Greater than or equal to','Less than','Less than or equal to'],
+  usagePeriod:['Equals','Greater than','Greater than or equal to','Less than','Less than or equal to'],
   // A real, fixed enum where more than one value can legitimately apply at
   // once (e.g. Transaction Status: APPROVED or PARTIAL_SETTLED or...) —
   // one operator, since "matches any of the picked values" is the only
   // meaningful comparison for a set like this.
   multiSelect:['Any of'],
+  // An existence question over a set, so the comparison is whether a
+  // matching outcome is there at all.
+  outcomeLookback:['Exists','Does not exist'],
+  outcomeMatch:['Exists','Does not exist'],
 };
 /* =========================================================================
    QUERY TEMPLATES — verified against ironbank-face-main.
@@ -5436,6 +6060,225 @@ function queryVarInputType(v){ return (v.type==='INTEGER'||v.type==='FLOAT') && 
 
 const SMART_TAG_OPTIONS = ['High EMI Propensity','Dormant 60d','Recent Complaint'];
 
+// A single-pick field backed by a search, for lists too long to show.
+//
+// Modelled on the real dashboard's own DropDownWithSubText, which is how
+// offers, plans and smart tags are picked there: CLOSED by default, opens
+// to a search box, and the typed term is debounced to the server
+// (benefit/searchByName, offerPlans/searchByName) so the full list is never
+// loaded. A programme can hold hundreds of offers, so rendering the
+// catalogue upfront is wrong at any size worth designing for.
+//
+// This prototype filters a local list instead of calling a server, but it
+// keeps the shape honest: nothing is listed until you type, and a result
+// count says how much you have not seen.
+// Which dropdown is open. Shared by searchSelectHtml and
+// multiSelectDropdownHtml so only one panel is ever open at a time.
+let openMultiSelectId = null;
+const SEARCH_SELECT_LIMIT = 10;
+let searchSelectQuery = {};
+// A full re-render replaces the search input, which takes the caret with it —
+// so typing one letter lost focus and the next keystroke went nowhere. The
+// same bug this file has already been bitten by twice (the Query Template
+// variable name field, and Run Query). The state update and the re-render
+// have to happen, so the fix is to put the caret back afterwards: the inline
+// handler runs update → re-render → refocus in sequence, and the input is
+// found again by a stable id.
+function searchSelectFocus(id){
+  const el = document.getElementById('ss-'+id);
+  if(!el) return;
+  el.focus();
+  const n = el.value.length;
+  try{ el.setSelectionRange(n, n); }catch(e){}
+}
+function searchSelectHtml(o){
+  const isOpen = openMultiSelectId === o.id;
+  const picked = (o.items||[]).find(i=>i.id===o.selectedId) || null;
+  const q = (searchSelectQuery[o.id]||'').trim().toLowerCase();
+  // No query shows the head of the list rather than an empty panel — a
+  // picker that looks broken until you type is worse than one that shows
+  // you what kind of thing it holds. The cap is what keeps it honest at
+  // hundreds: you are always told how many you have not seen.
+  const matches = q ? o.items.filter(i=>i.name.toLowerCase().includes(q) || (i.sub||'').toLowerCase().includes(q)) : o.items;
+  const shown = matches.slice(0, SEARCH_SELECT_LIMIT);
+  const more = matches.length - shown.length;
+  const toggle = `openMultiSelectId=openMultiSelectId==='${o.id}'?null:'${o.id}';${o.rerender}`;
+  return `
+    <div style="position:relative;">
+      <div class="msel-trigger" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;" onclick="${toggle}">
+        ${picked
+          ? `<span style="overflow:hidden;"><b>${picked.name}</b>${picked.tag?` <span class="badge info" style="font-size:10px;vertical-align:middle;">${picked.tag}</span>`:''}${picked.sub?`<span style="display:block;font-size:11.5px;color:var(--gray-500);">${picked.sub}</span>`:''}</span>`
+          : `<span style="color:var(--gray-400);">${o.placeholder}</span>`}
+        <span style="color:var(--gray-400);flex-shrink:0;display:flex;gap:8px;align-items:center;">
+          ${picked ? `<span class="cond-remove" title="Clear" onclick="event.stopPropagation();${o.onClear}">✕</span>` : ''}
+          ${isOpen?'▴':'▾'}
+        </span>
+      </div>
+      ${isOpen ? `
+      <div class="msel-panel" style="position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;">
+        <div style="padding:8px;border-bottom:1px solid var(--gray-100);">
+          <input id="ss-${o.id}" class="f-input" type="text" placeholder="${o.searchPlaceholder}" value="${searchSelectQuery[o.id]||''}"
+            oninput="searchSelectQuery['${o.id}']=this.value;${o.rerender};searchSelectFocus('${o.id}')">
+        </div>
+        <div style="max-height:260px;overflow-y:auto;">
+          ${shown.length
+            ? shown.map(i=>`<div class="msel-option" onclick="${o.onPick}('${i.id}')"><div style="font-weight:600;">${i.name}${i.tag?` <span class="badge info" style="font-size:10px;vertical-align:middle;">${i.tag}</span>`:''}</div>${i.sub?`<div style="font-size:11.5px;color:var(--gray-500);">${i.sub}</div>`:''}</div>`).join('')
+            : `<div class="f-hint" style="margin:0;padding:10px 11px;">No ${o.noun.replace(/s$/,'')} matches that.</div>`}
+        </div>
+        ${more>0 ? `<div class="f-hint" style="margin:0;padding:8px 11px;border-top:1px solid var(--gray-100);background:var(--gray-50);">Showing ${shown.length} of ${matches.length} ${o.noun} — type to narrow.</div>` : ''}
+      </div>` : ''}
+    </div>`;
+}
+
+// The offer a promotional nudge is about, chosen ONCE above the conditions
+// rather than as one of them: two rows naming two different offers would
+// leave "progress is at least 20%" with no referent, and the one-offer rule
+// should be visible rather than accidental.
+//
+// Optional on purpose. A rewards nudge — points expiring, account active —
+// has no offer in it at all, and a mandatory field about something
+// unrelated would block it.
+//
+// Cycle and Variant Upgrade stay here because both are properties of the
+// offer, not of a condition.
+// Changing what the nudge does changes which steps exist, so the step
+// index has to be re-resolved: stepIdx is a position in wizSteps(), and
+// that list just got longer or shorter. Without this, picking "Sends a
+// message" from step 0 is harmless, but coming BACK to step 0 in an edit
+// and switching could land the operator on a different step than the one
+// they were on.
+// The nudge type decides which steps exist, so changing it re-resolves the
+// step index: stepIdx is a position in wizSteps(), and that list just got
+// longer or shorter.
+function nudgeTypeSet(id){
+  const current = wizSteps()[wiz.stepIdx];
+  wiz.draft.nudgeType = id;
+  if(id!=='PROMOTION'){ wiz.draft.offerId=''; wiz.draft.offerScopeType=''; }
+  const idx = wizSteps().findIndex(st=>st.id===current.id);
+  wiz.stepIdx = idx >= 0 ? idx : 0;
+  renderWizard();
+}
+
+function pruneOfferRowsForOffer(){
+  const d = wiz.draft;
+  const picked = offerById(d.offerId);
+  if(!picked) return;
+  (d.conditions||[]).forEach(c=>{
+    if(c.entity!=='Offer') return;
+    const m = (ELIGIBILITY_META['Offer']||{})[c.attribute];
+    if(!m) return;
+    const stale = picked.milestone ? m.transactionalOnly : m.milestoneOnly;
+    if(stale){ c.attribute=''; c.operator=''; c.value=''; c.value2=''; c.values=[]; delete c.window; }
+  });
+}
+function offerScopePick(id){
+  wiz.draft.offerId = id;
+  searchSelectQuery['offerScope']=''; openMultiSelectId=null;
+  pruneOfferRowsForOffer();
+  renderWizStep(offerPickerStep());
+}
+function offerScopeClear(){
+  wiz.draft.offerId='';
+  searchSelectQuery['offerScope']=''; openMultiSelectId=null;
+  pruneOfferRowsForOffer();
+  renderWizStep(offerPickerStep());
+}
+function offerPickerStep(){
+  return (wiz && wiz.triggerType==='event-based' && wiz.draft.eventCategory==='Offer Events')
+    ? 'EVENT_TRIGGER' : 'ELIGIBILITY';
+}
+function offerScopeTypeSet(t){
+  wiz.draft.offerScopeType = t;
+  const picked = offerById(wiz.draft.offerId);
+  if(picked && t && picked.type!==t) wiz.draft.offerId='';
+  searchSelectQuery['offerScope']=''; openMultiSelectId=null;
+  pruneOfferRowsForOffer();
+  renderWizStep(offerPickerStep());
+}
+function offerScopeBlockHtml(d){
+  const pool = offersOfType(d.offerScopeType);
+  const picked = offerById(d.offerId);
+  // Cycle and Variant Upgrade are milestone-only, in both the real dashboard
+  // and the backend. The dashboard renders the cycle selector only when the
+  // nudge is PROMOTION *and* the condition's entity is MILESTONE; the
+  // backend only ever creates a subscription cycle inside milestone
+  // subscription-plan creation, where it casts the offer's eligibility to
+  // MilestoneBenefitEligibility to read the progress value. A transactional
+  // offer has no subscription plan, so it has no cycles to choose between.
+  const isMilestoneOffer = !!(picked && picked.milestone);
+  const usesOffer = (d.conditions||[]).some(c=>c.entity==='Offer');
+  return `
+    <div class="cond-group" style="padding:14px;margin-bottom:12px;">
+          <div class="toggle-row-label">Offer</div>
+          <div class="toggle-row-sub">Which offer this nudge is about. Needed only if you add an Offer condition below.</div>
+
+      <div class="f-group" style="margin:12px 0 0;">
+        <label class="f-label">Offer Type</label>
+        <select class="f-input" onchange="offerScopeTypeSet(this.value)">
+          <option value="">All offer types</option>
+          ${OFFER_TYPE_OPTIONS.map(t=>`<option ${d.offerScopeType===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="f-group">
+        <label class="f-label">Offer</label>
+        ${searchSelectHtml({
+          id:'offerScope',
+          // The tag is the thing that decides which conditions the offer can
+          // answer, so it belongs in the list rather than being discovered
+          // after picking.
+          items: pool.map(o=>({id:o.id, name:o.name, tag:o.milestone?'Milestone':null,
+            sub: o.milestone && offerMeasuresText(o) ? `${o.type} · measured by ${offerMeasuresText(o)}` : o.type})),
+          selectedId: d.offerId,
+          placeholder:'Select offer',
+          searchPlaceholder:'Search offers by name',
+          noun:'offers',
+          onPick:'offerScopePick',
+          onClear:'offerScopeClear()',
+          rerender:"renderWizStep('ELIGIBILITY')",
+        })}
+        ${(!d.offerId && usesOffer) ? `<div class="f-hint" style="background:var(--error-bg);border:1px solid var(--error-border);border-radius:8px;padding:8px 12px;color:var(--error-text);margin-top:8px;">An Offer condition below needs an offer picked here.</div>` : ''}
+      </div>
+      ${isMilestoneOffer ? `
+      <div class="f-group">
+        <label class="f-label">Cycle</label>
+        <div class="binary-pick">
+          <div class="pick-card ${(d.cycle||'Current')==='Current'?'sel':''}" onclick="fieldUpdate('cycle','Current');renderWizStep('ELIGIBILITY')"><div class="pick-card-title">Current Cycle</div></div>
+          <div class="pick-card ${d.cycle==='Last'?'sel':''}" onclick="fieldUpdate('cycle','Last');renderWizStep('ELIGIBILITY')"><div class="pick-card-title">Last Cycle</div></div>
+        </div>
+      </div>
+      <div class="toggle-row" style="${d.variantUpgrade?'':'margin-bottom:0;'}"><div class="toggle-row-label">Enable Variant Upgrade Handling</div><div class="toggle ${d.variantUpgrade?'on':''}" onclick="wizToggle('variantUpgrade','ELIGIBILITY')"></div></div>
+      ${d.variantUpgrade ? `<div class="f-group" style="margin-bottom:0;"><label class="f-label">Select Offer Label</label><select class="f-input" onchange="fieldUpdate('offerLabel',this.value)"><option value="">Select label</option><option>Upgrade Eligible</option><option>Downgrade Path</option></select></div>` : ''}
+      ` : (picked ? `<div class="f-hint" style="margin:0;">${picked.name} is not a milestone offer, so it runs no cycles and tracks no progress. Cycle and Variant Upgrade Handling do not apply.</div>` : '')}
+    </div>`;
+}
+function triggerOfferFieldHtml(d){
+  const pool = offersOfType(d.offerScopeType);
+  return `
+    <div class="f-group">
+      <label class="f-label">Offer Type</label>
+      <select class="f-input" onchange="offerScopeTypeSet(this.value)">
+        <option value="">All offer types</option>
+        ${OFFER_TYPE_OPTIONS.map(t=>`<option ${d.offerScopeType===t?'selected':''}>${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="f-group">
+      <label class="f-label">Offer</label>
+      ${searchSelectHtml({
+        id:'offerScope',
+        items: pool.map(o=>({id:o.id, name:o.name, tag:o.milestone?'Milestone':null,
+          sub: o.milestone && offerMeasuresText(o) ? `${o.type} · measured by ${offerMeasuresText(o)}` : o.type})),
+        selectedId: d.offerId,
+        placeholder:'Select offer',
+        searchPlaceholder:'Search offers by name',
+        noun:'offers',
+        onPick:'offerScopePick',
+        onClear:'offerScopeClear()',
+        rerender:"renderWizStep('EVENT_TRIGGER')",
+      })}
+      ${!d.offerId ? `<div class="f-hint" style="background:var(--error-bg);border:1px solid var(--error-border);border-radius:8px;padding:8px 12px;color:var(--error-text);margin-top:8px;">An offer event needs an offer. The User Base step inherits this one.</div>` : ''}
+    </div>`;
+}
+
 function condRow(c, idx, entityOptions, containerKey, opts){
   const meta = (ELIGIBILITY_META[c.entity]||{})[c.attribute];
   // Real attribute lists per entity.
@@ -5444,10 +6287,22 @@ function condRow(c, idx, entityOptions, containerKey, opts){
   // twice. Used by the event-based User Base block, where picking the
   // Smart Tag mode already has its own Smart Tag field above.
   const excludeAttrs = (opts && opts.excludeAttrs) || [];
-  const attrOptions = (c.entity && ELIGIBILITY_META[c.entity] ? Object.keys(ELIGIBILITY_META[c.entity]) : ({
-    'Transaction EMI':['Highest Value Eligible EMI Transaction','Latest Eligible EMI Transaction'],
-    'Total Outstanding EMI':['Total Outstanding EMI Eligibility'],
-  }[c.entity] || ['Attribute'])).filter(a=>!excludeAttrs.includes(a));
+  // An Offer row can only ask what the chosen offer can answer. With no
+  // offer picked yet nothing is hidden — the operator has not told us which
+  // kind it is, and an empty-looking list would read as broken.
+  // Progress and usage are mutually exclusive, not companions: a milestone
+  // offer tracks progress toward a threshold and never accrues usage; a
+  // transactional offer accrues usage and has no progress. With no offer
+  // picked yet nothing is hidden — the operator has not said which kind it
+  // is, and a short list would read as broken.
+  const pickedOffer = offerById((wiz.draft||{}).offerId);
+  // Gating is per GROUP being rendered, not per the row's current entity:
+  // the picker lists every subject's attributes at once, and on an empty row
+  // c.entity is '' — so keying off it hid nothing and a milestone offer
+  // still offered usage conditions.
+  const hideFor = (e, m)=> e==='Offer' && !!pickedOffer && !!m &&
+    ((pickedOffer.milestone && m.transactionalOnly) || (!pickedOffer.milestone && m.milestoneOnly));
+  const subjMeta = ELIGIBILITY_META[c.entity];
 
   // A single-option entity list (Transaction Events / EMI Events, which only
   // ever have one meaningful entity) isn't shown at all — repeating
@@ -5462,35 +6317,41 @@ function condRow(c, idx, entityOptions, containerKey, opts){
   // EXTERNAL_SOURCE_ATTRIBUTES' single-option picker, so it doesn't read as
   // a dead end once a second entity exists. The empty placeholder is
   // dropped when there's only one option, since it isn't a real choice.
+  // ONE control for the subject and the attribute together. Two dropdowns
+  // cannot sit inside a sentence without reading as half a grid, and the
+  // pair is really a single question: what is this condition about?
+  //
+  // Options are grouped by subject. A single-subject list (Transaction /
+  // EMI events) drops the group label, since repeating it on every row says
+  // nothing a section heading does not say once.
   const showEntity = entityOptions.length > 1 || !!(opts && opts.forceEntity);
-  const entitySelect = showEntity ? `<select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'entity',this.value)">
-        ${entityOptions.length > 1 ? '<option value="">Entity Type</option>' : ''}
-        ${entityOptions.map(e=>`<option value="${e}" ${c.entity===e?'selected':''}>${e}</option>`).join('')}
-      </select>` : '';
-  // A mandatory condition (e.g. EMI Events' Product Type) can't be retargeted
-  // to a different attribute or removed — same "locked lead condition"
-  // pattern the Journey/Offer Event Trigger already uses.
-  const attrSelect = c.mandatory
-    ? `<input class="f-input" type="text" value="${c.attribute}" disabled>`
-    : `<select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'attribute',this.value)">
-        <option value="">Attribute</option>
-        ${attrOptions.map(a=>{
-          // isNew attributes are suffixed in the option TEXT only — value=
-          // stays the bare name, so nothing downstream (c.attribute, the
-          // ELIGIBILITY_META lookup, review summaries) sees the suffix.
-          // Same convention as disabledOptions' "(Coming soon)" below.
-          const am = (ELIGIBILITY_META[c.entity]||{})[a];
-          return `<option value="${a}" ${c.attribute===a?'selected':''}>${a}${am&&am.isNew?' (New)':''}</option>`;
-        }).join('')}
+  const whatValue = (c.entity && c.attribute) ? `${c.entity}|${c.attribute}` : '';
+  const optionsFor = (e)=>{
+    const m = ELIGIBILITY_META[e];
+    const list = m ? Object.keys(m).filter(a=>!hideFor(e, m[a])) : ({
+      'Transaction EMI':['Highest Value Eligible EMI Transaction','Latest Eligible EMI Transaction'],
+      'Total Outstanding EMI':['Total Outstanding EMI Eligibility'],
+    }[e] || []);
+    return list.filter(a=>!excludeAttrs.includes(a)).map(a=>{
+      const am = (m||{})[a];
+      return `<option value="${e}|${a}" ${whatValue===`${e}|${a}`?'selected':''}>${attrLabel(e,a)}${am&&am.isNew?' (New)':''}</option>`;
+    }).join('');
+  };
+  const whatSelect = c.mandatory
+    ? `<input class="f-input cond-what" type="text" value="${c.attribute}" disabled>`
+    : `<select class="f-input cond-what" onchange="wizCondSetWhat('${containerKey}',${idx},this.value)">
+        <option value="">Pick what to filter on</option>
+        ${entityOptions.map(e=> showEntity
+            ? `<optgroup label="${e}">${optionsFor(e)}</optgroup>`
+            : optionsFor(e)).join('')}
       </select>`;
 
   // Not-yet-typed entities (e.g. JOURNEY's custom attribute list) keep the
   // old generic operator+free-text-value row.
-  if(c.entity && !ELIGIBILITY_META[c.entity]){
+  if(c.entity && !subjMeta){
     return `
-    <div class="cond-row">
-      ${entitySelect}
-      ${attrSelect}
+    <div class="cond-sentence">
+      ${whatSelect}
       <select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'operator',this.value)">
         <option value="">Operator</option>
         ${['Equals','Not Equals','Greater than','Greater than or equal to','Less than','Less than or equal to','Between'].map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}
@@ -5547,16 +6408,16 @@ function condRow(c, idx, entityOptions, containerKey, opts){
       const dateSlot = (field)=>{
         const v = (field==='value2' ? c.value2 : c.value) || '';
         const isToken = v===CURRENT_DAY_TOKEN;
-        return `<div style="flex:1 1 ${isToken?'150px':'250px'};min-width:0;display:flex;gap:6px;">
-            <select class="f-input" style="flex:1 1 130px;min-width:0;" onchange="wizCondSetDateMode('${containerKey}',${idx},'${field}',this.value)">
+        return `<div style="display:flex;gap:6px;align-items:center;">
+            <select class="f-input" style="width:140px;" onchange="wizCondSetDateMode('${containerKey}',${idx},'${field}',this.value)">
               <option value="date" ${isToken?'':'selected'}>Specific date</option>
               <option value="token" ${isToken?'selected':''}>${CURRENT_DAY_TOKEN}</option>
             </select>
-            ${isToken ? '' : `<input type="date" class="f-input" style="flex:1 1 130px;min-width:0;" value="${v}" onchange="wizCondUpdate('${containerKey}',${idx},'${field}',this.value)">`}
+            ${isToken ? '' : `<input type="date" class="f-input" value="${v}" onchange="wizCondUpdate('${containerKey}',${idx},'${field}',this.value)">`}
           </div>`;
       };
-      const countSlot = (unit)=>`<input type="number" min="0" step="1" class="f-input" style="flex:0 1 110px;min-width:0;" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
-          <span style="align-self:center;font-size:13.5px;color:var(--gray-600);white-space:nowrap;">${unit}</span>`;
+      const countSlot = (unit)=>`<input type="number" min="0" step="1" class="f-input" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
+          <span class="cond-word">${unit}</span>`;
       const kind = dateOpKind(c.operator);
       if(kind==='two-dates'){
         wideValue = true;
@@ -5566,20 +6427,55 @@ function condRow(c, idx, entityOptions, containerKey, opts){
         // mandatory attribute renders, so it reads as fixed rather than empty.
         valueWidget = `<input class="f-input" type="text" value="${CURRENT_DAY_TOKEN}" disabled>`;
       } else if(kind==='days'){
-        valueWidget = countSlot('days');
+        valueWidget = countSlot(dateOpUnit(c.operator));
       } else if(kind==='years'){
         valueWidget = countSlot('years');
       } else if(kind==='one-date'){
         wideValue = true;
         valueWidget = dateSlot('value');
       }
+    } else if(meta.type==='usagePeriod'){
+      valueWidget = `<input type="number" class="f-input" placeholder="${meta.placeholder||'Count'}" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
+    } else if(meta.type==='outcomeMatch'){
+      valueWidget = `<span class="cond-chunk"><span class="cond-word">of type</span>
+        <select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
+          <option value="">any</option>
+          ${meta.options.map(o=>`<option ${c.value===o?'selected':''}>${o}</option>`).join('')}
+        </select></span>
+        <span class="cond-chunk"><span class="cond-word">with status</span>
+        <select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'value2',this.value)">
+          <option value="">any</option>
+          ${meta.statusOptions.map(o=>`<option ${c.value2===o?'selected':''}>${o}</option>`).join('')}
+        </select></span>`;
+    } else if(meta.type==='outcomeLookback'){
+      valueWidget = `<select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
+        <option value="">any</option>
+        ${meta.options.map(o=>`<option ${c.value===o?'selected':''}>${o}</option>`).join('')}
+      </select>`;
+    } else if(meta.type==='expiringPoints'){
+      valueWidget = `<input type="number" class="f-input" placeholder="${meta.placeholder||'Points'}" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
     } else if(meta.type==='highestTxnEMI'){
       valueWidget = `<input type="number" class="f-input" placeholder="Amount" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
+    } else if(meta.type==='progressNumber'){
+      const unit = meta.unitFromOffer ? offerUnit(offerById((wiz.draft||{}).offerId)) : (meta.placeholder||'%');
+      valueWidget = c.operator==='Between'
+        ? `<input type="number" class="f-input" placeholder="${unit}" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">
+           <span class="cond-word">and</span>
+           <input type="number" class="f-input" placeholder="${unit}" value="${c.value2||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value2',this.value)">`
+        : `<input type="number" class="f-input" placeholder="${unit}" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
     } else if(meta.type==='number'){
       // Placeholder was hardcoded to "₹ Amount", which is wrong for a
       // number attribute that isn't money (Days Past Due is a day count).
       // Overridable per attribute, defaulting to the old text.
-      valueWidget = `<input type="number" class="f-input" placeholder="${meta.placeholder||'₹ Amount'}" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
+      // A raw progress field is rupees on a spend milestone and a count on a
+      // "make N transactions" one. With no offer picked yet it stays neutral
+      // rather than claiming either.
+      const numPlaceholder = meta.unitFromOffer
+        ? offerUnit(offerById((wiz.draft||{}).offerId))
+        : (meta.placeholder||'₹ Amount');
+      valueWidget = `<input type="number" class="f-input" placeholder="${numPlaceholder}" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
+    } else if(meta.type==='freeText'){
+      valueWidget = `<input type="text" class="f-input" placeholder="${meta.placeholder||'Value'}" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
     } else if(meta.type==='list'){
       valueWidget = `<input type="text" class="f-input" placeholder="Comma-separated codes" value="${c.value||''}" oninput="wizCondUpdate('${containerKey}',${idx},'value',this.value)">`;
     } else if(meta.type==='smartTag'){
@@ -5616,26 +6512,64 @@ function condRow(c, idx, entityOptions, containerKey, opts){
     }
   }
 
-  // min-width:0 on every flex column — without it, a plain <select>'s
-  // native min-content width (driven by its longest option string) wins
-  // over flex-shrink, so a row with one long option (e.g. a disabled
-  // "(Coming soon)" suffix) silently overflows and wraps onto its own
-  // line while every other row in the same list stays on one line. This
-  // is what made row alignment look inconsistent — some rows wrapped,
-  // most didn't, depending on option text length alone. min-width:0 is
-  // the standard fix: forces every column to actually respect its
-  // flex-basis regardless of content, so no row can force a different
-  // layout shape than its siblings.
+  // One attribute carries its own extra input. "Points expiring" means
+  // nothing without a horizon, so the row reads
+  //   Points expiring · in exactly [30] days · is more than · [0]
+  // The horizon is stored on the row as `window`, defaulting to nothing so
+  // an unfilled row stays visibly unfilled rather than silently assuming 30.
+  const windowCell = !meta ? '' : (
+    meta.type==='expiringPoints'
+      ? `<span class="cond-chunk"><span class="cond-word">in exactly</span>
+         <input type="number" min="0" step="1" class="f-input" style="width:72px;" placeholder="30" value="${c.window||''}" oninput="wizCondUpdate('${containerKey}',${idx},'window',this.value)">
+         <span class="cond-word">days</span></span>`
+    : (meta.type==='outcomeLookback' || meta.type==='outcomeMatch')
+      ? `<span class="cond-chunk"><span class="cond-word">exactly</span>
+         <input type="number" min="0" step="1" class="f-input" placeholder="7" value="${c.window||''}" oninput="wizCondUpdate('${containerKey}',${idx},'window',this.value)">
+         <span class="cond-word">days old</span></span>`
+    : meta.type==='usagePeriod'
+      ? `<span class="cond-chunk"><span class="cond-word">in the</span>
+         <select class="f-input" style="width:150px;" onchange="wizCondUpdate('${containerKey}',${idx},'window',this.value)">
+           <option value="">period</option>
+           ${USAGE_LIMIT_PERIODS.map(u=>`<option ${c.window===u?'selected':''}>${u}</option>`).join('')}
+         </select></span>`
+    : '');
+
+  // A comparison with exactly one choice is a word, not a dropdown: "is"
+  // reads as part of the sentence where a select containing only "Equals"
+  // reads as an unanswered question.
+  const opPart = !showSecond ? ''
+    : (ops.length===1 && SINGLE_OP_WORD[ops[0]])
+      ? `<span class="cond-word">${SINGLE_OP_WORD[ops[0]]}</span>`
+      : `<select class="f-input" style="width:auto;max-width:230px;" onchange="wizCondUpdate('${containerKey}',${idx},'operator',this.value)">
+          <option value="">${meta && meta.type==='date' ? 'when' : 'is'}…</option>
+          ${ops.map(o=>`<option value="${o}" ${c.operator===o?'selected':''}>${OP_WORD[o]||o}</option>`).join('')}
+        </select>`;
+  // A one-choice comparison still has to be stored, or Review and the
+  // backend see an empty operator on a complete-looking row.
+  if(showSecond && ops.length===1 && SINGLE_OP_WORD[ops[0]] && c.operator!==ops[0]) c.operator = ops[0];
+
+  // Slot order is per type, because the sentence has to read as English.
+  // The default is what · window · comparison · value ("Points expiring in
+  // exactly 30 days is more than 0"). A lookback's value is a noun that
+  // belongs beside the attribute phrase and its comparison is the verb, so
+  // it reads what · value · window · comparison ("An outcome with status
+  // Claimable exactly 7 days old exists"). The default order would give
+  // "An outcome with status exactly 7 days old exists Claimable".
+  //
+  // The window is "exactly N days old", not "older than N days". FR-11
+  // bans a within-style window everywhere else for the same reason: "older
+  // than 7 days" is true on day 7, 8, 9 and forever after, so a daily run
+  // messages the same customer every day. "Exactly N days old" matches each
+  // outcome on one day. It reads the same stored date the lookback already
+  // used, so this is an equality instead of a comparison — no new data.
+  const valuePart = showSecond ? valueWidget : '';
+  const slots = (meta && (meta.type==='outcomeLookback' || meta.type==='outcomeMatch'))
+    ? [whatSelect, valuePart, windowCell, opPart]
+    : [whatSelect, windowCell, opPart, valuePart];
   return `
-    <div class="cond-row" style="display:flex;flex-wrap:wrap;grid-template-columns:none;">
-      ${showEntity ? `<div style="flex:1 1 140px;min-width:0;">${entitySelect}</div>` : ''}
-      <div style="flex:1 1 140px;min-width:0;">${attrSelect}</div>
-      ${showSecond ? `<div style="flex:1 1 140px;min-width:0;"><select class="f-input" onchange="wizCondUpdate('${containerKey}',${idx},'operator',this.value)">
-        <option value="">Operator</option>
-        ${ops.map(o=>`<option ${c.operator===o?'selected':''}>${o}</option>`).join('')}
-      </select></div>` : ''}
-      ${showSecond ? `<div style="${wideValue?'flex:2 1 296px;min-width:296px;flex-wrap:wrap;':'flex:1 1 140px;min-width:0;'}display:flex;gap:8px;">${valueWidget}</div>` : ''}
-      ${c.mandatory ? `<div style="width:24px;flex-shrink:0;"></div>` : `<div class="cond-remove" onclick="wizCondRemove('${containerKey}',${idx})" style="align-self:center;">✕</div>`}
+    <div class="cond-sentence">
+      ${slots.join('\n      ')}
+      ${c.mandatory ? '' : `<div class="cond-remove" onclick="wizCondRemove('${containerKey}',${idx})">✕</div>`}
     </div>`;
 }
 /* ---------------- Query Details (Advanced Settings) ----------------
@@ -5750,8 +6684,8 @@ function openQueryTestDrawer(){
 function wizCondUpdate(key, idx, field, val){
   const c = wiz.draft[key][idx];
   c[field] = val;
-  if(field==='entity'){ c.attribute=''; c.operator=''; c.value=''; c.value2=''; c.values=[]; }
-  if(field==='attribute'){ c.operator=''; c.value=''; c.value2=''; c.values=[]; }
+  if(field==='entity'){ c.attribute=''; c.operator=''; c.value=''; c.value2=''; c.values=[]; delete c.window; }
+  if(field==='attribute'){ c.operator=''; c.value=''; c.value2=''; c.values=[]; delete c.window; }
   // A date's operators each want a different value shape (a date, a day
   // count, an age), so switching between them must not leave the old value
   // sitting in the new widget. Scoped to date attributes on purpose:
@@ -5784,6 +6718,32 @@ function wizCondUpdate(key, idx, field, val){
   // every keystroke or the input loses focus.
   if(['entity','attribute','operator'].includes(field) || (field==='value' && c.attribute==='Initiated By')) renderWizStep(wizSteps()[wiz.stepIdx].id);
 }
+// One control picks both the subject and the attribute, so the row reads as
+// a sentence rather than exposing two dropdowns. The value is
+// "Entity|Attribute"; an empty string clears the row back to unfilled.
+function wizCondSetWhat(key, idx, combined){
+  const c = wiz.draft[key][idx];
+  const [entity, attribute] = (combined||'').split('|');
+  c.entity = entity || '';
+  c.attribute = attribute || '';
+  c.operator=''; c.value=''; c.value2=''; c.values=[]; delete c.window;
+  renderWizStep(wizSteps()[wiz.stepIdx].id);
+}
+// When a type offers exactly one comparison, the comparison is a word in the
+// sentence rather than a dropdown with one choice in it.
+const SINGLE_OP_WORD = { 'Equals':'is', 'Any of':'is any of' };
+// Comparison labels as they read inside a sentence. The stored value is
+// unchanged — only the option TEXT differs, the same convention the isNew
+// "(New)" suffix uses — so nothing downstream sees these.
+// Date comparisons already read as phrases ("Is in exactly") and keep theirs.
+const OP_WORD = {
+  'Equals':'is', 'Not Equals':'is not',
+  'Greater than':'is more than', 'Greater than or equal to':'is at least',
+  'Less than':'is less than', 'Less than or equal to':'is at most',
+  'Between':'is between', 'Any of':'is any of',
+  'Allowed':'is allowed', 'Denied':'is denied',
+};
+
 // Switches one date slot between a real date and the {current-day} token.
 // The token is stored as the literal string, so a saved condition keeps
 // meaning "whenever this runs" rather than freezing today's date into it.
@@ -5807,7 +6767,46 @@ function condToggleMulti(key, idx, val){
   renderWizStep(wizSteps()[wiz.stepIdx].id);
 }
 function wizCondRemove(key, idx){ wiz.draft[key].splice(idx,1); if(wiz.draft[key].length===0) wiz.draft[key].push({entity:'',attribute:'',operator:'',value:''}); renderWizStep(wizSteps()[wiz.stepIdx].id); }
-function wizCondAdd(key){ wiz.draft[key].push({entity:'',attribute:'',operator:'',value:''}); renderWizStep(wizSteps()[wiz.stepIdx].id); }
+// `grp` groups rows: same number = AND, different numbers = OR. Absent means
+// group 0, so every condition list that never groups keeps working untouched
+// and nothing needs migrating.
+// Groups render as their own boxes with OR between them, and AND between the
+// rows inside one. Each row keeps its original flat index so every existing
+// handler (wizCondUpdate / wizCondRemove, addressed by index) is untouched.
+function condGroupsHtml(rows, entities, key, noun){
+  const groups = condGroups(rows);
+  if(!groups.length) return `<div class="add-link" onclick="wizCondAdd('${key}')">${ic('workflow')} Add ${noun}</div>`;
+  return groups.map((g, gi)=>`
+    ${gi>0 ? `<div class="cond-or">or</div>` : ''}
+    <div class="cond-group" style="margin-bottom:0;">
+      ${g.map((row, ri)=>`${ri>0?`<div class="cond-and">and</div>`:''}${condRow(row.c, row.idx, entities, key)}`).join('')}
+      <div class="add-link" onclick="wizCondAdd('${key}', ${condGrp(g[0].c)})">${ic('workflow')} Add ${noun} to this group</div>
+    </div>`).join('')
+    + `<div class="add-link" style="margin-top:12px;" onclick="wizCondAddOrGroup('${key}')">${ic('workflow')} Add an alternative group (OR)</div>`;
+}
+function condGrp(c){ return c.grp || 0; }
+function wizCondAdd(key, grp){
+  const rows = wiz.draft[key];
+  const g = grp!==undefined ? grp : (rows.length ? Math.max(...rows.map(condGrp)) : 0);
+  rows.push({entity:'',attribute:'',operator:'',value:'',grp:g});
+  renderWizStep(wizSteps()[wiz.stepIdx].id);
+}
+// A new OR group always starts empty with one row, so the alternative is
+// visible before it is filled in.
+function wizCondAddOrGroup(key){
+  const rows = wiz.draft[key];
+  const g = (rows.length ? Math.max(...rows.map(condGrp)) : 0) + 1;
+  rows.push({entity:'',attribute:'',operator:'',value:'',grp:g});
+  renderWizStep(wizSteps()[wiz.stepIdx].id);
+}
+// Rows in draft order, bucketed by group, groups in ascending order. Returns
+// [[{c,idx},...], ...] so each row keeps its ORIGINAL flat index — every
+// handler addresses rows by that index and must not be renumbered.
+function condGroups(rows){
+  const by = new Map();
+  (rows||[]).forEach((c,idx)=>{ const g=condGrp(c); if(!by.has(g)) by.set(g,[]); by.get(g).push({c,idx}); });
+  return [...by.keys()].sort((a,b)=>a-b).map(g=>by.get(g));
+}
 
 // Verified against EstimateUserbaseComponent.js: compact bar with either
 // "Estimate User Base" (user-plus icon) or, once computed, "Final user
@@ -5823,14 +6822,29 @@ function estimatePill(){
       <div class="btn primary small">Estimate User Base</div>
     </div>`;
   }
+  const st = d.estimateData.stages;
+  const twoStage = st && st.acctConds > 0;
   return `<div class="estimate-pill" onclick="openEstimateBreakdown()">
-    <div class="estimate-pill-left">${ic('users')}<div><div class="estimate-pill-label">Final user base: <b>${d.estimateData.finalUserBase.toLocaleString()}</b> users</div></div></div>
+    <div class="estimate-pill-left">${ic('users')}<div>
+      <div class="estimate-pill-label">Final user base: <b>${d.estimateData.finalUserBase.toLocaleString()}</b> users</div>
+      ${twoStage ? `<div style="font-size:11.5px;color:var(--gray-600);margin-top:2px;">${st.afterOffer.toLocaleString()} match the offer conditions, ${st.afterAccount.toLocaleString()} after the account conditions</div>` : ''}
+    </div></div>
     <div class="btn secondary small">Show breakdown</div>
   </div>`;
 }
+// The audience is resolved in two stages: doraemon narrows by the offer
+// conditions, then ironbank filters that set by the account conditions. An
+// estimate that ran only the first stage would be confidently wrong, and
+// wrong by exactly the people the exclusions were meant to remove — so the
+// more careful the operator is, the further off the number would drift.
 function computeEstimateData(){
   const d = wiz.draft;
-  const base = 12000 + Math.floor(Math.random()*40000);
+  const conds = (d.conditions||[]).filter(c=>c.attribute);
+  const offerStage = conds.filter(c=>c.entity==='Offer' || c.entity==='Outcomes' || c.entity==='Rewards').length;
+  const acctStage  = conds.filter(c=>c.entity==='Account' || c.entity==='Customer' || c.entity==='Card' || c.entity==='Card Control').length;
+  const afterOffer = 12000 + Math.floor(Math.random()*40000);
+  // each account-side condition removes a slice of what stage one returned
+  const base = acctStage ? Math.floor(afterOffer * Math.pow(0.82, acctStage)) : afterOffer;
   const channels = {};
   ['EMAIL','SMS','RCS','WHATSAPP'].forEach(ch=>{
     const eligible = Math.floor(base * (0.7+Math.random()*0.3));
@@ -5840,7 +6854,8 @@ function computeEstimateData(){
     channels[ch] = { eligible, dup, dnc, final: Math.max(final,0) };
   });
   const finalUserBase = Object.values(channels).reduce((s,c)=>s+c.final,0);
-  return { eligibleUsers:base, channels, finalUserBase, lastUpdated:'Just now' };
+  return { eligibleUsers:base, channels, finalUserBase, lastUpdated:'Just now',
+           stages:{ afterOffer, afterAccount:base, offerConds:offerStage, acctConds:acctStage } };
 }
 function triggerEstimate(){ wiz.draft.estimateData = computeEstimateData(); renderWizStep(wizSteps()[wiz.stepIdx].id); }
 function openEstimateBreakdown(){
@@ -5886,7 +6901,7 @@ function renderWizStep(stepId){
       <p class="wiz-sub">This determines the eligibility and configuration options you'll see next.</p>
       <div class="card-grid">
         ${NUDGE_TYPES.map(t=>`
-          <div class="pick-card ${d.nudgeType===t.id?'sel':''}" onclick="fieldUpdate('nudgeType','${t.id}');renderWizStep('NUDGE_TYPE')">
+          <div class="pick-card ${d.nudgeType===t.id?'sel':''}" onclick="nudgeTypeSet('${t.id}')">
             <div class="pick-card-icon">${ic(t.icon)}</div>
             <div><div class="pick-card-title">${t.label}${t.isNew?' <span class="badge info" style="font-size:10px;vertical-align:middle;">New</span>':''}</div><div class="pick-card-sub">${t.sub}</div></div>
           </div>`).join('')}
@@ -5961,23 +6976,16 @@ function renderWizStep(stepId){
       ${wizFooter()}`;
   }
   else if(stepId==='ELIGIBILITY' && wiz.triggerType!=='event-based'){
+    // Pre-migration User Base: one screen per nudge type, which is what the
+    // migration later collapses. Release 1's change is confined to the
+    // PROMOTION branch — the offer block, and Offer/Rewards joining the
+    // ordinary four subjects.
     const dncBlock = `
-        <div class="toggle-row"><div><div class="toggle-row-label">Override Do Not Communicate (DNC)</div><div class="toggle-row-sub">Send even to customers on the Do-Not-Contact list.</div></div><div class="toggle ${d.bypassDnc?'on':''}" onclick="fieldUpdate('bypassDnc',!d.bypassDnc);renderWizStep('ELIGIBILITY')"></div></div>
-        <div class="toggle-row"><div><div class="toggle-row-label">Allow Duplicate Accounts</div><div class="toggle-row-sub">Allow this customer to receive the nudge more than once.</div></div><div class="toggle ${d.allowDup?'on':''}" onclick="fieldUpdate('allowDup',!d.allowDup);renderWizStep('ELIGIBILITY')"></div></div>
-        <div class="add-link" onclick="fieldUpdate('advancedOpen',!d.advancedOpen);renderWizStep('ELIGIBILITY')">${ic('sliders')} Advanced Settings</div>
+        <div class="toggle-row"><div><div class="toggle-row-label">Override Do Not Communicate (DNC)</div><div class="toggle-row-sub">Send even to customers on the Do-Not-Contact list.</div></div><div class="toggle ${d.bypassDnc?'on':''}" onclick="wizToggle('bypassDnc','ELIGIBILITY')"></div></div>
+        <div class="toggle-row"><div><div class="toggle-row-label">Allow Duplicate Accounts</div><div class="toggle-row-sub">Allow this customer to receive the nudge more than once.</div></div><div class="toggle ${d.allowDup?'on':''}" onclick="wizToggle('allowDup','ELIGIBILITY')"></div></div>
+        <div class="add-link" onclick="wizToggle('advancedOpen','ELIGIBILITY')">${ic('sliders')} Advanced Settings</div>
         ${d.advancedOpen ? queryDetailsHtml(d) : ''}`;
     if(d.nudgeType==='EXTERNAL_SOURCE'){
-      // No API picker — dropped 2026-09-24 per Amogh, relaying tech team's
-      // pushback: a dedicated "which API" selector adds a real integration
-      // concept to the dashboard that just invites complication later
-      // (multiple APIs, which one owns which attribute, etc.). Reframed as
-      // a plain Attribute/Operator/Value condition row instead — same
-      // shape every other condition-based eligibility in this file already
-      // uses, and the natural place to grow if more matchable attributes
-      // ever exist, without needing an API concept at all. Only one real
-      // attribute today (Eligibility Code), rendered as a real (not
-      // locked/disabled) select on purpose, so it doesn't read as a dead
-      // end if a second attribute is ever added.
       html = `
         <h1 class="wiz-heading">Set Up Nudge User Base</h1>
         <p class="wiz-sub">Eligibility for this nudge is decided live by the bank, per customer, the moment they open the PWA.</p>
@@ -6028,28 +7036,37 @@ function renderWizStep(stepId){
         ${dncBlock}
         ${wizFooter()}`;
     } else {
+      const isPromo = d.nudgeType==='PROMOTION';
       const entities = ELIGIBILITY_ENTITY_BY_TYPE[d.nudgeType] || ['Customer','Account','Card','Card Control'];
+      // FR-3: the offer block is shown BY DEFAULT on a promotional nudge,
+      // above the conditions. The nudge type has already said this is about
+      // an offer, so asking for it first is the order the user expects —
+      // you pick the offer, then say what about it you are filtering on.
+      //
+      // It used to appear only once an Offer condition referenced it, which
+      // meant the user met "pick what to filter on" before being asked which
+      // offer, and the block then appeared above where they were looking.
+      //
+      // FR-4: it stays OPTIONAL. Reward points are not held against an offer
+      // — they accrue from transactions, milestones, promotions and manual
+      // postings into a rewards account, and a customer can hold several in
+      // different currencies. So a rewards-only nudge may leave it empty, and
+      // the block's own sub-text says so. AU's reward-expiry nudge has no
+      // offer anywhere in it, which is why this is load-bearing, not tidy.
+      //
+      // FR-5: it becomes REQUIRED only when a condition needs it — an Offer
+      // condition with no offer picked raises the error inside the block.
+      // Rewards scope by Reward currency instead — an ordinary condition in
+      // the list below, not a block.
       html = `
         <h1 class="wiz-heading">Set Up Nudge User Base</h1>
-        <p class="wiz-sub">${d.nudgeType==='CROSS_SELL_UP_SELL' ? 'Eligibility is scoped to transaction/outstanding-balance EMI candidates — Ironbank determines eligibility, this defines who gets nudged within it.' : 'Define who this nudge targets.'}</p>
+        <p class="wiz-sub">Define who this nudge targets.</p>
         ${estimatePill()}
-        ${d.nudgeType==='PROMOTION' ? `
-          <div class="f-group"><label class="f-label">Cycle</label>
-            <div class="binary-pick">
-              <div class="pick-card ${(d.cycle||'Current')==='Current'?'sel':''}" onclick="fieldUpdate('cycle','Current');renderWizStep('ELIGIBILITY')"><div class="pick-card-title">Current Cycle</div></div>
-              <div class="pick-card ${d.cycle==='Last'?'sel':''}" onclick="fieldUpdate('cycle','Last');renderWizStep('ELIGIBILITY')"><div class="pick-card-title">Last Cycle</div></div>
-            </div>
-          </div>
-          <div class="f-group"><label class="f-label">Benefit / Offer</label>
-            <select class="f-input" onchange="fieldUpdate('benefit',this.value)"><option value="">Search and select a benefit</option><option>Festive EMI Push</option><option>5th Transaction Reward</option></select>
-          </div>
-          <div class="toggle-row"><div class="toggle-row-label">Enable Variant Upgrade Handling</div><div class="toggle ${d.variantUpgrade?'on':''}" onclick="fieldUpdate('variantUpgrade',!d.variantUpgrade);renderWizStep('ELIGIBILITY')"></div></div>
-          ${d.variantUpgrade ? `<div class="f-group"><label class="f-label">Select Offer Label</label><select class="f-input" onchange="fieldUpdate('offerLabel',this.value)"><option value="">Select label</option><option>Upgrade Eligible</option><option>Downgrade Path</option></select></div>` : ''}
-        `:`
-        <div class="f-group"><label class="f-label">Eligibility Criteria</label>
-          ${d.conditions.map((c,i)=>condRow(c,i,entities,'conditions')).join('')}
-          <div class="add-link" onclick="wizCondAdd('conditions')">${ic('workflow')} Add Criteria</div>
-        </div>`}
+        ${isPromo ? offerScopeBlockHtml(d) : ''}
+        <div class="f-group"><label class="f-label">${isPromo ? 'Conditions' : 'Eligibility Criteria'}</label>
+          <div class="f-hint" style="margin:0 0 10px;">Within a group every condition must be true. A customer matching any one group qualifies.${isPromo ? ' Offer conditions are about the offer chosen above.' : ''}</div>
+          ${condGroupsHtml(d.conditions, entities, 'conditions', isPromo ? 'Condition' : 'Criteria')}
+        </div>
         ${dncBlock}
         ${wizFooter()}`;
     }
@@ -6120,7 +7137,7 @@ function renderWizStep(stepId){
   }
   else if(stepId==='DISPLAY_ELEMENTS'){
     const showDismiss = d.displayEnabled && ['PILL','BANNER','OFFERSTATE'].includes(d.variant);
-    const invalidPlaceholders = d.nudgeType==='EXTERNAL_SOURCE' ? externalSourceInvalidPlaceholders(d) : [];
+    const invalidPlaceholders = isBankApiNudge(d) ? externalSourceInvalidPlaceholders(d) : [];
     html = `
       <h1 class="wiz-heading">Craft the perfect UI for your nudge</h1>
       <p class="wiz-sub">How this nudge looks and behaves inside the app.</p>
@@ -6136,15 +7153,15 @@ function renderWizStep(stepId){
         <div><label class="f-label">Location</label><select class="f-input" onchange="fieldUpdate('location',this.value)"><option value="topShelf">Top Shelf</option><option value="pwaFluid">Configure Nudge Location from Program Experience</option></select></div>
         <div><label class="f-label">Display Order</label><input class="f-input" type="number" value="${d.displayOrder ?? ''}" onchange="fieldUpdate('displayOrder',this.value)"></div>
       </div>
-      ${showDismiss ? `<div class="toggle-row"><div class="toggle-row-label">Dismissible Nudge</div><div class="toggle ${d.dismissible?'on':''}" onclick="fieldUpdate('dismissible',!d.dismissible);renderWizStep('DISPLAY_ELEMENTS')"></div></div>` : ''}
+      ${showDismiss ? `<div class="toggle-row"><div class="toggle-row-label">Dismissible Nudge</div><div class="toggle ${d.dismissible?'on':''}" onclick="wizToggle('dismissible','DISPLAY_ELEMENTS')"></div></div>` : ''}
       ${d.variant==='OFFERSTATE' ? `
         <div class="f-group f-row2"><div><label class="f-label">Nudge Icon</label><div class="upload-box" style="padding:14px;">${ic('tag')} Upload</div></div><div><label class="f-label">Brand Icon</label><div class="upload-box" style="padding:14px;">${ic('landmark')} Upload</div></div></div>
       ` : d.variant ? `<div class="f-group"><label class="f-label">Display Illustration</label><div class="upload-box" style="padding:14px;">${ic('gift')} Upload</div></div>` : ''}
-      <div class="f-group"><label class="f-label">Nudge Heading</label><input class="f-input" type="text" value="${d.heading||''}" oninput="fieldUpdate('heading',this.value)${d.nudgeType==='EXTERNAL_SOURCE'?';refreshExternalSourcePlaceholderCheck()':''}" placeholder="${d.nudgeType==='EXTERNAL_SOURCE'?'e.g. Get a Quick loan of up to ${maxquickloan_api1}':'e.g. Convert to EMI and save'}">
+      <div class="f-group"><label class="f-label">Nudge Heading</label><input class="f-input" type="text" value="${d.heading||''}" oninput="fieldUpdate('heading',this.value)${isBankApiNudge(d)?';refreshExternalSourcePlaceholderCheck()':''}" placeholder="${isBankApiNudge(d)?'e.g. Get a Quick loan of up to ${maxquickloan_api1}':'e.g. Convert to EMI and save'}">
       </div>
-      <div class="f-group"><label class="f-label">Nudge Sub-Text</label><input class="f-input" type="text" value="${d.subtext||''}" oninput="fieldUpdate('subtext',this.value)${d.nudgeType==='EXTERNAL_SOURCE'?';refreshExternalSourcePlaceholderCheck()':''}" placeholder="e.g. Split your recent purchase into easy installments">
+      <div class="f-group"><label class="f-label">Nudge Sub-Text</label><input class="f-input" type="text" value="${d.subtext||''}" oninput="fieldUpdate('subtext',this.value)${isBankApiNudge(d)?';refreshExternalSourcePlaceholderCheck()':''}" placeholder="e.g. Split your recent purchase into easy installments">
       </div>
-      ${d.nudgeType==='EXTERNAL_SOURCE' ? extPlaceholderErrorBoxHtml(invalidPlaceholders) : ''}
+      ${isBankApiNudge(d) ? extPlaceholderErrorBoxHtml(invalidPlaceholders) : ''}
       <div class="f-group"><label class="f-label">Text on Button</label><input class="f-input" type="text" value="${d.ctaText||''}" oninput="fieldUpdate('ctaText',this.value)" placeholder="e.g. Convert Now"></div>
       <div class="f-group f-row2">
         <div><label class="f-label">Nudge Sub-Text Color</label><input class="f-swatch" type="color" value="${d.subtextColor||'#667085'}" onchange="fieldUpdate('subtextColor',this.value)"></div>
@@ -6197,18 +7214,21 @@ function renderWizStep(stepId){
   }
   else if(stepId==='COMMUNICATION' || stepId==='MESSAGE_CONTENT'){
     const isEvent = stepId==='MESSAGE_CONTENT';
-    d.commBlocks = d.commBlocks || [{name:'', sendDate:'', repeatable:'without repeat', everyN:'7', configured:{}}];
+    d.commBlocks = d.commBlocks || [{name:'', sendDate:'', sendTime:'10:00', configured:{}}];
+    const cadenceKind = isEvent ? 'event' : conditionCadence(d).kind;
     html = `
       <h1 class="wiz-heading">${isEvent?'Configure the message this nudge sends':'Plan Your Communication Strategy'}</h1>
       <p class="wiz-sub">${isEvent?'The content sent when this event-based nudge fires.':'When to send, and which channels to configure.'}</p>
+      ${tieredOfferWarningHtml(d.offerId)}
+      ${isEvent ? '' : cadenceNoticeHtml(d)}
       ${d.commBlocks.map((b,bi)=>`
         <div class="comm-trigger-block">
           ${!isEvent?`<div class="f-group"><label class="f-label">Trigger Name</label><input class="f-input" type="text" value="${b.name}" oninput="wiz.draft.commBlocks[${bi}].name=this.value"></div>
           <div class="f-group f-row2">
-            <div><label class="f-label">Send On</label><input class="f-input" type="date" onchange="wiz.draft.commBlocks[${bi}].sendDate=this.value"></div>
-            <div><label class="f-label">Repeatable?</label><select class="f-input" onchange="wiz.draft.commBlocks[${bi}].repeatable=this.value;renderWizStep('${stepId}')"><option ${b.repeatable==='without repeat'?'selected':''}>without repeat</option><option ${b.repeatable==='with repeat'?'selected':''}>with repeat</option></select></div>
+            <div><label class="f-label">Send at</label><input class="f-input" type="time" value="${b.sendTime||'10:00'}" onchange="wiz.draft.commBlocks[${bi}].sendTime=this.value"></div>
+            <div><label class="f-label">Send On${cadenceKind==='daily'?' <span class="f-opt">(not needed — runs daily)</span>':''}</label><input class="f-input" type="date" ${cadenceKind==='daily'?'disabled':''} value="${b.sendDate||''}" onchange="wiz.draft.commBlocks[${bi}].sendDate=this.value"></div>
           </div>
-          ${b.repeatable==='with repeat'?`<div class="f-group"><label class="f-label">Every N Days</label><input class="f-input" type="number" value="${b.everyN}" style="max-width:120px;" oninput="wiz.draft.commBlocks[${bi}].everyN=this.value"></div>`:''}`:''}
+`:''}
           <label class="f-label">Channels</label>
           ${COMM_CHANNELS.map(ch=>`
             <div class="comm-tile">
@@ -6217,7 +7237,7 @@ function renderWizStep(stepId){
                 : `<button class="btn primary small" onclick="openNudgeCommConfigModal(${bi},'${ch}')">Configure</button>`}
             </div>`).join('')}
         </div>`).join('')}
-      ${!isEvent ? `<div class="add-link" onclick="wiz.draft.commBlocks.push({name:'',sendDate:'',repeatable:'without repeat',everyN:'7',configured:{}});renderWizStep('COMMUNICATION')">${ic('message')} Add more</div>` : ''}
+      ${!isEvent ? `<div class="add-link" onclick="wiz.draft.commBlocks.push({name:'',sendDate:'',sendTime:'10:00',configured:{}});renderWizStep('COMMUNICATION')">${ic('message')} Add more</div>` : ''}
       ${wizFooter()}`;
   }
   else if(stepId==='EVENT_TRIGGER'){
@@ -6230,7 +7250,10 @@ function renderWizStep(stepId){
     // builder (same one the eligibility step uses) instead of the
     // single-locked-attribute pattern below, which stays untouched for
     // Journey/Offer Events since that one is verified against real source.
-    const isNewSource = cat.isNew;
+    // Offer and Reward events join Transaction/EMI on the ordinary
+    // condition-row builder (PRD 2 §8.1). Only Journey Events keeps the
+    // single-locked-attribute pattern, which is verified against real source.
+    const isNewSource = cat.isNew || cat.rowConditions;
     const catSelect = `<div class="f-group"><label class="f-label">Event Category</label>
         <select class="f-input" onchange="fieldUpdate('eventCategory',this.value);fieldUpdate('eventType','');wiz.draft.triggerConditions=[];renderWizStep('EVENT_TRIGGER')">
           ${Object.keys(EVENT_CATEGORIES).map(k=>`<option value="${k}" ${d.eventCategory===k?'selected':''}>${k}${EVENT_CATEGORIES[k].isNew?' (New)':''}</option>`).join('')}
@@ -6238,15 +7261,29 @@ function renderWizStep(stepId){
       </div>`;
 
     if (isNewSource) {
-      const entityForCat = d.eventCategory==='Transaction Events' ? 'Transaction' : 'EMI Request';
+      // A category with exactly one event auto-selects it rather than
+      // showing a one-item dropdown. This MUST run before entityForCat is
+      // derived: entityForCat comes from d.eventType for Offer and Reward
+      // Events, so setting the event afterwards left entityForCat — and
+      // therefore the fact list — computed from an empty event, and the
+      // step rendered "this event carries no facts" over an event that has
+      // five. A later re-render corrected it, which is what made it look
+      // intermittent.
+      if(cat.events.length===1 && d.eventType!==cat.events[0]) d.eventType = cat.events[0];
+      const entityForCat = triggerEntityFor(d);
       // Only the mandatory, locked-attribute rows are pre-populated — no
       // illustrative optional examples (EMI Eligible, Transaction Amount,
       // MCC, New Status) added by default anymore, per explicit
       // instruction (2026-09-23). A campaign manager starts with just
       // what's structurally required and adds anything else themselves
       // via "+ Add Condition."
+      // Offer and reward events have no structurally-required lead
+      // condition — their facts are all optional filters — so they start
+      // with a single blank row rather than pre-populated mandatory ones.
+      const isFactEvent = !!cat.rowConditions;
       if (!d.triggerConditions || !d.triggerConditions.length || d.triggerConditions[0].entity !== entityForCat) {
-        d.triggerConditions = entityForCat==='Transaction' ? [
+        d.triggerConditions = isFactEvent ? (entityForCat ? [{entity:entityForCat, attribute:'', operator:'', value:''}] : [])
+        : entityForCat==='Transaction' ? [
           {entity:'Transaction', attribute:'Initiated By', operator:'Equals', value:'CUSTOMER_INITIATED', mandatory:true},
           // Transaction Type and Transaction Sub-Type were split into a
           // coarse parent (Auth/Settled) + cascading real-enum picker,
@@ -6260,12 +7297,15 @@ function renderWizStep(stepId){
           {entity:'EMI Request', attribute:'Product Type', operator:'Equals', value:'Single-Txn', mandatory:true},
         ];
       }
-      // Both Transaction Events and EMI Events have exactly one real Event
-      // Type each (Section 6.1/6.4 of the PRD) — same "don't show a
-      // dropdown for a single option" precedent already used elsewhere in
-      // this file. Locked, not a real choice, auto-set rather than left
-      // for the user to pick from a 1-item list.
-      if(cat.events.length===1 && d.eventType!==cat.events[0]) d.eventType = cat.events[0];
+      // Changing the event changes which facts exist, so rows pointing at
+      // the previous event's entity are reset rather than left referencing
+      // attributes the new event does not carry.
+      if(isFactEvent && entityForCat) d.triggerConditions.forEach(c=>{
+        if(c.entity!==entityForCat){ c.entity=entityForCat; c.attribute=''; c.operator=''; c.value=''; delete c.values; delete c.value2; }
+      });
+      const facts = entityForCat ? Object.keys(ELIGIBILITY_META[entityForCat]||{}) : [];
+      const offerWide = eventIsOfferWide(d.eventType);
+      const vol = EVENT_VOLUME[d.eventType];
       html = `
       <h1 class="wiz-heading">Configure Event Trigger</h1>
       <p class="wiz-sub">Which event fires this nudge, and under what conditions.</p>
@@ -6273,15 +7313,23 @@ function renderWizStep(stepId){
       <div class="f-group"><label class="f-label">Event</label>
         ${cat.events.length===1
           ? `<input class="f-input" type="text" value="${cat.events[0]}" disabled>`
-          : `<select class="f-input" onchange="fieldUpdate('eventType',this.value);renderWizStep('EVENT_TRIGGER')">
+          : `<select class="f-input" onchange="fieldUpdate('eventType',this.value);wiz.draft.triggerConditions=[];renderWizStep('EVENT_TRIGGER')">
               <option value="">Select event</option>
-              ${cat.events.map(e=>`<option ${d.eventType===e?'selected':''}>${e}</option>`).join('')}
+              ${cat.events.map(e=>`<option value="${e}" ${d.eventType===e?'selected':''}>${e}${(isFactEvent && e!=='Outcome Issuance')?' (New)':''}</option>`).join('')}
             </select>`}
       </div>
-      <div class="f-group"><label class="f-label">Event Conditions</label>
+      ${vol ? `<div class="f-hint" style="margin:-8px 0 18px;">${EVENT_VOLUME_TEXT[vol]}</div>` : ''}
+      ${(d.eventCategory==='Offer Events' && d.eventType) ? triggerOfferFieldHtml(d) : ''}
+      ${offerWide ? `
+        <div class="f-hint" style="background:var(--info-bg);border:1px solid var(--blue-cta);border-radius:8px;padding:10px 14px;color:var(--info-text);margin:0 0 18px;">
+          This event happens once for the offer, not once per customer. The nudge will be sent to everyone eligible for the offer.
+        </div>` : ''}
+      ${(isFactEvent && !d.eventType) ? `<div class="f-hint">Pick an event to see what it can be filtered on.</div>`
+        : (isFactEvent && !facts.length) ? `<div class="f-hint">This event carries no facts of its own beyond the offer and the customer, so there is nothing to filter on.</div>`
+        : `<div class="f-group"><label class="f-label">Event Conditions${isFactEvent?` <span style="font-weight:400;color:var(--gray-500);">(optional)</span>`:''}</label>
         ${d.triggerConditions.map((c,i)=>`${i>0?'<div class="cond-and">AND</div>':''}${condRow(c,i,[entityForCat],'triggerConditions')}`).join('')}
         <div class="add-link" onclick="wiz.draft.triggerConditions.push({entity:'${entityForCat}',attribute:'',operator:'',value:''});renderWizStep('EVENT_TRIGGER')">${ic('workflow')} Add Condition</div>
-      </div>
+      </div>`}
       ${wizFooter()}`;
     } else {
       // Event Conditions are attribute-based per event type (with a mandatory,
@@ -6350,7 +7398,7 @@ function renderWizStep(stepId){
             <span style="align-self:center;font-size:12.5px;color:var(--gray-500);">from event</span>
           </div>
         </div>
-        <div class="toggle-row"><div><div class="toggle-row-label">Enable Nudge Cancellation</div><div class="toggle-row-sub">Cancel pending nudges when a configured cancellation event occurs</div></div><div class="toggle ${d.cancellationEnabled?'on':''}" onclick="fieldUpdate('cancellationEnabled',!d.cancellationEnabled);renderWizStep('EVENT_TIMING')"></div></div>
+        <div class="toggle-row"><div><div class="toggle-row-label">Enable Nudge Cancellation</div><div class="toggle-row-sub">Cancel pending nudges when a configured cancellation event occurs</div></div><div class="toggle ${d.cancellationEnabled?'on':''}" onclick="wizToggle('cancellationEnabled','EVENT_TIMING')"></div></div>
         ${d.cancellationEnabled ? `
         <div class="card" style="background:var(--gray-25);">
           <p class="card-title" style="font-size:13px;">Cancellation Details</p>
@@ -6471,7 +7519,6 @@ function retryVarsBlockSave(s){
 // tried first and rejected — no visible checkboxes, no selection summary,
 // and Cmd/Ctrl-click is not a discoverable interaction for a form field
 // that otherwise looks like a plain dropdown.
-let openMultiSelectId = null;
 // `onToggle` is a function called at template-build time (not runtime) —
 // (optionValue) => 'someOnchangeJsExpression' — so each checkbox's onchange
 // can bake in whatever context (e.g. a list index) the caller needs,
@@ -6676,6 +7723,90 @@ function submitNudgeCommConfig(){
   renderWizStep(wizSteps()[wiz.stepIdx].id);
 }
 
+// PRD 2 §8.4 — "The event, its conditions, the user base conditions and the
+// frequency limits are read back as plain sentences. Where the nudge is
+// offer-wide, the read-back says so and gives the audience estimate."
+//
+// Prose, not a key/value table, because the thing a reviewer is checking is
+// whether the nudge means what was intended — and a row reading
+// "Trigger Conditions | Redemption channel Equals Partner (TWID)" makes
+// them reassemble the sentence in their head before they can judge it.
+function condPhrase(c){
+  const val = (c.values && c.values.length) ? c.values.join(' or ') : (c.value||'');
+  const win = c.window ? ` (${c.window})` : '';
+  return `<b>${c.attribute}</b> ${String(c.operator||'').toLowerCase()} <b>${val||'—'}</b>${win}`;
+}
+function eventTriggerSentence(d){
+  const ev = d.eventType || 'an event';
+  const conds = (d.triggerConditions||[]).filter(c=>c.attribute);
+  const offer = (offerById(d.offerId)||{}).name;
+  let out;
+  if(eventIsOfferWide(d.eventType)){
+    // The offer-wide read-back says the thing that surprises people: one
+    // event, many messages.
+    //
+    // No audience estimate anywhere on the event track — not on the trigger
+    // step, not on User Base, not here (Amogh, 2026-11-18). An event
+    // nudge's audience is whoever the event fires for in future: a forecast,
+    // not a count, so any number shown would be invented. The offer-wide
+    // three are the one arguably countable case, but showing an estimate for
+    // 3 of 14 events would teach that its absence means something it does
+    // not.
+    out = `When <b>${ev}</b>${offer?` for <b>${offer}</b>`:''}, this nudge is sent to <b>everyone eligible for the offer</b> — the event happens once, not once per customer.`;
+  } else {
+    out = `Fires for a customer when <b>${ev}</b>${offer?` on <b>${offer}</b>`:''}.`;
+  }
+  if(d.eventCategory==='Journey Events' && d.eventJourney) out += ` Scoped to the <b>${d.eventJourney}</b> journey.`;
+  out += conds.length
+    ? ` Only when ${conds.map(condPhrase).join(' <i>and</i> ')}.`
+    : ` No conditions on the event itself.`;
+  const vol = EVENT_VOLUME[d.eventType];
+  if(vol==='bursty') out += ` This event arrives in bursts — check the quiet-hours choice below.`;
+  return out;
+}
+// The batch twin of eventUserBaseSentence. Same job: say who this reaches in
+// a sentence a reviewer can check against what they meant, rather than a
+// label/value table they have to reassemble.
+function batchUserBaseSentence(d){
+  const conds = (d.conditions||[]).filter(c=>c.attribute);
+  const offer = (offerById(d.offerId)||{}).name;
+  let out = offer
+    ? `Everyone enrolled in <b>${offer}</b>`
+    : `<b>Everyone</b> in the programmes this nudge covers`;
+  if(offer && offerById(d.offerId) && offerById(d.offerId).milestone){
+    out += `, read against their <b>${(d.cycle||'Current').toLowerCase()} cycle</b>`;
+    if(d.variantUpgrade) out += ` including progress carried from a card upgrade`;
+  }
+  out += conds.length
+    ? `, where ${condGroupsSummary(d.conditions)}.`
+    : `, with no further conditions.`;
+  if(d.estimateData && d.estimateData.stages && d.estimateData.stages.acctConds>0){
+    const st = d.estimateData.stages;
+    out += ` About <b>${st.afterAccount.toLocaleString()}</b> accounts match — ${st.afterOffer.toLocaleString()} before the account conditions.`;
+  }
+  return out;
+}
+function eventUserBaseSentence(d){
+  const conds = (d.conditions||[]).filter(c=>c.attribute);
+  const mode = d.userBaseMode;
+  let out = mode==='Smart Tag'
+    ? `Restricted to customers with the <b>${d.smartTag||'—'}</b> smart tag (${(d.smartTagMode||'Allowed').toLowerCase()}).`
+    : mode==='Journey/Batch'
+    ? `Restricted to the <b>${d.eventJourney||'—'}</b> journey${d.eventBatch?`, batch <b>${d.eventBatch}</b>`:''}.`
+    : `<b>Everyone</b> the event fires for is eligible.`;
+  out += conds.length
+    ? ` Narrowed further to accounts where ${conds.map(condPhrase).join(' <i>and</i> ')}.`
+    : ` No further conditions.`;
+  return out;
+}
+function frequencySentence(d){
+  const cd = d.cooldown ? `At most one of these per customer every <b>${d.cooldown} ${d.cooldownUnit||''}</b>.` : `No cooldown — every qualifying event sends.`;
+  const qh = d.quietHours
+    ? ` In quiet hours: <b>${d.quietHours.toLowerCase()}</b>.${/queue/i.test(d.quietHours) ? ' A large burst arriving overnight will all land together in the next allowed slot.' : (/drop|skip/i.test(d.quietHours) ? ' A burst arriving overnight is discarded, not delayed.' : '')}`
+    : '';
+  return cd + qh;
+}
+
 function renderWizPreview(){
   const d = wiz.draft;
   const el = document.getElementById('wizPreview');
@@ -6727,18 +7858,113 @@ function dateCondPhrase(op, value, value2){
   const kind = dateOpKind(op);
   if(kind==='fixed-token') return lower;                                  // the operator already names the day
   if(kind==='two-dates') return `${lower} ${value||''} and ${value2||''}`;
-  if(kind==='days') return lower.replace(' N days', ` ${value||''} days`); // the unit is already in the label
+  if(kind==='days') return `${lower} ${value||''} ${dateOpUnit(op)}`;      // operator, count, unit
   if(kind==='years') return `${lower} ${value||''} years`;
   return `${lower} ${value||''}`;
 }
+// One group reads as a plain list of conditions. Several read as bracketed
+// alternatives, because two sentences stacked under each other read as AND —
+// which is exactly wrong when they are alternatives.
+function condGroupsSummary(rows){
+  const groups = condGroups(rows)
+    .map(g=>g.map(r=>r.c).filter(c=>c.attribute).map(condSummary))
+    .filter(g=>g.length);
+  if(!groups.length) return '—';
+  if(groups.length===1) return groups[0].join(' and ');
+  return groups.map(g=>`(${g.join(' and ')})`).join(' or ');
+}
+// Does this nudge pick a different set of customers each day, or the same
+// set every day?
+//
+// A condition tied to the customer's OWN timeline — "offer end date is in
+// exactly 7 days", "enrolment date was exactly 3 days ago" — is true for a
+// given customer on exactly one day. Each daily run catches a different
+// cohort, so the nudge has to run daily or it misses people.
+//
+// A condition on a STATE — progress is at least 20%, points available is at
+// least 10000, subscription status is Expired — stays true once it starts
+// being true. A daily run sends to the same person every day until they
+// stop matching. That needs either a one-off send date or a cooldown.
+//
+// This is derived rather than asked, because an author cannot reliably tell
+// which kind they have just built, and getting it wrong floods customers.
+const SELF_LIMITING_OPERATORS = ['Was exactly','Is in exactly'];
+function conditionCadence(d){
+  const conds = (d.conditions||[]).filter(c=>c.attribute);
+  if(!conds.length) return {kind:'none'};
+  // Partition once, so every condition lands in exactly one bucket. Splitting
+  // this into two independent filters left a condition that was neither —
+  // an outcome pinned to an exact age — counted as sticky with nothing to
+  // name, which printed an empty warning.
+  const isSelfLimiting = (c)=>{
+    if(SELF_LIMITING_OPERATORS.includes(c.operator)) return true;
+    const m = (ELIGIBILITY_META[c.entity]||{})[c.attribute];
+    // "an outcome exactly 7 days old" matches each outcome on one day, the
+    // same way "is in exactly 7 days" does
+    if(m && (m.type==='outcomeMatch' || m.type==='outcomeLookback') && c.window) return true;
+    return false;
+  };
+  const daily = conds.filter(isSelfLimiting);
+  const sticky = conds.filter(c=>!isSelfLimiting(c));
+  if(daily.length && !sticky.length) return {kind:'daily', because:condSummary(daily[0])};
+  if(daily.length && sticky.length)  return {kind:'mixed', because:condSummary(daily[0]), sticky:sticky.map(condSummary)};
+  return {kind:'sticky', sticky:sticky.map(condSummary)};
+}
+function cadenceNoticeHtml(d){
+  const c = conditionCadence(d);
+  const cd = d.cooldown ? `<b>${d.cooldown} ${d.cooldownUnit||''}</b>` : null;
+  if(c.kind==='none') return `<div class="wiz-warn cadence-warn">Add conditions on the User Base step and this will say when the nudge sends.</div>`;
+  if(c.kind==='daily') return `<div class="cadence-ok"><b>Runs on the daily run.</b> Each customer matches on one day only, because <i>${c.because}</i>. Pick the time of day below.</div>`;
+  const list = (c.sticky||[]).map(x=>`<i>${x}</i>`).join(', ');
+  const tail = cd
+    ? ` Your cooldown of ${cd} limits this to one message per customer per ${d.cooldown} ${d.cooldownUnit||''}.`
+    : ` <b>Set a cooldown on the Frequency step, or give a send date</b>, or the same customer is messaged every day.`;
+  return `<div class="wiz-warn cadence-warn"><b>${c.kind==='mixed'?'Some conditions stay true':'These conditions stay true'} after they first match</b> — ${list}.${tail}</div>`;
+}
 function condSummary(c){
-  const attr = c.attribute||'';
+  const attr = attrLabel(c.entity, c.attribute) || c.attribute || '';
   const tidy = (str)=>str.replace(/\s+/g,' ').trim();
-  if(c.values && c.values.length) return tidy(`${attr} ${c.operator||''} ${c.values.join(', ')}`);
+  // The read-back is the same sentence the row is, so it uses the same
+  // words. Without this it said "Points available Greater than or equal to
+  // 10000" — the stored operator name leaking into prose.
+  const op = (o)=> OP_WORD[o] || String(o||'').toLowerCase();
+  if(c.values && c.values.length) return tidy(`${attr} ${op(c.operator)} ${c.values.join(', ')}`);
   const am = (ELIGIBILITY_META[c.entity]||{})[attr];
+  // Same reason the window may not be dropped above: "an outcome with
+  // status exists" is a far broader statement than the configured one,
+  // which names a status and a lookback.
+  if(am && am.type==='outcomeMatch'){
+    // A slot left on "any" is dropped rather than read aloud: "an outcome of
+    // type any with status Refunded" says the same as "an outcome with
+    // status Refunded" and reads worse. Both empty leaves "an outcome".
+    const a = attr.replace(/^An? /, m=>m.toLowerCase());
+    const parts = [a];
+    if(c.value) parts.push(`of type ${c.value}`);
+    if(c.value2) parts.push(`with status ${c.value2}`);
+    parts.push(`exactly ${c.window||'—'} days old`, op(c.operator));
+    return tidy(parts.join(' '));
+  }
+  if(am && am.type==='outcomeLookback'){
+    // "where An outcome ..." reads wrong mid-sentence; the other attributes
+    // are noun labels, this one is the start of a clause.
+    const a = attr.replace(/^An? /, m=>m.toLowerCase());
+    return tidy(`${a} ${c.value||'(any)'} exactly ${c.window||'—'} days old ${op(c.operator)}`);
+  }
+  // The horizon is half the question. "Points expiring is more than 0" is a
+  // different and much broader statement than "Points expiring in exactly
+  // 30 days is more than 0", so the summary must not drop it.
+  // The horizon and the period are half the question. "Points expiring is
+  // more than 0" and "Usage count is 0" are far broader statements than the
+  // ones actually configured, so neither may be dropped from the read-back.
+  if(am && am.type==='expiringPoints'){
+    return tidy(`${attr} in exactly ${c.window||'—'} days ${op(c.operator)} ${c.value||''}`);
+  }
+  if(am && am.type==='usagePeriod'){
+    return tidy(`${attr} in the ${(c.window||'—').toLowerCase()} ${op(c.operator)} ${c.value||''}`);
+  }
   if(am && am.type==='date' && c.operator) return tidy(`${attr} ${dateCondPhrase(c.operator, c.value, c.value2)}`);
   const v = c.value2 ? `${c.value||''} and ${c.value2}` : (c.value||'');
-  return tidy(`${attr} ${c.operator||''} ${v}`);
+  return tidy(`${attr} ${op(c.operator)} ${v}`);
 }
 function reviewSections(){
   const d = wiz.draft;
@@ -6762,56 +7988,57 @@ function reviewSections(){
       ['Issuer', d.issuer||'—'],
       ...(d.scopeType==='Program' ? [['Program', (d.programs||[]).join(', ')||'—']] : []),
     ]});
-    sections.push({title:'Event Trigger', stepId:'EVENT_TRIGGER', rows:[
-      ['Event Category', d.eventCategory||'—'],
-      ['Event Type', d.eventType||'—'],
+    // PRD 2 §8.4 — read back as plain sentences. The rows are kept for the
+    // things that are genuinely a list (journey/batch), not re-stated in
+    // prose where a label/value pair says it better.
+    sections.push({title:'Event Trigger', stepId:'EVENT_TRIGGER', sentence: eventTriggerSentence(d), rows:[
       // Journey/Batch is only genuinely an Event Trigger concept for Journey
       // Events (the event fires on that journey). For Transaction/EMI Events
       // it's an optional audience restriction, configured in User Base
       // instead — shown there, not duplicated here.
       ...(d.eventCategory==='Journey Events' ? [['Journey', d.eventJourney||'—'], ['Batch', d.eventBatch||'—']] : []),
-      ['Trigger Conditions', (d.triggerConditions||[]).filter(c=>c.attribute).map(c=>`${c.attribute} ${c.operator} ${(c.values&&c.values.length)?c.values.join(', '):c.value}`).join(' AND ')||'—'],
     ]});
   }
   // Real step order (and Review/View section order) is User Base BEFORE
   // Timing for the event-based flow — matches getEventSampleData().
   // Branch order mirrors renderWizStep's own ELIGIBILITY gating, which
   // tests triggerType FIRST — an event-based nudge always renders the
-  // event-based User Base step whatever its nudgeType. This block used to
-  // test nudgeType first, so an event-based nudge whose type happened to
-  // be JOURNEY (EV-41028) or FILE_UPLOAD reviewed as if it had been built
-  // on the standard step, listing rows the user was never shown.
+  // event-based User Base step whatever its audience base. This block used
+  // to test the nudge type first, so an event-based nudge whose type
+  // happened to be JOURNEY (EV-41028) or FILE_UPLOAD reviewed as if it had
+  // been built on the standard step, listing rows the user was never shown.
   if(wiz.triggerType==='event-based'){
-    const ubRows = d.userBaseMode==='Smart Tag'
-      ? [['Mode','Smart Tag'],['Smart Tag', d.smartTag||'—'],['Access', d.smartTagMode||'Allowed']]
-      : d.userBaseMode==='Journey/Batch'
-      ? [['Mode','Journey / Batch'],['Journey', d.eventJourney||'—'],['Batch', d.eventBatch||'—']]
-      : [['Mode','All Customers']];
-    ubRows.push(['Additional Conditions', (d.conditions||[]).filter(c=>c.attribute).map(condSummary).join(' AND ')||'—']);
-    sections.push({title:'User Base', stepId:'ELIGIBILITY', rows: ubRows});
-  } else if(d.nudgeType==='EXTERNAL_SOURCE'){
-    sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:[
-      ['Eligibility Condition', `${d.externalSourceAttribute||EXTERNAL_SOURCE_ATTRIBUTES[0]} Equals ${d.eligibilityCode||'—'}`],
-    ]});
-  } else if(d.nudgeType==='FILE_UPLOAD' || d.nudgeType==='JOURNEY'){
-    sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:[
-      ['Journey Name', d.journey||'—'], ['Batch Name', d.batch||'—'],
-      ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(condSummary).join(', ')||'—'],
-    ]});
+    sections.push({title:'User Base', stepId:'ELIGIBILITY', sentence: eventUserBaseSentence(d), rows: []});
   } else {
-    sections.push({title:'User Base', stepId:'ELIGIBILITY', rows: d.nudgeType==='FILE_UPLOAD' ? [
-      ['Uploaded File', d.fileUploaded ? 'user_base_q3.csv' : '—'],
-    ] : [
-      ['Eligibility Entity', (ELIGIBILITY_ENTITY_BY_TYPE[d.nudgeType]||[]).join(', ')||'—'],
-      ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(condSummary).join(', ')||'—'],
-      ...(d.queryTemplateConfig?.queryTemplateName ? [['Query Template', d.queryTemplateConfig.queryTemplateName]] : []),
-    ]});
+    const used = [...new Set((d.conditions||[]).filter(c=>c.attribute).map(c=>c.entity))];
+    // Prose for the ordinary condition-based screens, the same way the event
+    // track reads back. The file-upload and bank-API screens keep rows,
+    // because what they say is a file name and a code, not an audience.
+    if(d.nudgeType!=='EXTERNAL_SOURCE' && d.nudgeType!=='FILE_UPLOAD' && d.nudgeType!=='JOURNEY'){
+      sections.push({title:'User Base', stepId:'ELIGIBILITY', sentence: batchUserBaseSentence(d), rows:
+        d.queryTemplateConfig?.queryTemplateName ? [['Query Template', d.queryTemplateConfig.queryTemplateName]] : []});
+    } else
+    sections.push({title:'User Base', stepId:'ELIGIBILITY', rows:
+      d.nudgeType==='EXTERNAL_SOURCE' ? [['Eligibility Condition', `${d.externalSourceAttribute||EXTERNAL_SOURCE_ATTRIBUTES[0]} Equals ${d.eligibilityCode||'—'}`]]
+      : d.nudgeType==='FILE_UPLOAD' ? [['Uploaded File', d.fileUploaded ? 'user_base_q3.csv — 8,412 rows' : '—']]
+      : d.nudgeType==='JOURNEY' ? [['Journey Name', d.journey||'—'], ['Batch Name', d.batch||'—'],
+          ['Eligibility Filter', (d.conditions||[]).filter(c=>c.attribute).map(condSummary).join(', ')||'—']]
+      : [
+        ['Conditions On', used.join(', ')||'—'],
+        ['Eligibility Filter', condGroupsSummary(d.conditions)],
+        ...(d.nudgeType==='PROMOTION' ? [
+          ['Offer', (offerById(d.offerId)||{}).name || '— (no offer condition used)'],
+          ['Cycle', `${d.cycle||'Current'} Cycle`],
+          ['Variant Upgrade Handling', d.variantUpgrade ? `On${d.offerLabel?' — '+d.offerLabel:''}` : 'Off'],
+        ] : []),
+        ...(d.queryTemplateConfig?.queryTemplateName ? [['Query Template', d.queryTemplateConfig.queryTemplateName]] : []),
+      ]});
   }
   if(wiz.triggerType==='event-based'){
-    sections.push({title:'Timing', stepId:'EVENT_TIMING', rows:[
-      ['Delivery Timing', d.delayType==='Immediate'?'Immediate':`${d.delay} ${d.delayUnit} after event`],
-      ['Cancellation Event', d.cancellationEnabled?'Enabled':'Not configured'],
-    ]});
+    sections.push({title:'Timing', stepId:'EVENT_TIMING', sentence:
+      `${d.delayType==='Immediate' ? 'Sent <b>as soon as</b> the event lands.' : `Sent <b>${d.delay||'—'} ${d.delayUnit||''}</b> after the event lands.`}`
+      + ` ${d.cancellationEnabled ? 'A cancellation event can call it back before it goes.' : 'Nothing cancels it once it is queued.'}`,
+      rows:[]});
   }
   if(wiz.triggerType!=='event-based'){
     sections.push({title:'Display Elements', stepId:'DISPLAY_ELEMENTS', rows: d.displayEnabled===false ? [['Status','Display element configuration has been turned off']] : [
@@ -6819,7 +8046,7 @@ function reviewSections(){
       ['Display Order', d.displayOrder ?? '—'],
       ['Redirection Link', d.redirectLink||'—'],
     ]});
-    if(!['CROSS_SELL_UP_SELL','OTHER'].includes(d.nudgeType)){
+    if(!(HIDDEN_STEPS_BY_NUDGE_TYPE[d.nudgeType]||[]).includes('DELIVERY')){
       sections.push({title:'Interaction Limit', stepId:'DELIVERY', rows:[
         ...(d.dismissible ? [['Show Again After Dismissal', d.reshowMode==='ONCE_PER_SESSION'?'Each time user reopens the app':'Never']] : []),
         ['Nudge Interaction Limit', (d.deliveryConds||[]).filter(c=>c.attribute).map(c=>`${c.attribute} ${c.operator} ${c.value}`).join(' OR ')||'—'],
@@ -6830,7 +8057,7 @@ function reviewSections(){
     // so it falls through to the same DNC-only Communication section
     // Cross-Sell/Up-Sell and Other already use, rather than showing empty
     // trigger-block rows for a step that was never in its stepper.
-    if(!['CROSS_SELL_UP_SELL','OTHER','EXTERNAL_SOURCE'].includes(d.nudgeType)){
+    if(!(HIDDEN_STEPS_BY_NUDGE_TYPE[d.nudgeType]||[]).includes('COMMUNICATION')){
       sections.push({title:'Communication', stepId:'COMMUNICATION', rows: [
         ...(d.commBlocks||[]).map((b,i)=>[`Trigger ${i+1}`, `${b.name||'Untitled'} · ${Object.keys(b.configured||{}).filter(k=>b.configured[k]).join(', ')||'no channels configured'}`]),
         ...retryReviewRows(d.commBlocks),
@@ -6844,10 +8071,7 @@ function reviewSections(){
       ['Communication Templates', (d.commBlocks||[]).flatMap(b=>Object.keys(b.configured||{}).filter(k=>b.configured[k])).join(', ')||'—'],
       ...retryReviewRows(d.commBlocks),
     ]});
-    sections.push({title:'Frequency Limits', stepId:'FREQUENCY_LIMITS', rows:[
-      ['Cooldown Policy', `${d.cooldown||'—'} ${d.cooldownUnit||''}`],
-      ['Quiet Hours Handling', d.quietHours||'—'],
-    ]});
+    sections.push({title:'Frequency Limits', stepId:'FREQUENCY_LIMITS', sentence: frequencySentence(d), rows:[]});
   }
   return sections;
 }
@@ -6857,7 +8081,7 @@ function renderReviewBody(isViewOnly, statusOverride){
   const sections = reviewSections();
   const isMakerChecker = !!d.isMakerCheckerEnabled && wiz.triggerType!=='event-based';
   return `
-    ${!isViewOnly && wiz.triggerType!=='event-based' ? `<span class="badge purple" style="margin-bottom:8px;display:inline-flex;">${(NUDGE_TYPES.find(t=>t.id===d.nudgeType)||{}).label||''}</span>` : ''}
+    ${!isViewOnly && wiz.triggerType!=='event-based' ? `<span class="badge purple" style="margin-bottom:8px;display:inline-flex;">${nudgeTypeLabel(d.nudgeType)}</span>` : ''}
     ${!isViewOnly ? `<h1 class="wiz-heading">Nice work! Let's do a final check</h1><p class="wiz-sub">${d.name||'Untitled nudge'}</p>` : ''}
     ${sections.map(s=>`
       <div class="rev-section">
@@ -6865,7 +8089,8 @@ function renderReviewBody(isViewOnly, statusOverride){
           <div class="rev-section-title">${s.title}</div>
           ${!isViewOnly ? `<div class="rev-edit-link" onclick="wizGoStep(${wizSteps().findIndex(st=>st.id===s.stepId)})">Edit</div>` : ''}
         </div>
-        ${s.rows.map(([k,v])=>`<div class="rev-field-row"><div class="rev-field-key">${k}</div><div class="rev-field-val">${v}</div></div>`).join('')}
+        ${s.sentence ? `<div class="rev-sentence">${s.sentence}</div>` : ''}
+        ${(s.rows||[]).map(([k,v])=>`<div class="rev-field-row"><div class="rev-field-key">${k}</div><div class="rev-field-val">${v}</div></div>`).join('')}
       </div>`).join('')}
     ${!isViewOnly ? `<div class="wiz-footer">
       <button class="btn secondary" onclick="wizBack()">Back</button>
@@ -6879,7 +8104,7 @@ function submitNudge(){
   // an invalid placeholder is present, but that only blocks *advancing*
   // past that step. Re-checked here so a submit can never go through with
   // one, regardless of how the wizard got to this point.
-  if(d.nudgeType==='EXTERNAL_SOURCE' && externalSourceInvalidPlaceholders(d).length){
+  if(isBankApiNudge(d) && externalSourceInvalidPlaceholders(d).length){
     showToast('Fix the invalid placeholder in Display Elements before submitting.', 'error');
     return;
   }
@@ -7038,7 +8263,7 @@ function renderNudgeView(){
   const canApprove = d.status==='PENDING_REVIEW';
   // DELIBERATE DEVIATION from real ironbank-face-main (2026-08-28, explicit
   // user call): the real app additionally excludes CROSS_SELL_UP_SELL/OTHER
-  // nudgeType and event-based nudges from ever showing Analytics
+  // nudge types and event-based nudges from ever showing Analytics
   // (verified byte-for-byte against [id]/page.js). That reads as an
   // inconsistent, unexplainable gap in a demo — especially since
   // Cross-Sell/EMI nudges are this project's flagship story — so here
@@ -7056,7 +8281,7 @@ function renderNudgeView(){
       <div style="flex:1;min-width:0;">
         <div class="view-header-row">
           <div>
-            <span class="badge purple">${(NUDGE_TYPES.find(t=>t.id===d.nudgeType)||{}).label || (wiz.triggerType==='event-based'?'Event-Based':'')}</span>
+            <span class="badge purple">${nudgeTypeLabel(d.nudgeType) || (wiz.triggerType==='event-based'?'Event-Based':'')}</span>
             <h1 class="page-title" style="margin-top:8px;">${d.name}</h1>
             <p class="page-sub">${d.description||''}</p>
           </div>
