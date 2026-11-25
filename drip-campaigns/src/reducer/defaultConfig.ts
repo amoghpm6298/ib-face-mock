@@ -135,3 +135,38 @@ export function dcDefaultExitReason(graph: DripGraph, addingAt: DcAddingAt | nul
   const baseLabel = src.label.replace(/\?$/, '');
   return `${baseLabel} — ${edge.branchLabel}`;
 }
+
+// The default name for a NEW arm, on an Experiment ('A', 'B', …) and on a
+// Branch ('Branch 1', 'Branch 2', …) — the same two vocabularies this
+// file's own seeds above use.
+//
+// Both forms used to derive it from the arm COUNT, which repeats a name as
+// soon as any arm has been removed: take A/B/C, remove B, and the next
+// "+ Add variant" is C again. Two arms then carry one name, on the canvas
+// and on their edge chips, where the name is the only thing telling them
+// apart — and the duplicate persists into the saved campaign, since an
+// arm's name is what its edge's branchLabel is set from. The count is not
+// the question; "which name is still free" is.
+function takenLabels(branches: { label?: string }[]): Set<string> {
+  return new Set(branches.map((b) => String(b?.label ?? '').trim().toUpperCase()).filter(Boolean));
+}
+
+export function dcNextVariantLabel(branches: { label?: string }[]): string {
+  const taken = takenLabels(branches);
+  for (let i = 0; i < 26; i++) {
+    const letter = String.fromCharCode(65 + i);
+    if (!taken.has(letter)) return letter;
+  }
+  // A 27-variant experiment is not a real thing, but an unlovely name is
+  // still better than a duplicate one.
+  return `Variant ${branches.length + 1}`;
+}
+
+export function dcNextBranchLabel(branches: { label?: string }[]): string {
+  const taken = takenLabels(branches);
+  // With n arms, one of "Branch 1".."Branch n+1" is always free.
+  for (let n = 1; n <= branches.length + 1; n++) {
+    if (!taken.has(`BRANCH ${n}`)) return `Branch ${n}`;
+  }
+  return `Branch ${branches.length + 1}`;
+}

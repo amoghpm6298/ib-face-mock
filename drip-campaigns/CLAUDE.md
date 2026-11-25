@@ -1582,3 +1582,96 @@ the three real tags and reads "Smart Tag is any of Dormant 60d"; Block Codes
 says "Comma-separated codes"; and an Entry · Event narrowing reads
 "Transaction Amount is more than 5000" on Review. 167 unit (5 new), 48 e2e,
 clean build.
+
+## 2026-11-25 — The CEP audit's fixes: the goal race, a real submit gate,
+and the seeds made to say what they are
+
+A 25-finding audit against Braze/CleverTap/MoEngage/AJO conventions, then
+twelve of those findings fixed in two batches. Both batches are in the git
+log with their reasoning; `AUDIT.md` carries all 25 with every citation
+resolved against the tree and marks what is now closed.
+
+**The race was the real one (C1/C2).** A Send auto-inserted a Goal Check
+with zero elapsed time after it, so the check could only ever catch
+customers who had converted BEFORE the campaign messaged them, and the last
+one in a sequence routed the whole cohort to "Sequence exhausted" before the
+final message landed. A Send now auto-inserts a **Wait For Event on the
+goal** instead — the primitive already existed, as a timeout-bounded event
+listener, and nothing had reached for it here. It exits the moment the
+customer converts rather than at the next checkpoint, so nobody receives the
+next reminder after converting, and it carries the goal's own conditions so
+it means the goal rather than merely the goal's event type. A **Pause** keeps
+its Goal Check, and that is the right place for one: time has actually
+passed by the time it runs.
+
+**The submit gate (C3).** Node config was checked in exactly one place — the
+drawer's own button — so anything reaching the graph by another route was
+never re-examined. `dcValidateCampaign` re-checks every reachable node
+against the same rule, plus reachability, open slots named by branch,
+non-terminal leaves and steps wired past an Exit.
+
+**What the new checks then found in the seed data, which nobody had found by
+reading it.** 15 zero-delay checkpoints; DRIP-003's four Conditions using a
+retired operator and pointing at a catalogue that no longer exists;
+DRIP-004's goal naming an event different from the one its own graph waits
+for. The argument for building checks rather than reviewing data, made by
+the data.
+
+**Then the labels — 28 of 94 seeded nodes stated something their own
+`_config` did not say.** The canvas reads `label`/`meta` off the stored node
+while the drawer reads `_config`, two copies of the same facts, and nothing
+compared them. Two Conditions read *"Previous step: Clicked?"* over an
+outcome of `READ`, with a WhatsApp send before each — and WhatsApp's
+vocabulary has no `CLICKED` at all, so the canvas asked a question nothing
+behind it could answer. DRIP-003's four milestone checks still read the
+invented spend ladder deleted on 2026-10-23 even though their configs had
+been migrated, and the existing seed test passed throughout because it only
+checked sentences built FROM the config. Twelve sends carried dead channel
+or time text in `meta` from before Send grew its own per-fact rows.
+
+`tests/unit/seedLabels.test.ts` rebuilds all 94 with `dcRecomputeLabelMeta`
+and requires an exact match. **`_config` is now the source of truth for the
+seeds** — the file header used to say the opposite, that `_config` was "a
+plausible reconstruction, not a literal inverse of the display text", and
+that licence is what let them drift. A label there can now only be changed by
+changing the config behind it.
+
+**Import integrity (M9), deliberately not the submit gate.** "nodes is an
+object and edges is an array" was the whole check, so a file whose edges
+pointed at steps it did not contain imported cleanly and opened as a journey
+with arrows into nothing. `graphIntegrityError` rejects that, a node whose
+own `id` disagrees with its key (the canvas resolves handles and counts by
+`node.id` while edges and layout resolve by key), an unknown type, a dangling
+`rootId`, and two edges sharing one id. It is NOT `dcValidateCampaign`: an
+import lands as a DRAFT and opens straight in the builder where that gate is
+already on screen, so refusing a file for being unfinished would refuse the
+normal case. Integrity is what no drawer can repair; completeness is what the
+gate already reports.
+
+**Duplicate variant names (M6).** Both Experiment and Branch derived a new
+arm's name from the arm COUNT, so A/B/C minus B plus one gave a second C —
+two arms with one name on the canvas and on their edge chips, where the name
+is the only thing telling them apart. `dcNextVariantLabel`/`dcNextBranchLabel`
+name against the names already taken instead.
+
+**Two lazy test fixtures were caught by the new import check and were
+genuinely wrong**, not collateral: one carried `nodes: {}` with a rootId
+pointing at nothing, and one renamed node KEYS to `dcn*` while leaving each
+node's own `id` as `n*` — the exact mismatch that breaks rendering.
+
+**The verification lesson of this round.** The first batch was committed on
+316 green unit tests, a clean typecheck and a clean build — and **five e2e
+tests were failing the whole time**, because C1 changed the Send auto-insert
+contract and H2 restricted what can be spliced mid-chain, and I had updated
+only the unit tests. All five were asserting the old contracts correctly;
+they are now updated to the new ones. A contract change is not verified by
+the suite that was written against the contract you changed.
+
+Verified: 346 unit (316 → 346: 7 rebuilding every seeded label, 13 on import
+integrity, 10 on arm naming), 53 e2e (49 + a new `importAndVariants.spec.ts`
+driving the three fixes through real clicks — the seeded milestone and
+previous-message labels as the canvas actually renders them, adding and
+removing Experiment arms, and the Import screen's own error), clean typecheck
+(`tsc -p tsconfig.app.json --noEmit`), zero lint errors, clean build, plus
+screenshots of both seeded canvases confirming the rebuilt labels and that
+blanking the stale Send `meta` lost nothing visible.

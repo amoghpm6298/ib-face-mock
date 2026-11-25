@@ -10,7 +10,7 @@ This module is a **builder only** — it saves journeys as config and nothing ex
 |---|---|---|
 | Critical | 3 | **3** |
 | High | 8 | **4** |
-| Medium | 9 | **2** |
+| Medium | 9 | **4** |
 | Low | 5 | 0 |
 
 **Fixed so far:** C1, C2, C3, H1, H2, H4, H8, M2 — plus four seed-data defects the new validation found. Each fixed finding is marked below with what closed it.
@@ -261,7 +261,7 @@ Zero, blank or negative means either an instant timeout or a run that waits fore
 
 **Fix.** `terminalScope: 'path' | 'journey'` on Exit and Goal Reached, defaulting to `'journey'` for Goal Reached.
 
-### M6 · Experiment and control inputs are under-validated
+### M6 · Experiment and control inputs are under-validated  ✅ **FIXED** (duplicate labels; the rest stands)
 
 **Correction to the original audit.** It claimed `controlPct` "accepts anything, including negative, over 50". **`src/wizard/BasicDetailsStep.tsx:142`** does bound it:
 
@@ -276,6 +276,10 @@ Genuine, and confirmed: **`src/wizard/NodeForms.tsx:542` and `:545`** both deriv
 No randomisation unit or stickiness is defined for either control or variants, which matters once re-entry is on.
 
 **Fix.** Validate `controlPct` on submit. Require each variant 1–99 with unique labels. Add `assignment: { unit: journeyKey; sticky: true }` and a per-variant success metric.
+
+> **Fixed: the duplicate labels.** `dcNextVariantLabel`/`dcNextBranchLabel` (`src/reducer/defaultConfig.ts`) name a new arm against the names already taken rather than against the arm count, so A/B/C minus B plus one is B again, not a second C. Both Experiment and Branch were affected — Branch had the same bug with "Branch N". A renamed arm frees its name; past Z the fallback is "Variant n", never a duplicate.
+>
+> **Still open:** `controlPct` has no submit-time check (the `min`/`max` are HTML attributes only, and an empty field is `NaN`), per-variant percentages are only checked as a total, and there is still no assignment unit or stickiness. Those belong with H6's journey key, since "what is a variant sticky to" and "what is a run keyed to" are the same question.
 
 ### M7 · Scope and schedule are unvalidated
 
@@ -292,7 +296,7 @@ Entry · Event = "Virtual card activated" with Goal = "Virtual card activated" m
 
 **Fix.** Lint for entry event equal to goal event, and for a goal already satisfied by the entry filters.
 
-### M9 · Import validates almost nothing
+### M9 · Import validates almost nothing  ✅ **FIXED**
 
 **`src/data/ingestCampaign.ts:102`**
 
@@ -303,6 +307,12 @@ if (!parsed?.root || typeof parsed.root.nodes !== 'object' || !Array.isArray(par
 No node-type validation, no edge-target checks, no `rootId` membership check, no cycle detection. An unknown `type` crashes anything indexing `DC_NODE_META[type]`; nodes in a cycle are silently dropped by analytics because their in-degree never reaches zero.
 
 **Fix.** Validate on import, quarantine invalid parts, report errors.
+
+> **Fixed.** `graphIntegrityError` (`src/data/ingestCampaign.ts`) now rejects, naming the offending step or connection: an empty file, a node whose own `id` disagrees with the key it is filed under (the canvas resolves handles and counts by `node.id` while edges and layout resolve by key, so the two disagreeing renders arrows attached to nothing), an unknown node type, a missing or dangling `rootId`, an edge from or to a step that is not in the file, an edge with no id, and two edges sharing one id (branches reconcile by edge id, so a duplicate makes two arms the same arm). `to: null` stays legal — that is an open slot.
+>
+> **Deliberately not the submit gate.** An import lands as a DRAFT and opens straight in the builder, where `dcValidateCampaign` is already on screen listing what is unfinished. Rejecting a file for an open branch would refuse the normal case. The split is: integrity is what no drawer can repair, completeness is what the gate already reports.
+>
+> Cycle detection was not added. Nothing in the audit's claim was reproducible here — analytics walks from the root rather than by in-degree — and a cycle is a legitimate shape the builder itself cannot currently create.
 
 ---
 
@@ -345,8 +355,24 @@ None of these were found by reading. All four surfaced once `dcValidateCampaign`
 | DRIP-003 | Those same four pointed at `MS-1001`, from a catalogue that no longer exists | Repointed to real `MO-*` entries, time-matched to each tier |
 | DRIP-004 | Goal said `Transaction`; the graph waits for `Outcome Issuance` and exits to Goal Reached | Goal corrected to what the graph measures |
 
+A second pass, once every label was rebuilt from its own `_config`, found **28 of 94 nodes stating something their config did not say** — the canvas and the drawer disagreeing, with nothing to catch it:
+
+| Campaign | Drift | Resolution |
+|---|---|---|
+| DRIP-005/006 | Two Conditions read *"Previous step: Clicked?"* over an outcome of `READ`, and the send before each is WhatsApp, which has no `CLICKED` status at all | Rebuilt from the config: *"Previous message outcome is any of READ?"* |
+| DRIP-003 | The four milestone checks still read the invented spend ladder deleted on 2026-10-23, though their configs had been migrated to real offers | Rebuilt: *"Monthly Spend Milestone is at least 100%?"* and the other three |
+| DRIP-001/002/005/006 | Twelve sends carried a channel or a bare time in `meta`, from before Send grew its own per-fact rows — dead text the card never reads | Blanked; the card renders channel, template and timing from `_config` |
+| DRIP-002/006 | Both experiments' allocation lines were hand-written: one less specific than its config, one past the 24-character rule that keeps a long allocation off the canvas | Rebuilt from the branches |
+| DRIP-001 | Three Goal Reached exits read "Activated" while their own `reason` field said "Virtual card activated" | Label follows the field the drawer owns |
+| DRIP-001 | An Exit carried a sub-line ("No activation after 3 attempts") that no form can produce | Blanked |
+| DRIP-004 | A Wait for Event read "Redeemed?" while its config narrows nothing | Rebuilt as "Outcome Issuance" |
+
+`tests/unit/seedLabels.test.ts` now rebuilds all 94 and requires an exact match, so this class cannot return silently.
+
+**One seed-design question this raised, left open rather than guessed:** DRIP-004 ("Reward Points Expiry Reminder") has a goal of `Outcome Issuance` with no conditions, so any outcome issuance counts as redemption. Its exits say "Redeemed". Narrowing the goal to `Outcome Status = Redeemed` is probably what it means, but it would change what every wait in that campaign listens for, so it is a decision rather than a correction.
+
 ## What is left
 
-**Next, in order:** a test that rebuilds every seeded label from its `_config` (the remaining known instance is DRIP-005/006's *"Clicked?"* over `"outcome": "READ"`); M9 import validation, which can now reuse `dcValidateCampaign`; M6's duplicate variant labels.
+**Next:** M8 (entry event equal to the goal event — a campaign where everyone has already converted on entry), then M7's scope and schedule checks, both of which extend `dcValidateCampaign` rather than adding machinery.
 
 **Then H5, H6 and H7 together** — re-entry, journey key and guardrails are one question: what is a journey run keyed to, and when is it finished. H6 is a decision rather than a fix.

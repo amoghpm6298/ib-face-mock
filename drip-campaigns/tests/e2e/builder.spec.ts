@@ -93,7 +93,11 @@ async function addFilter(page: import('@playwright/test').Page) {
   await page.waitForTimeout(150);
 }
 
-test('Send auto-inserts a goal-check Split + GOAL_EXIT; a fallback channel on Send shows the FALLBACK tag on canvas', async ({ page }) => {
+// A Send auto-inserts a WAIT FOR EVENT on the goal, never a bare Goal Check:
+// a check right after a send runs with zero elapsed time, so it can only
+// catch customers who had already converted before the message went out. The
+// wait listens for the goal instead, and exits the moment it fires.
+test('Send auto-inserts a Wait for Event on the goal + GOAL_EXIT; a fallback channel on Send shows the FALLBACK tag on canvas', async ({ page }) => {
   await startNewCampaignWithGoal(page, 'Builder Spec: Send Chain', 'Card Events', 'Virtual card activated');
   await addEntryEvent(page, 'Journey Events', 'Pageload');
 
@@ -110,7 +114,12 @@ test('Send auto-inserts a goal-check Split + GOAL_EXIT; a fallback channel on Se
   await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
   await page.waitForTimeout(400);
 
-  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(1);
+  // The goal is Card Events / Virtual card activated — an unambiguous event,
+  // so the wait's Yes arm goes straight to a Goal Reached exit and its
+  // timeout arm is the open slot the author carries on from.
+  await expect(page.locator('.dc-node-card:has-text("Wait for Event")')).toHaveCount(1);
+  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
+  await expect(page.locator('.dc-node-card:has-text("Goal Reached")')).toHaveCount(1);
   await expect(page.locator('.dc-branch-label:has-text("Yes")')).toHaveCount(1);
   await expect(page.locator('.dc-node-fallback-row')).toHaveCount(0);
 
@@ -137,7 +146,8 @@ test('Send auto-inserts a goal-check Split + GOAL_EXIT; a fallback channel on Se
   await page.waitForTimeout(400);
 
   await expect(page.locator('.dc-node-fallback-row')).toHaveCount(1);
-  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(2);
+  await expect(page.locator('.dc-node-card:has-text("Wait for Event")')).toHaveCount(2);
+  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
 });
 
 test('Send does NOT get an auto goal-check when no campaign Goal is defined', async ({ page }) => {
@@ -160,19 +170,17 @@ test('Send does NOT get an auto goal-check when no campaign Goal is defined', as
   await expect(page.locator('.dc-add-btn')).toHaveCount(1);
 });
 
-test('Clicking "remove goal check" on an auto-inserted Split collapses it, keeping whatever was under No', async ({ page }) => {
+// Driven off a PAUSE rather than a Send: a Pause is now the only type that
+// auto-inserts a Goal Check, and it is the right one to — time has actually
+// passed by the time it runs, which is exactly what a check after a Send
+// lacked.
+test('Clicking "remove goal check" on an auto-inserted check collapses it, keeping whatever was under No', async ({ page }) => {
   await startNewCampaignWithGoal(page, 'Builder Spec: Remove Goal Check', 'Card Events', 'Virtual card activated');
   await addEntryEvent(page, 'Journey Events', 'Pageload');
 
   await page.locator('.dc-add-btn').click();
-  await page.locator('.dc-type-opt', { hasText: /^Send/ }).click();
-  await page.locator('.sd-drawer.open input[type=text]').first().fill('Msg1');
-  const sendSelects = page.locator('.sd-drawer.open select');
-  await sendSelects.nth(0).selectOption('WHATSAPP');
-  await page.waitForTimeout(150);
-  await page.locator('.sd-drawer.open select', { hasText: 'Select account' }).selectOption('IBL-Karix-Onb');
-  await page.waitForTimeout(150);
-  await page.locator('.sd-drawer.open select', { hasText: 'Select template' }).selectOption({ index: 1 });
+  await page.locator('.dc-type-opt:has-text("Wait for a fixed duration")').click();
+  await page.locator('.sd-drawer.open input[type=number]').first().fill('3');
   await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
   await page.waitForTimeout(400);
 
@@ -187,8 +195,8 @@ test('Clicking "remove goal check" on an auto-inserted Split collapses it, keepi
   await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
   await page.waitForTimeout(400);
   await expect(page.locator('.dc-node-card:has-text("Wait 2 days")')).toHaveCount(1);
-  // Pause (Wait) gets its own auto goal-check too (a real goal is defined
-  // for this campaign) — 2 Goal Checks total at this point, remove the Send's.
+  // That second Pause brought its own auto goal-check — 2 in total now, so
+  // removing the first one has something to leave behind.
   await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(2);
 
   await page.locator('.dc-goalcheck-badge').first().click();
@@ -250,15 +258,23 @@ test('Mid-chain insert explains why its type list is narrower, instead of lookin
   await page.waitForTimeout(200);
 
   await expect(page.locator('.sd-drawer.open')).toContainText('Inserting mid-chain only supports single-continuation steps');
-  // Every tile is still shown (Phase 1: disabled-with-a-reason beats
-  // silent omission) — Condition is a real single-continuation type and
-  // stays clickable; Branch is a branching type and is shown but disabled.
+  // Every tile is still shown (Phase 1: disabled-with-a-reason beats silent
+  // omission). Send is a single-continuation step and stays clickable.
+  // Condition and Branch are both disabled: each leaves more than one arm
+  // open, and the reducer only reattaches the downstream chain when exactly
+  // one open slot remains, so splicing either one in would silently orphan
+  // everything below it. Condition used to be offered here and was the
+  // orphaning case.
+  const sendTile = page.locator('.dc-type-opt', { hasText: /^Send/ });
   const conditionTile = page.locator('.dc-type-opt', { hasText: 'Condition' });
   const branchTile = page.locator('.dc-type-opt', { hasText: /^Branch/ });
+  await expect(sendTile).toHaveCount(1);
   await expect(conditionTile).toHaveCount(1);
   await expect(branchTile).toHaveCount(1);
-  await expect(conditionTile).not.toHaveClass(/disabled/);
+  await expect(sendTile).not.toHaveClass(/disabled/);
+  await expect(conditionTile).toHaveClass(/disabled/);
   await expect(branchTile).toHaveClass(/disabled/);
+  await expect(conditionTile).toHaveAttribute('title', /can't be inserted mid-chain/);
   await expect(branchTile).toHaveAttribute('title', /can't be inserted mid-chain/);
 });
 
@@ -394,7 +410,10 @@ test('Submit for Approval shows an on-demand validation banner with open branche
   await page.locator('button:has-text("Submit for Approval")').click();
   await page.waitForTimeout(200);
   await expect(page.locator('.dcb-validation-banner')).toBeVisible();
-  await expect(page.locator('.dcb-validation-banner')).toContainText('branch');
+  // The gate names the step that is unfinished rather than saying "a branch
+  // is open" — same issue, but it tells you where to go.
+  await expect(page.locator('.dcb-validation-banner')).toContainText('has no next step');
+  await expect(page.locator('.dcb-validation-banner')).toContainText('Pageload');
 
   // Back to the Builder step (via the rail) to close the open branch.
   await page.locator('.dcb-vstep', { hasText: 'Builder' }).click();
@@ -1211,7 +1230,10 @@ test('Campaign view: Analytics totals, arrow splits, and following one path', as
   await page.waitForTimeout(600);
   await expect(page.locator('.an-path')).toBeVisible();
   const items = await page.locator('.an-path-list li').allTextContents();
-  expect(items.join(' ')).toMatch(/Wait/);
+  // The checkpoint on this path is a Wait for Event on the goal, which is
+  // what the old "wait a bit, then check" pair collapsed into — the fixed
+  // wait's duration became the wait's timeout.
+  expect(items.join(' ')).toMatch(/Virtual card activated/);
   expect(items.join(' ')).toMatch(/Reminder/);
   const faded = await page.locator('.dc-node-card').evaluateAll((els) => els.filter((e) => parseFloat(getComputedStyle(e).opacity) < 0.5).length);
   expect(faded).toBeGreaterThan(0);

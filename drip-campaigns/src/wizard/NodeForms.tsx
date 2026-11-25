@@ -17,6 +17,7 @@ import {
 import type { DripGoal } from '../data/graphTypes';
 import { dcOrdinal, dcRecurrenceLabel, dcGoalLabel } from '../reducer/labelMeta';
 import { dcNewBranchId } from '../reducer/idGen';
+import { dcNextBranchLabel, dcNextVariantLabel } from '../reducer/defaultConfig';
 import { ConditionsSection, ConditionRows } from './ConditionRows';
 import { FilterGroups, WhatSelect, FilterComparison, FilterValue, AppEventFields, AppOfferDetail, MilestoneOfferField } from './FilterRows';
 import { dcFilterGroupsOf, dcBranchWhatOf, dcDefaultTxnForRow, dcDetailsForEvent } from '../data/filters';
@@ -408,11 +409,13 @@ export function DecisionSplitForm({ p, onChange, previousStepChannel }: FormProp
 
   const setBranch = (i: number, patch: any) => onChange({ branches: branches.map((b: any, idx: number) => (idx === i ? { ...b, ...patch } : b)) });
   const removeBranch = (i: number) => onChange({ branches: branches.filter((_: any, idx: number) => idx !== i) });
-  const newBranch = (n: number) => ({ id: dcNewBranchId(), label: 'Branch ' + n, operator: '', value: '', value2: '', values: [] });
-  const addBranch = () => onChange({ branches: [...branches, newBranch(branches.length + 1)] });
+  // Named against the arms that already exist, not against their count —
+  // see dcNextBranchLabel.
+  const newBranch = (existing: any[]) => ({ id: dcNewBranchId(), label: dcNextBranchLabel(existing), operator: '', value: '', value2: '', values: [] });
+  const addBranch = () => onChange({ branches: [...branches, newBranch(branches)] });
   const insertBranch = (i: number) => {
     const next = [...branches];
-    next.splice(i + 1, 0, newBranch(next.length + 1));
+    next.splice(i + 1, 0, newBranch(next));
     onChange({ branches: next });
   };
 
@@ -539,10 +542,10 @@ export function RandomSplitForm({ p, onChange }: FormProps) {
   const total = branches.reduce((s: number, b: any) => s + Number(b.pct || 0), 0);
   const setBranch = (i: number, patch: any) => onChange({ branches: branches.map((b: any, idx: number) => (idx === i ? { ...b, ...patch } : b)) });
   const removeBranch = (i: number) => onChange({ branches: branches.filter((_: any, idx: number) => idx !== i) });
-  const addBranch = () => onChange({ branches: [...branches, { id: dcNewBranchId(), label: String.fromCharCode(65 + branches.length), pct: 0 }] });
+  const addBranch = () => onChange({ branches: [...branches, { id: dcNewBranchId(), label: dcNextVariantLabel(branches), pct: 0 }] });
   const insertBranch = (i: number) => {
     const next = [...branches];
-    next.splice(i + 1, 0, { id: dcNewBranchId(), label: String.fromCharCode(65 + next.length), pct: 0 });
+    next.splice(i + 1, 0, { id: dcNewBranchId(), label: dcNextVariantLabel(next), pct: 0 });
     onChange({ branches: next });
   };
   return (

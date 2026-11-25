@@ -188,7 +188,14 @@ describe('seeding the id counters from an imported graph', () => {
   it("a file carrying this app's own dcn ids seeds past the highest one", () => {
     const raw = JSON.parse(JSON.stringify(WRAPPER)) as Record<string, any>;
     const nodes: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(raw.campaign.root.nodes)) nodes['dcn' + k.slice(1)] = v;
+    // The node's own id is renamed along with its key. A node filed under a
+    // key that disagrees with its own id is rejected on import now, and
+    // rightly: the canvas resolves handles and counts by node.id while edges
+    // and layout resolve by key, so the two disagreeing breaks rendering.
+    for (const [k, v] of Object.entries(raw.campaign.root.nodes)) {
+      const id = 'dcn' + k.slice(1);
+      nodes[id] = { ...(v as Record<string, unknown>), id };
+    }
     raw.campaign.root.nodes = nodes;
     raw.campaign.root.rootId = 'dcn1';
     raw.campaign.root.edges = raw.campaign.root.edges.map((e: Record<string, any>) => ({
