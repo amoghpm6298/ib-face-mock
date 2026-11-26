@@ -145,7 +145,8 @@ function NodeForm({
       return null;
     case 'GOAL_EXIT':
     case 'EXIT':
-      return <Forms.ReasonForm p={p} onChange={onChange} />;
+      // Same form, but the two end different things — see ReasonForm.
+      return <Forms.ReasonForm p={p} onChange={onChange} terminal={type} />;
     default:
       return null;
   }

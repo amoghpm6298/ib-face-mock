@@ -236,9 +236,9 @@ export function SendForm({ p, onChange }: FormProps) {
         </div>
         <div className="f-group">
           <label className="f-label">Timing</label>
-          <select className="f-input" value={p.timing} onChange={(e) => onChange({ timing: e.target.value })}>
-            <option>Absolute</option>
-            <option>Relative</option>
+          <select className="f-input" value={p.timing === 'Absolute' ? 'Absolute' : 'Immediate'} onChange={(e) => onChange({ timing: e.target.value })}>
+            <option value="Absolute">At a set time of day</option>
+            <option value="Immediate">As soon as they reach this step</option>
           </select>
         </div>
       </div>
@@ -246,18 +246,14 @@ export function SendForm({ p, onChange }: FormProps) {
         <div className="f-group">
           <label className="f-label">Send time</label>
           <input className="f-input" type="time" value={p.absTime} onChange={(e) => onChange({ absTime: e.target.value })} />
+          <p className="f-hint">Sends at this time on the day they reach this step. If that time has already passed, it sends the next day.</p>
         </div>
       ) : (
-        <div className="f-group">
-          <label className="f-label">Delay after previous step</label>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input className="f-input" type="number" min={0} value={p.relativeDuration} onChange={(e) => onChange({ relativeDuration: e.target.value })} />
-            <select className="f-input" value={p.relativeUnit} onChange={(e) => onChange({ relativeUnit: e.target.value })}>
-              <option>hours</option>
-              <option>days</option>
-            </select>
-          </div>
-        </div>
+        // A delay used to live here. It was a wait that nothing could see:
+        // not a step on the canvas, not counted in analytics, and not
+        // listening for the goal, so a customer who converted during it was
+        // messaged anyway. Use a Wait step for a gap.
+        <p className="f-hint" style={{ marginTop: -4 }}>To leave a gap before this message, add a Wait step before it. A wait is visible on the canvas and stops the moment the goal is reached.</p>
       )}
       <AccountTemplateFields channel={p.channel} p={p} onChange={onChange} />
       <div className="f-group">
@@ -609,11 +605,25 @@ export function GoalCheckInfo({ goal, onGoToGoal }: { goal: DripGoal | null; onG
   );
 }
 
-export function ReasonForm({ p, onChange }: FormProps) {
+// Shared by Exit and Goal Reached, which end different things — the reason
+// they say so here is M5: with parallel paths, nothing anywhere defined what
+// "finished" meant, and re-entry depends on a run being finished.
+//
+// The rule, stated rather than configurable: an Exit ends the path it is on,
+// and the run is over once every path has ended; Goal Reached ends the whole
+// run at once, since the customer has done the thing the campaign was for
+// and no other path should keep messaging them. One behaviour each, so there
+// is nothing to set.
+export function ReasonForm({ p, onChange, terminal }: FormProps & { terminal?: 'EXIT' | 'GOAL_EXIT' }) {
   return (
     <div className="f-group">
       <label className="f-label">Reason</label>
       <input className="f-input" type="text" value={p.reason} onChange={(e) => onChange({ reason: e.target.value })} />
+      {terminal === 'GOAL_EXIT' ? (
+        <p className="f-hint">Ends the journey for this customer. Any parallel paths they are on stop too.</p>
+      ) : terminal === 'EXIT' ? (
+        <p className="f-hint">Ends this path. If the campaign has parallel paths, the others carry on, and the customer finishes once every path has ended.</p>
+      ) : null}
     </div>
   );
 }

@@ -117,3 +117,51 @@ test('the Import screen says what is wrong with a file it will not take', async 
   // Still on the import screen — nothing was created.
   await expect(page.locator('textarea')).toBeVisible();
 });
+
+// M3 — a Send offers a time of day or "as soon as they reach this step", and
+// nowhere to hide a delay. A gap is a Wait step, which the canvas shows and
+// which stops the moment the goal is reached.
+test('a Send has no delay field, and says where a gap belongs instead', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
+  await page.locator('input[type=text]').first().fill('Send timing');
+  await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  await page.locator('.toggle-row .toggle').first().click();
+  await page.getByText('Continue to Goal →').click();
+  await page.waitForTimeout(200);
+  await page.getByText('Continue to Builder →').click();
+  await page.waitForTimeout(300);
+
+  await page.locator('.dc-add-entry-placeholder').click();
+  await page.locator('.dc-type-opt:has-text("Entry · Event")').click();
+  const entry = page.locator('.sd-drawer.open');
+  await entry.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Category' }) }).locator('select').selectOption('Journey Events');
+  await entry.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Type' }) }).locator('select').selectOption('Pageload');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(300);
+
+  await page.locator('.dc-add-btn').click();
+  await page.locator('.dc-type-opt', { hasText: /^Send/ }).click();
+  const drawer = page.locator('.sd-drawer.open');
+  const timing = drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Timing' }) }).locator('select');
+  await expect(timing.locator('option')).toHaveText(['At a set time of day', 'As soon as they reach this step']);
+
+  // Absolute says what "11:00" actually means for someone arriving later.
+  await expect(drawer).toContainText('If that time has already passed, it sends the next day');
+
+  // The other option offers no delay inputs — it points at a Wait step.
+  await timing.selectOption('Immediate');
+  await page.waitForTimeout(200);
+  await expect(drawer).toContainText('add a Wait step before it');
+  await expect(drawer.locator('input[type=number]')).toHaveCount(0);
+
+  await drawer.locator('input[type=text]').first().fill('Nudge');
+  await drawer.locator('select', { hasText: 'Select account' }).selectOption('IBL-Karix-Onb');
+  await page.waitForTimeout(150);
+  await drawer.locator('select', { hasText: 'Select template' }).selectOption({ index: 1 });
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(400);
+
+  await expect(page.locator('.dc-node-card', { hasText: 'Nudge' })).toContainText('As soon as they reach this step');
+});

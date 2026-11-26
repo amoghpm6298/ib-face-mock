@@ -126,7 +126,9 @@ test('Send auto-inserts a Wait for Event on the goal + GOAL_EXIT; a fallback cha
   await expect(page.locator('.dc-node-card:has-text("Wait for Event")')).toHaveCount(1);
   await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
   await expect(page.locator('.dc-node-card:has-text("Goal Reached")')).toHaveCount(1);
-  await expect(page.locator('.dc-branch-label:has-text("Yes")')).toHaveCount(1);
+  // A wait's arms say what they are: the event arrived, or the wait gave up.
+  await expect(page.locator('.dc-branch-label:has-text("Event received")')).toHaveCount(1);
+  await expect(page.locator('.dc-branch-label:has-text("Timed out")')).toHaveCount(1);
   await expect(page.locator('.dc-node-fallback-row')).toHaveCount(0);
 
   await page.locator('.dc-add-btn').click(); // the open "No" slot
@@ -1230,12 +1232,13 @@ test('Campaign view: Analytics totals, arrow splits, and following one path', as
 
   // A split writes counts on its arrows; nothing anywhere carries a %.
   const labels = await page.locator('.dc-branch-label').allTextContents();
-  expect(labels.some((l) => /Yes[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
-  expect(labels.some((l) => /No[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
+  expect(labels.some((l) => /Eventreceived[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
+  expect(labels.some((l) => /Timedout[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
   for (const l of labels) expect(l).not.toContain('%');
 
-  // Following the No arrow fades everything off that path.
-  await page.locator('.dc-branch-label', { hasText: 'No' }).first().click();
+  // Following the timeout arrow — the customers who never converted — fades
+  // everything off that path.
+  await page.locator('.dc-branch-label', { hasText: 'Timed out' }).first().click();
   await page.waitForTimeout(600);
   await expect(page.locator('.an-path')).toBeVisible();
   const items = await page.locator('.an-path-list li').allTextContents();

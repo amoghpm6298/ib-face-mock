@@ -10,7 +10,7 @@ This module is a **builder only** — it saves journeys as config and nothing ex
 |---|---|---|
 | Critical | 3 | **3** |
 | High | 8 | **5** |
-| Medium | 9 | **7** |
+| Medium | 9 | **9** |
 | Low | 5 | 0 |
 
 **Fixed so far:** C1, C2, C3, H1, H2, H4, H8, M2 — plus four seed-data defects the new validation found. Each fixed finding is marked below with what closed it.
@@ -235,7 +235,7 @@ An import using `"yes"`, a reordered edge list, or a renamed label silently flip
 >
 > **The regex was not only fragile, it was wrong in this repo's own data.** An Experiment's allocation was parsed back out of the edge label with `/\((\d+)%\)/`, so what a campaign reported depended on how its arms happened to be written. DRIP-002's arms read `"50% WhatsApp"` — no parentheses — so its configured 50/50 matched nothing and the campaign was reported on a *random* split, while DRIP-006's `"WhatsApp-first (60%)"` matched and was honoured. Two experiments, same product, two different code paths. Allocation now comes from the owning node's `branches[]`, matched by `branchId` — which neither seeded experiment actually had, and both now do.
 >
-> **Not done, now a free decision rather than a coupled one:** renaming Wait for Event's displayed arms to "Event received" / "Timed out". The ports already say that; the canvas still reads Yes/No. Changing the words is now purely a copy choice with no routing consequence, which is the point.
+> **Done, as a pure copy change:** Wait for Event's arms now read **Event received** / **Timed out** instead of Yes/No, on the canvas and in all 33 seeded edges. It was safe precisely because the ports already carried the meaning — the rename touched no routing, and the unit tests that broke were ones finding edges by `branchLabel === 'Yes'`, which is the anti-pattern M1 exists to remove. They look up by port now.
 
 ### M2 · Wait and Wait for Event have no duration validation  ✅ **FIXED**
 
@@ -249,13 +249,23 @@ Zero, blank or negative means either an instant timeout or a run that waits fore
 
 **Fix.** Require `Number(duration) > 0` and a unit. Store numbers.
 
-### M3 · Send timing is ambiguous and duplicates Wait
+### M3 · Send timing is ambiguous and duplicates Wait  ✅ **FIXED**
 
 **`src/wizard/NodeForms.tsx:244`**, **`src/reducer/defaultConfig.ts:40`**
 
 `Absolute` holds only a time of day — no day offset, no time zone, no rule for a time already passed today. `relativeAnchor` is stored (seeds use `"Entry"`) but has no field in the form. The Send's own relative delay duplicates the Wait node and bypasses goal checks (C2).
 
 **Fix.** Move delays out of Send into Wait nodes. Give Send `sendWindow?: { at: 'HH:mm'; tz: 'customer'|'issuer' }` with next-occurrence semantics. Remove or expose `relativeAnchor`.
+
+> **Fixed.** A Send now offers a time of day or "as soon as they reach this step", and nothing else. **The delay is gone**, because a delay inside a send is a wait nothing can see: not a step on the canvas, not modelled by analytics, and — the reason it matters after C1 — not listening for the goal, so a customer who converted during those three days was messaged anyway. That is C1's own defect wearing a different hat. A gap is a Wait step, which is visible, counted, and stops when the goal is reached; the form says so where the delay used to be.
+>
+> **Next-occurrence is stated rather than modelled:** "Sends at this time on the day they reach this step. If that time has already passed, it sends the next day." No timezone field — this app has no timezone model, and inventing one here would be a claim the rest of the product cannot keep (same decision as the dates in M7).
+>
+> `relativeAnchor` is deleted. It was stored ('Entry' / 'Previous Step'), no form ever offered it, and the one label that existed said "after previous step" regardless.
+>
+> **Migration cost: none, which is why this was cheap.** Every one of the 20 seeded Sends held `relativeDuration: 0`, which always meant exactly "immediate" — so four "Relative" sends became Immediate and the dead fields were dropped. A legacy send with a *positive* delay is still rendered honestly and named by the submit gate, with what to do instead; it is not migrated automatically, because where the Wait goes — before or after a branch, with or without its own goal check — changes the shape of the journey and is the author's call.
+>
+> `dcSendTimingOf` is now the one answer to "when does this send", read by the drawer, the canvas and the step panel. Those last two had drifted into two different formats, which is why one seed read "Immediately after previous step" on the canvas and "0 days after Previous Step" in the panel.
 
 ### M4 · Seed data contradicts itself  ✅ **FIXED** (both contradictions; one targeting question stands)
 
@@ -273,11 +283,17 @@ Zero, blank or negative means either an instant timeout or a run that waits fore
 >
 > **Still open, as a question rather than a defect:** DRIP-004's audience has no filters, so a reward-expiry campaign targets every account monthly. An audience with no filters targeting everyone is a deliberate, real answer in this builder, so this is not wrong on its own — but for this campaign it almost certainly should narrow to accounts holding points that are about to lapse, and there is no attribute for that today. Same family as the DRIP-004 goal-narrowing question below.
 
-### M5 · Parallel paths don't define terminal scope
+### M5 · Parallel paths don't define terminal scope  ✅ **FIXED** (as a rule, not a setting)
 
 `dcCanFanOut` (`src/data/nodeMeta.ts:137`) permits fan-out, but nothing says whether reaching Exit on one parallel path ends the whole run or only that path. Re-entry depends on "finished", so a parallel campaign never clearly finishes.
 
 **Fix.** `terminalScope: 'path' | 'journey'` on Exit and Goal Reached, defaulting to `'journey'` for Goal Reached.
+
+> **Fixed, deliberately as one rule rather than a field.** An **Exit** ends the path it is on; the run is over once every path has ended. **Goal Reached** ends the whole run at once, since the customer has done the thing the campaign was for and no other path should keep messaging them. Both are stated in their own drawer, where the author is making the choice.
+>
+> No `terminalScope` setting, for the same reason `onEnd` has none: there is one defensible behaviour for each, and the only thing a toggle would add is a way to get it wrong. This also gives re-entry the definition of "finished" it depended on and never had.
+>
+> As everywhere else in this builder, this is a stated semantic rather than executable code — nothing here runs.
 
 ### M6 · Experiment and control inputs are under-validated  ✅ **FIXED** (duplicate labels; the rest stands)
 
@@ -407,7 +423,7 @@ A second pass, once every label was rebuilt from its own `_config`, found **28 o
 
 ## What is left
 
-**Next:** M3 (Send's own relative delay duplicates the Wait node and bypasses the goal checks) and M5 (a parallel path has no terminal scope, so "finished" is undefined for a fan-out campaign). M5 is partly answered already: a campaign now stops everyone at its end date, and the same question — what ends a *run* — is H6's.
+**Every Critical and every Medium is closed.** What remains is five Lows and the three Highs below, which are one question rather than three fixes.
 
 **One decision left, not a fix,** and it needs an answer before any code: H6's journey key — what one run is keyed to, customer, account or card — which H5, H7 and M6's variant stickiness all hang off.
 

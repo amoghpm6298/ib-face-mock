@@ -5,6 +5,7 @@
 // onclick-string handlers mutating a global object — now that it's a pure
 // reducer, the exact same scenarios run as fast, browser-free unit tests.
 import { beforeEach, describe, expect, it } from 'vitest';
+import { dcPortOf } from '../../src/data/ports';
 import type { DripGraph, DripGoal } from '../../src/data/graphTypes';
 import { dcResetIdCounters } from '../../src/reducer/idGen';
 import { dcGraphHasOpenBranches } from '../../src/reducer/graphOps';
@@ -79,10 +80,10 @@ describe('Send -> auto goal-check', () => {
     // The goal's own predicate travels onto the wait, so it means the
     // goal and not merely the goal's event type.
     expect((split._config as { eventType?: string }).eventType).toBe(TEST_GOAL.eventType);
-    const yesEdge = g.edges.find((e) => e.from === split.id && e.branchLabel === 'Yes')!;
+    const yesEdge = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'event')!;
     expect(g.nodes[yesEdge.to!].type).toBe('GOAL_EXIT');
 
-    const noEdge = g.edges.find((e) => e.from === split.id && e.branchLabel === 'No')!;
+    const noEdge = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'timeout')!;
     expect(noEdge.to).toBeNull();
 
     // chain a second Send, this one with a fallback channel configured,
@@ -103,7 +104,7 @@ describe('Send -> auto goal-check', () => {
     const mk = (n: string) => ({ ...dcDefaultConfig('SEND', null), name: n, channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' });
     g = dcConfirmAddNode(g, 'SEND', mk('A'), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
     const wait = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const timeout = g.edges.find((e) => e.from === wait.id && e.branchLabel === 'No')!;
+    const timeout = g.edges.find((e) => e.from === wait.id && dcPortOf(e) === 'timeout')!;
     g = dcConfirmAddNode(g, 'SEND', mk('B'), { kind: 'edge', edgeId: timeout.id }, TEST_GOAL);
 
     const offenders = g.edges.filter(
@@ -141,7 +142,7 @@ describe('Goal-check removal', () => {
     const splitEdge = g.edges.find((e) => e.from === pause.id)!;
     const splitId = splitEdge.to!;
     expect(g.nodes[splitId].type).toBe('GOAL_CHECK');
-    const noEdge = g.edges.find((e) => e.from === splitId && e.branchLabel === 'No')!;
+    const noEdge = g.edges.find((e) => e.from === splitId && dcPortOf(e) === 'no')!;
 
     // Build something real under the No branch before removing the check.
     g = dcConfirmAddNode(g, 'PAUSE', { duration: 5, unit: 'days' }, { kind: 'edge', edgeId: noEdge.id }, TEST_GOAL);
@@ -165,8 +166,8 @@ describe('Wait Until', () => {
     const toSplitEdge = g.edges.find((e) => e.from === wu.id && e.branchLabel === '')!;
     const split = g.nodes[toSplitEdge.to!];
     expect(split.type).toBe('GOAL_CHECK');
-    const yes = g.edges.find((e) => e.from === split.id && e.branchLabel === 'Yes')!;
-    const no = g.edges.find((e) => e.from === split.id && e.branchLabel === 'No')!;
+    const yes = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'yes')!;
+    const no = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'no')!;
     expect(g.nodes[yes.to!].type).toBe('GOAL_EXIT');
     expect(g.nodes[no.to!].type).toBe('EXIT');
   });
@@ -182,7 +183,7 @@ describe('Wait Until', () => {
     const p = { eventCategory: 'Journey Events', eventType: 'Journey Progress', duration: 10, unit: 'days', conditions: [] };
     g = dcConfirmAddNode(g, 'WAIT_UNTIL', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const wu = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const yes = g.edges.find((e) => e.from === wu.id && e.branchLabel === 'Yes')!;
+    const yes = g.edges.find((e) => e.from === wu.id && dcPortOf(e) === 'event')!;
     expect(yes.to).toBeNull();
     expect(Object.values(g.nodes).some((n) => n.type === 'GOAL_EXIT')).toBe(false);
   });
@@ -193,7 +194,7 @@ describe('Wait Until', () => {
     const p = { eventCategory: 'Journey Events', eventType: 'Journey Progress', duration: 10, unit: 'days', conditions: [] };
     g = dcConfirmAddNode(g, 'WAIT_UNTIL', p, { kind: 'growLeaf', nodeId: g.rootId! }, matchingGoal);
     const wu = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const yes = g.edges.find((e) => e.from === wu.id && e.branchLabel === 'Yes')!;
+    const yes = g.edges.find((e) => e.from === wu.id && dcPortOf(e) === 'event')!;
     expect(g.nodes[yes.to!].type).toBe('GOAL_EXIT');
   });
 
@@ -203,7 +204,7 @@ describe('Wait Until', () => {
     const p = { eventCategory: 'Journey Events', eventType: 'Journey Progress', duration: 10, unit: 'days', conditions: [] };
     g = dcConfirmAddNode(g, 'WAIT_UNTIL', p, { kind: 'growLeaf', nodeId: g.rootId! }, otherGoal);
     const wu = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const yes = g.edges.find((e) => e.from === wu.id && e.branchLabel === 'Yes')!;
+    const yes = g.edges.find((e) => e.from === wu.id && dcPortOf(e) === 'event')!;
     expect(yes.to).toBeNull();
   });
 
@@ -231,8 +232,8 @@ describe('Split (Condition) — no "Goal reached" basis anymore', () => {
     const p = { customSource: 'Previous step outcome', outcome: 'Clicked', customConditions: [] };
     g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, goal);
     const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
-    const yesEdge = g.edges.find((e) => e.from === split.id && e.branchLabel === 'Yes')!;
-    const noEdge = g.edges.find((e) => e.from === split.id && e.branchLabel === 'No')!;
+    const yesEdge = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'yes')!;
+    const noEdge = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'no')!;
     expect(yesEdge.to).toBeNull();
     expect(noEdge.to).toBeNull();
     expect(Object.values(g.nodes).some((n) => n.type === 'GOAL_EXIT')).toBe(false);
@@ -244,8 +245,8 @@ describe('Split (Condition) — no "Goal reached" basis anymore', () => {
     g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
     expect(split).toBeTruthy();
-    expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'Yes')).toBe(true);
-    expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'No')).toBe(true);
+    expect(g.edges.some((e) => e.from === split.id && dcPortOf(e) === 'yes')).toBe(true);
+    expect(g.edges.some((e) => e.from === split.id && dcPortOf(e) === 'no')).toBe(true);
   });
 
   it('Goal Reached can still be added manually on a Condition branch arm', () => {
@@ -253,7 +254,7 @@ describe('Split (Condition) — no "Goal reached" basis anymore', () => {
     const p = { customSource: 'Account attribute', outcome: '', customConditions: [{ attribute: 'Status', operator: 'Equals', value: 'Dormant' }] };
     g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
-    const yesEdge = g.edges.find((e) => e.from === split.id && e.branchLabel === 'Yes')!;
+    const yesEdge = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'yes')!;
     g = dcConfirmAddNode(g, 'GOAL_EXIT', { reason: 'Reactivated' }, { kind: 'edge', edgeId: yesEdge.id }, null);
     expect(g.nodes[g.edges.find((e) => e.id === yesEdge.id)!.to!].type).toBe('GOAL_EXIT');
   });
@@ -266,8 +267,8 @@ describe('Transaction history condition', () => {
     g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
     expect(split).toBeTruthy();
-    expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'Yes')).toBe(true);
-    expect(g.edges.some((e) => e.from === split.id && e.branchLabel === 'No')).toBe(true);
+    expect(g.edges.some((e) => e.from === split.id && dcPortOf(e) === 'yes')).toBe(true);
+    expect(g.edges.some((e) => e.from === split.id && dcPortOf(e) === 'no')).toBe(true);
   });
 
   it('label reflects existence mode and lookback window, with no filters', () => {
@@ -616,7 +617,7 @@ describe('dcRemoveEdge', () => {
     const p = { customSource: 'Account attribute', outcome: '', customConditions: [{ attribute: 'Status', operator: 'Equals', value: 'Active' }] };
     g = dcConfirmAddNode(g, 'SPLIT', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const split = Object.values(g.nodes).find((n) => n.type === 'SPLIT')!;
-    const yesEdge = g.edges.find((e) => e.from === split.id && e.branchLabel === 'Yes')!;
+    const yesEdge = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'yes')!;
     const beforeEdgeCount = g.edges.length;
     g = dcRemoveEdge(g, yesEdge.id);
     expect(g.edges.length).toBe(beforeEdgeCount); // edge stays, just reverted to open
@@ -779,8 +780,8 @@ describe('Goal Check — one node type, one behaviour, added either way', () => 
     g = dcConfirmAddNode(g, 'GOAL_CHECK', dcDefaultConfig('GOAL_CHECK', TEST_GOAL), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
     const check = Object.values(g.nodes).find((n) => n.type === 'GOAL_CHECK')!;
     expect(check).toBeTruthy();
-    const yes = g.edges.find((e) => e.from === check.id && e.branchLabel === 'Yes')!;
-    const no = g.edges.find((e) => e.from === check.id && e.branchLabel === 'No')!;
+    const yes = g.edges.find((e) => e.from === check.id && dcPortOf(e) === 'yes')!;
+    const no = g.edges.find((e) => e.from === check.id && dcPortOf(e) === 'no')!;
     expect(g.nodes[yes.to!].type).toBe('GOAL_EXIT');
     expect(no.to).toBeNull();
   });
@@ -912,7 +913,7 @@ describe('Campaign validation (C3)', () => {
     let g = addEntryEvent(EMPTY_GRAPH);
     g = sendOn(g, 'Msg1', { kind: 'growLeaf', nodeId: g.rootId! });
     const wait = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const timeout = g.edges.find((e) => e.from === wait.id && e.branchLabel === 'No')!;
+    const timeout = g.edges.find((e) => e.from === wait.id && dcPortOf(e) === 'timeout')!;
     g = dcConfirmAddNode(g, 'EXIT', { reason: 'Sequence exhausted' }, { kind: 'edge', edgeId: timeout.id }, TEST_GOAL);
     expect(dcValidateCampaign(g, TEST_GOAL)).toEqual([]);
   });

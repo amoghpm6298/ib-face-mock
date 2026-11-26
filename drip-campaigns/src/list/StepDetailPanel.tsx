@@ -8,6 +8,7 @@
 // configuration underneath, so the number is answered first and the "why" is
 // right there under it.
 import type { DripCampaign, DripNode, DripGraph } from '../data/graphTypes';
+import { dcSendTimingLabel, dcSendTimingOf } from '../data/sendTiming';
 import { DC_NODE_META } from '../data/nodeMeta';
 import { dcEventConditionSentences, dcFilterGroupSentences, dcFilterGroupsOf, dcBranchWhatOf } from '../data/filters';
 import { dcGoalLabel, dcRecurrenceLabel } from '../reducer/labelMeta';
@@ -82,7 +83,10 @@ function StepConfig({ node, campaign, graph }: { node: DripNode; campaign: DripC
           <Row label="Channel" value={CHANNEL_CONFIG_LABELS[p.channel as Channel] || p.channel || '—'} />
           <Row label="Account" value={p.account || <span className="sp-empty">Not set</span>} />
           <Row label="Template" value={template || <span className="sp-empty">Not set</span>} />
-          <Row label="Sends" value={p.timing === 'Absolute' ? `At ${p.absTime}` : `${p.relativeDuration} ${p.relativeUnit} after ${p.relativeAnchor}`} />
+          {/* The same sentence the canvas card shows — these used to be two
+              separate formats, so one seed read "Immediately after previous
+              step" on canvas and "0 days after Previous Step" here. */}
+          <Row label="Sends" value={dcSendTimingLabel(dcSendTimingOf(p)) || 'Not set'} />
           {p.fallbackChannel ? (
             <Row
               label="Fallback"

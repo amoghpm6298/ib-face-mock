@@ -36,7 +36,10 @@ export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
     // primary channel's; fallbackAccount/fallbackTemplateId are a
     // separate pair for the fallback channel, since a template is
     // always locked to one channel and can't be shared across both.
-    SEND: { name: 'Send Message', channel: 'WHATSAPP', account: '', templateId: '', timing: 'Absolute', absTime: '11:00', relativeAnchor: 'Previous Step', relativeDuration: 1, relativeUnit: 'days', fallbackChannel: '', fallbackAccount: '', fallbackTemplateId: '' },
+    // No delay fields: a gap before a message is a Wait step, which the
+    // canvas shows and which stops when the goal is reached. See
+    // data/sendTiming.ts.
+    SEND: { name: 'Send Message', channel: 'WHATSAPP', account: '', templateId: '', timing: 'Absolute', absTime: '11:00', fallbackChannel: '', fallbackAccount: '', fallbackTemplateId: '' },
     PAUSE: { duration: 2, unit: 'days' },
     WAIT_UNTIL: { eventCategory: Object.keys(EVENT_CATEGORIES)[0], eventType: '', duration: 7, unit: 'days', conditions: [], journey: '', batch: '', offerType: '', offerName: '' },
     // No `basis` field anymore — a Condition is always a user-defined

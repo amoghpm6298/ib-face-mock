@@ -1842,3 +1842,58 @@ including the lower-case import case, that every builder-created edge carries
 a port, that renaming an arm or a catch-all cannot re-route or delete it, the
 two seeded allocations, and that every seeded edge states what it means), 56
 e2e, clean typecheck, zero lint errors, plus the analytics screenshot above.
+
+## 2026-11-26 (cont'd) — The delay leaves Send, a wait's arms say what they
+are, and an Exit says what it ends
+
+Three things, and the first was only possible because of the last round.
+
+**Wait for Event's arms read "Event received" / "Timed out"** instead of
+Yes/No, on the canvas and in all 33 seeded edges. A pure copy change — which
+is exactly the point of M1: the ports already carried the meaning, so the
+words could move without touching a single route. The tests that broke were
+the ones finding edges by `branchLabel === 'Yes'`, the very anti-pattern M1
+exists to remove; they look up by port now.
+
+**M3 — the delay leaves Send.** "Relative" timing held a duration and a unit,
+which is a wait nothing can see: not a step on the canvas, not modelled by
+analytics, and — the reason it matters after C1 — not listening for the goal,
+so a customer who converted during those three days was messaged anyway. C1's
+own defect wearing a different hat. A Send now offers a time of day or "as
+soon as they reach this step"; a gap is a Wait step, which is visible,
+counted, and stops when the goal is reached. The form says so where the delay
+used to be.
+
+Next-occurrence is **stated rather than modelled** ("if that time has already
+passed, it sends the next day"), and there is no timezone field, because this
+app has no timezone model and inventing one here would be a claim the rest of
+the product cannot keep — the same call as the dates in M7.
+
+**The migration cost nothing, which is what made this cheap**: all 20 seeded
+Sends held `relativeDuration: 0`, which always meant exactly "immediate". A
+legacy send with a *positive* delay is still rendered honestly and named by
+the submit gate with what to do instead — not migrated, because where the
+Wait goes changes the shape of the journey and that is the author's call.
+
+`dcSendTimingOf` is the one answer to "when does this send", read by the
+drawer, the canvas and the step panel. The last two had drifted into separate
+formats, which is why one seed read "Immediately after previous step" on the
+canvas and "0 days after Previous Step" in the panel.
+
+**M5 — what an Exit ends.** An Exit ends the path it is on, and the run is
+over once every path has ended; Goal Reached ends the whole run, since the
+customer has done the thing the campaign was for. Stated in each drawer, not
+offered as a `terminalScope` setting — for the same reason `onEnd` has none:
+there is one defensible behaviour each, and a toggle would only add a way to
+get it wrong. It also gives re-entry the definition of "finished" it always
+depended on and never had.
+
+**A counting correction worth recording:** the running total reported to the
+user last round ("17 of 25") was two ahead of the facts — 15 were closed at
+that point. It is 17 now, with every Critical and every Medium closed.
+
+Verified: 413 unit (404 → 413, a new `sendDelay.test.ts`), 56 e2e (1 new
+driving the Send drawer: two timing options, the next-occurrence sentence, no
+number inputs, and the card reading "As soon as they reach this step"), clean
+typecheck, zero lint errors, plus screenshots of the renamed arms and the step
+panel.

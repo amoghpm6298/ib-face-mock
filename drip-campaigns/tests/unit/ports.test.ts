@@ -67,9 +67,11 @@ describe('what the builder writes', () => {
     const waitId = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!.id;
     const outs = g.edges.filter((e) => e.from === waitId);
     expect(outs.map((e) => e.port).sort()).toEqual(['event', 'timeout']);
-    // The canvas still reads Yes/No — display and meaning are now separate,
-    // which is what makes renaming the display a free decision later.
-    expect(outs.map((e) => e.branchLabel).sort()).toEqual(['No', 'Yes']);
+    // And the canvas says the same thing in words. The rename was only
+    // possible as a copy change BECAUSE the ports carry the meaning: these
+    // two assertions are now independent, where before the second one was
+    // the wiring.
+    expect(outs.map((e) => e.branchLabel).sort()).toEqual(['Event received', 'Timed out']);
   });
 
   it('gives a Goal Check yes and no, and an Experiment\'s arms branch ports', () => {
