@@ -17,6 +17,7 @@ describe('seed campaigns pass the submit gate', () => {
             controlPct: c.controlPct,
             startDate: c.startDate,
             endDate: c.endDate,
+            goal: c.goal,
           })
         : [];
       if (issues.length) console.log(`\n${c.id}:`, issues.map((i) => '  - ' + i.message).join('\n'));

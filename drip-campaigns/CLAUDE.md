@@ -2069,3 +2069,43 @@ lower, which is exactly the guarantee H8 removed.
 
 Verified: 414 unit, 57 e2e, clean typecheck, zero lint errors, clean build,
 plus a screenshot of the migrated DRIP-001.
+
+## 2026-11-26 (cont'd) — Commit 2: the Goal step says what a conversion is
+
+With conversion off the canvas, the two things a Goal Check used to imply
+have to be said somewhere.
+
+**Conversion window**, measured from entry, suggested ONCE when a goal first
+gets an event and never recomputed. The suggestion is the waiting time along
+the longest branch — Waits and Wait-for-Event timeouts; Sends take no time of
+their own since the delay moved out of them — plus a three-day buffer. A
+figure that silently changed as the canvas was edited would be worse than one
+the author can see and correct, which is why it is a suggestion and not a
+derived value. `dcJourneyLengthDays` guards against a graph that loops rather
+than assuming it cannot.
+
+**"Stop messaging customers once they convert"**, on by default, with the
+sub-line that says the thing that actually changed: *checked wherever they
+are in the journey, not just at a step that asks*.
+
+**One sentence, three readers.** `dcConversionSentence` is written once and
+read by the Goal step, Review and the campaign's details view: "A conversion
+is the first Virtual card activated by the same account after it enters,
+within 21 days. The held-back group is measured the same way." Three places
+describing the same rule in three ways is how the send-timing line drifted
+for months.
+
+**The end date versus the window**, the one case where the two could
+contradict each other: the end date stops messages, and the window still
+decides what counts. An account that entered before the end date keeps its
+own window, and the held-back group is measured the same way, so a late
+entrant is not judged on a shorter clock than an early one. Said in one line
+on the campaign view, and only when there is an end date to qualify.
+
+**The gate refuses a goal with no usable window**, because a goal that counts
+nothing is not a goal. `dcValidateSetup` now takes the goal for that reason,
+and the seeds are held to it like everything else.
+
+Verified: 428 unit (414 → 428), 58 e2e (1 new, driving the window from the
+suggestion through an edit to Review and the saved campaign), clean
+typecheck, zero lint errors, plus a screenshot of the Goal step.

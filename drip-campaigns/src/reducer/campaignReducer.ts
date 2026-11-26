@@ -345,6 +345,7 @@ export interface DripCampaignSetup {
   startDate?: string;
   endDate?: string;
   quietHours?: DripQuietHours;
+  goal?: DripGoal | null;
 }
 
 // Today as YYYY-MM-DD in the viewer's own timezone. The date fields are
@@ -376,6 +377,15 @@ export function dcValidateSetup(setup: DripCampaignSetup): DripIssue[] {
   if (setup.controlPct !== undefined) {
     if (!Number.isFinite(pct) || !Number.isInteger(pct)) at('The control group must be a whole percentage.');
     else if (pct < 0 || pct > 50) at('The control group must be between 0% and 50%.');
+  }
+
+  // A goal with no usable window counts nothing, which is not what anyone
+  // means by setting a goal.
+  const win = setup.goal?.eventType ? setup.goal.conversionWindow : undefined;
+  if (setup.goal?.eventType) {
+    if (!win || !Number.isFinite(Number(win.duration)) || Number(win.duration) <= 0) {
+      at('Set a conversion window — how long after entering a conversion still counts.');
+    }
   }
 
   const q = setup.quietHours;

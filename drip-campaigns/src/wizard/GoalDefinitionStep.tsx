@@ -23,6 +23,7 @@ import { ConditionsSection } from './ConditionRows';
 import { EventScopingFields, CardEventDetailFields } from './EventScopingFields';
 import { EVENT_CATEGORIES, dcValidEventType, resolveEntryEventAttrSource } from '../data/sharedConstants';
 import type { DripGoal } from '../data/graphTypes';
+import { dcConversionSentence } from '../data/conversionWindow';
 
 const BLANK_GOAL: DripGoal = { eventCategory: Object.keys(EVENT_CATEGORIES)[0], eventType: '', conditions: [] };
 
@@ -89,7 +90,51 @@ export function GoalDefinitionStep({
         );
       })()}
 
-      <p className="f-hint" style={{ margin: '0 0 8px' }}>Goal Check steps on the canvas use this same goal to branch the journey.</p>
+      {draft.eventType ? (
+        <div className="wiz-section">
+          <div className="wiz-group-label">Counting conversions</div>
+
+          <div className="f-group">
+            <label className="f-label">Conversion window</label>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input
+                className="f-input"
+                type="number"
+                min={1}
+                style={{ maxWidth: 120 }}
+                value={draft.conversionWindow?.duration ?? ''}
+                onChange={(e) => onGoalChange({ ...draft, conversionWindow: { duration: Number(e.target.value), unit: draft.conversionWindow?.unit ?? 'days' } })}
+              />
+              <select
+                className="f-input"
+                style={{ maxWidth: 120 }}
+                value={draft.conversionWindow?.unit ?? 'days'}
+                onChange={(e) => onGoalChange({ ...draft, conversionWindow: { duration: draft.conversionWindow?.duration ?? 1, unit: e.target.value as 'days' | 'hours' } })}
+              >
+                <option value="days">days</option>
+                <option value="hours">hours</option>
+              </select>
+            </div>
+            <p className="f-hint">Measured from the moment an account enters, not from the last message. Suggested from the length of the journey when the goal was set; change it if that is not the window you mean.</p>
+          </div>
+
+          <div className="toggle-row">
+            <div>
+              <div className="toggle-row-label">Stop messaging customers once they convert</div>
+              <div className="toggle-row-sub">Checked wherever they are in the journey, not just at a step that asks. On by default.</div>
+            </div>
+            <div
+              className={`toggle ${draft.exitOnConversion !== false ? 'on' : ''}`}
+              onClick={() => onGoalChange({ ...draft, exitOnConversion: draft.exitOnConversion === false })}
+            />
+          </div>
+
+          <p className="f-hint" style={{ marginTop: 10 }}>{dcConversionSentence(draft)}</p>
+          {draft.exitOnConversion === false ? (
+            <p className="f-hint">With this off, customers carry on through the journey after converting. Add a Goal Check step if you want to branch on it.</p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="dcb-step-footer">
         <button className="btn secondary" onClick={onSaveDraft}>

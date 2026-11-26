@@ -4,6 +4,7 @@
 // earlier step; this just confirms it before Save as Draft / Submit for
 // Approval, which moved here from the Builder step's old top bar.
 import { dcGoalLabel } from '../reducer/labelMeta';
+import { dcConversionSentence } from '../data/conversionWindow';
 import { dcQuietHoursSentence } from '../data/quietHours';
 import { DC_NODE_META } from '../data/nodeMeta';
 import { FilterReadback } from '../components/FilterReadback';
@@ -102,6 +103,16 @@ export function ReviewStep({
       <div className="wiz-section">
         <div className="wiz-group-label">Goal</div>
         <div className="review-row-main">{dcGoalLabel(goal) || <span className="dl-row-sub">No goal defined — independent checkpoints</span>}</div>
+        {goal?.eventType ? (
+          <>
+            <div className="review-row-main">{dcConversionSentence(goal)}</div>
+            <div className="review-row-main">
+              {goal.exitOnConversion === false
+                ? 'Customers carry on through the journey after converting.'
+                : 'Customers stop receiving messages once they convert, wherever they are in the journey.'}
+            </div>
+          </>
+        ) : null}
       </div>
 
       <div className="wiz-section">

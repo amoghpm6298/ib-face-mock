@@ -7,6 +7,7 @@
 // whatever owns the list (Phase 4) to persist.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useState } from 'react';
+import { dcSuggestConversionWindow } from '../data/conversionWindow';
 import type { DripCampaign, DripGoal, DripGraph, DripQuietHours } from '../data/graphTypes';
 import { DC_STEP_TYPES, type DcNodeType } from '../data/nodeMeta';
 import { DC_ENTRY_TYPES } from '../data/typeSub';
@@ -130,7 +131,17 @@ export function DripBuilder({
   // wiring was derived from whatever the goal was when each node was added.
   // Re-derive it here so the two cannot drift — same shape as changePrograms
   // below, which already does this for app events.
-  function changeGoal(next: DripGoal | null) {
+  // The window is suggested ONCE, the first time a goal gets an event, from
+  // the length of the journey as it stands. Never recomputed afterwards: a
+  // number that silently changes as the canvas is edited is worse than one
+  // the author can see and correct.
+  function withSuggestedWindow(next: DripGoal | null): DripGoal | null {
+    if (!next?.eventType || next.conversionWindow) return next;
+    return { ...next, conversionWindow: dcSuggestConversionWindow(graph) };
+  }
+
+  function changeGoal(incoming: DripGoal | null) {
+    const next = withSuggestedWindow(incoming);
     setGoal(next);
     const reconciled = dcReconcileGoal(graph, next);
     if (reconciled !== graph) pushGraph(reconciled);
@@ -294,6 +305,7 @@ export function DripBuilder({
     startDate,
     endDate,
     quietHours,
+    goal: goal && goal.eventType ? goal : null,
   });
   const canSubmit = issues.length === 0;
 
