@@ -166,10 +166,14 @@ export interface DripGoal {
   // in a Wait, or on another path, and nothing noticed. These two settings
   // replace the Goal Check / Goal Reached nodes entirely.
   //
-  // `exitOnConversion` stops messaging an account the moment the goal event
-  // fires, wherever it is in the journey. On by default. Phase 2 (the Goal
-  // step's own UI) adds the control; it is read here from Phase 1 so the
-  // picker can already gate Goal Check on it.
+  // `exitOnConversion`: once the goal event fires, the account receives no
+  // further messages from this campaign, wherever it is in the journey. On
+  // by default.
+  //
+  // Deliberately NOT worded as "removed the moment it fires": whether the
+  // engine can cancel a message already queued, or only decline to send it
+  // when its turn comes, is unconfirmed — see the note in AUDIT.md. The
+  // weaker claim is true either way.
   exitOnConversion?: boolean;
   // How long after ENTRY a conversion still counts toward this campaign.
   // Suggested once when the goal is first set and never recomputed.

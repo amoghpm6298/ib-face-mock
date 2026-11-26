@@ -150,7 +150,7 @@ export function dcConfirmAddNode(graph: DripGraph, type: DcNodeType, p: any, add
   // exhausted" before the final message had been delivered.
   //
   // Waiting on the goal event instead is both correct and more precise:
-  // it exits the moment the customer converts rather than at the next
+  // it ends the moment the customer converts rather than at the next
   // checkpoint, so nobody receives the next reminder after converting.
   // Wait For Event already carries a timeout, and already auto-wires to
   // Goal Reached when the awaited event is the goal — this just reaches

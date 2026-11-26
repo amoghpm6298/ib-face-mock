@@ -2179,3 +2179,34 @@ window now, not arrivals at a node.
 
 Verified: 444 unit (433 → 444), 59 e2e, clean typecheck, zero lint errors,
 clean build, plus a screenshot of the funnel.
+
+## 2026-11-26 (cont'd) — Commit 5: the decisions written down, and what the
+engine still has to confirm
+
+**`AUDIT.md` gained a decisions table for the rework**, because several of
+its own findings were closed by code that has since been deleted and a reader
+coming to it cold would otherwise be misled: H3's wiring half, H4's goal
+reconcile, L3's Yes-arm rule, and L4's defect — the label that printed
+"undefined" was built by code that no longer exists. They stay marked fixed:
+they were, and then the ground moved. H3's predicate comparison survives,
+because M8 still asks it of an Entry · Event.
+
+**`QUIBBLER-REQUIREMENTS.md`** is the note for whoever owns the nudge engine.
+One question first — **does the dispatch path re-check eligibility before
+sending a queued message?** — because everything else depends on it.
+`NudgeCommunicationData` rows queue with `dispatched = false` and a cron
+picks them up, which is the right shape for a pre-dispatch check, but whether
+the check happens could not be established from reading the repo.
+Cancelling on the event is explicitly optional, and **no UI depends on it**.
+
+**The wording was swept to match what can be promised**: "receives no further
+messages from this campaign" everywhere, never "removed the moment they
+convert". The weaker claim is true whether the engine cancels a queued
+message or merely declines to send it when its turn comes. The comment on
+`exitOnConversion` says why, so the next person does not quietly strengthen
+it.
+
+That closes the five-commit rework. **Still open, and deliberately:** several
+goal events any of which counts as a conversion; the rest of H7's guardrails
+(frequency capping, pre-send re-checks, per-channel consent, throttling,
+cross-campaign holdout); and M6's variant assignment unit and stickiness.
