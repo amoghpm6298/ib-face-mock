@@ -30,11 +30,18 @@ const BLANK_GOAL: DripGoal = { eventCategory: Object.keys(EVENT_CATEGORIES)[0], 
 export function GoalDefinitionStep({
   goal,
   onGoalChange,
+  goalCheckCount,
+  onRemoveGoalChecks,
   onSaveDraft,
   onContinue,
 }: {
   goal: DripGoal | null;
   onGoalChange: (goal: DripGoal | null) => void;
+  // Goal Check steps already on the canvas. They cannot fire once exit on
+  // conversion is on, so this is offered here rather than left for the
+  // submit gate to refuse two steps later.
+  goalCheckCount: number;
+  onRemoveGoalChecks: () => void;
   onSaveDraft: () => void;
   onContinue: () => void;
 }) {
@@ -128,6 +135,18 @@ export function GoalDefinitionStep({
               onClick={() => onGoalChange({ ...draft, exitOnConversion: draft.exitOnConversion === false })}
             />
           </div>
+
+          {draft.exitOnConversion !== false && goalCheckCount > 0 ? (
+            <div className="dcb-validation-banner" style={{ marginTop: 12 }}>
+              <span>
+                This campaign has {goalCheckCount} Goal Check step{goalCheckCount > 1 ? 's' : ''}. {goalCheckCount > 1 ? 'They' : 'It'} cannot fire while
+                customers exit on conversion, because anyone who converts has already left.
+              </span>{' '}
+              <button type="button" className="btn secondary" style={{ marginLeft: 8 }} onClick={onRemoveGoalChecks}>
+                Remove {goalCheckCount > 1 ? 'them' : 'it'}
+              </button>
+            </div>
+          ) : null}
 
           <p className="f-hint" style={{ marginTop: 10 }}>{dcConversionSentence(draft)}</p>
           {draft.exitOnConversion === false ? (

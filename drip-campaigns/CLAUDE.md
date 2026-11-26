@@ -2109,3 +2109,36 @@ and the seeds are held to it like everything else.
 Verified: 428 unit (414 → 428), 58 e2e (1 new, driving the window from the
 suggestion through an edit to Review and the saved campaign), clean
 typecheck, zero lint errors, plus a screenshot of the Goal step.
+
+## 2026-11-26 (cont'd) — Commit 3: the contradiction is resolved where it
+is made, and one place lists what stops a send
+
+**A Goal Check and exit-on-conversion contradict each other.** Anyone who
+converts has already left, so the check's Yes arm is a path nobody takes: the
+campaign reads as though it branches on conversion and does not. The submit
+gate blocks it, naming the step it follows — *"The Goal Check after
+'Reminder 1' can never fire while customers exit on conversion"* — and
+carrying the node id so the UI can jump to it.
+
+**But the gate is the wrong place to find out.** The switch is on the Goal
+step, two steps earlier, so turning it on offers the fix right there: *"This
+campaign has 1 Goal Check step. It cannot fire while customers exit on
+conversion… Remove it."* Removing keeps whatever was under each check's No
+arm, exactly as removing it from the canvas would — the `dcReconcileGoal`
+pattern, offered rather than done silently.
+
+**"Checked before every message"** on Guardrails, read-only. Four separate
+settings decide whether a given message actually goes out, and they live on
+three different steps, so the one place that answers *what can stop this
+send?* lists them rather than owning them: conversion, the exclusion lists,
+opt-outs, quiet hours.
+
+**A copy bug caught in the screenshot, not the tests.** That list read "Not
+checked — this campaign keeps messaging after conversion" for a campaign with
+**no goal at all**, which is a different thing entirely: nothing counts as a
+conversion there. Three states, not two.
+
+Verified: 433 unit (428 → 433), 59 e2e (1 new, driving the whole clash: exit
+off so a Goal Check can be added, the check added, exit back on, the offer
+appearing, the removal, and the canvas afterwards), clean typecheck, zero
+lint errors, clean build.

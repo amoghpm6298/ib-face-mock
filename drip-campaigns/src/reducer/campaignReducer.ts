@@ -433,6 +433,25 @@ export function dcValidateCampaign(graph: DripGraph, goal: DripGoal | null, setu
     }
   }
 
+  // A Goal Check cannot answer Yes while converting takes the account out of
+  // the journey — it is a fork with one arm nobody will ever take. Blocking
+  // rather than a warning: the campaign reads as though it branches on
+  // conversion, and it does not.
+  if (goal?.eventType && goal.exitOnConversion !== false) {
+    for (const id of reachable) {
+      const n = graph.nodes[id];
+      if (!n || n.type !== 'GOAL_CHECK') continue;
+      const incoming = graph.edges.find((e) => e.to === n.id);
+      const after = incoming ? graph.nodes[incoming.from]?.label : null;
+      issues.push({
+        nodeId: n.id,
+        message: after
+          ? `The Goal Check after "${after}" can never fire while customers exit on conversion. Remove it, or turn that off on the Goal step.`
+          : 'A Goal Check can never fire while customers exit on conversion. Remove it, or turn that off on the Goal step.',
+      });
+    }
+  }
+
   for (const id of reachable) {
     const n = graph.nodes[id];
     if (!n) continue;

@@ -394,7 +394,22 @@ export function DripBuilder({
 
         {step === 'goalDefinition' && (
           <div className="dcb-step-body">
-            <GoalDefinitionStep goal={goal} onGoalChange={changeGoal} onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))} onContinue={() => setStep('builder')} />
+            <GoalDefinitionStep
+              goal={goal}
+              onGoalChange={changeGoal}
+              goalCheckCount={Object.values(graph.nodes).filter((n) => n.type === 'GOAL_CHECK').length}
+              onRemoveGoalChecks={() => {
+                // Each removal keeps whatever was under its No arm, exactly
+                // as removing it from the canvas would.
+                let next = graph;
+                for (const n of Object.values(graph.nodes)) {
+                  if (n.type === 'GOAL_CHECK') next = dcRemoveGoalCheck(next, n.id);
+                }
+                if (next !== graph) pushGraph(next);
+              }}
+              onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))}
+              onContinue={() => setStep('builder')}
+            />
           </div>
         )}
 
@@ -439,6 +454,7 @@ export function DripBuilder({
               onNpaChange={setNpa}
               quietHours={quietHours}
               onQuietHoursChange={setQuietHours}
+              conversionCheck={!goal?.eventType ? 'noGoal' : goal.exitOnConversion === false ? 'off' : 'on'}
               onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))}
               onContinue={() => setStep('review')}
             />

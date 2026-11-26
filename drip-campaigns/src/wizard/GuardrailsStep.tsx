@@ -17,6 +17,7 @@ export function GuardrailsStep({
   onNpaChange,
   quietHours,
   onQuietHoursChange,
+  conversionCheck,
   onSaveDraft,
   onContinue,
 }: {
@@ -26,6 +27,11 @@ export function GuardrailsStep({
   onNpaChange: (v: boolean) => void;
   quietHours: DripQuietHours;
   onQuietHoursChange: (v: DripQuietHours) => void;
+  // Owned by the Goal step; listed here because this is where someone asks
+  // "what can stop a message going out?". Three states, not two: a campaign
+  // with no goal has nothing to count as a conversion, which is a different
+  // sentence from one that counts them and carries on messaging anyway.
+  conversionCheck: 'on' | 'off' | 'noGoal';
   onSaveDraft: () => void;
   onContinue: () => void;
 }) {
@@ -97,6 +103,36 @@ export function GuardrailsStep({
             </div>
           </>
         )}
+      </div>
+
+      <div className="wiz-section">
+        <div className="wiz-group-label">Checked before every message</div>
+        {/* Read-only on purpose. Four separate settings decide whether a
+            given message actually goes out, and they live on three different
+            steps — so the one place that answers "what can stop this send?"
+            is here, listing them rather than owning them. */}
+        <div className="bd-row">
+          <div className="sp-row-key">Has the customer converted?</div>
+          <div>
+            {conversionCheck === 'on'
+              ? 'They stop receiving messages. Set on the Goal step.'
+              : conversionCheck === 'off'
+                ? 'Not checked — this campaign keeps messaging after they convert.'
+                : 'No goal is set, so nothing counts as a conversion.'}
+          </div>
+        </div>
+        <div className="bd-row">
+          <div className="sp-row-key">Exclusion lists</div>
+          <div>{dnc || npa ? `${[dnc && 'DNC', npa && 'NPA'].filter(Boolean).join(' and ')}. Set above.` : 'None applied.'}</div>
+        </div>
+        <div className="bd-row">
+          <div className="sp-row-key">Opt-outs</div>
+          <div>Always checked. Not configurable.</div>
+        </div>
+        <div className="bd-row">
+          <div className="sp-row-key">Quiet hours</div>
+          <div>{quietHours.enabled ? 'Applied. Set above.' : 'Off — messages can go out at any time of day.'}</div>
+        </div>
       </div>
 
       <div className="dcb-step-footer">
