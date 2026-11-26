@@ -1953,3 +1953,61 @@ the exact drift the send-timing line had for months.
 Verified: 423 unit (413 → 423), 58 e2e (2 new: the Send timing drawer and a
 full quiet-hours pass through Guardrails, Review, submit and the campaign's
 read-back), clean typecheck, zero lint errors, clean build.
+
+## 2026-11-26 (cont'd) — the five Lows, and the audit closes
+
+**L1 — copy that had stopped being true.** Goal Check's one-line description
+said "system-generated, not addable" *in the picker that offers it*, under a
+comment claiming it is "never shown in the Add Step picker"; both predate the
+2026-10-12 round that made it addable. Entry · Audience called itself a
+"cohort snapshot" when it can run on a repeating schedule. Three file headers
+still described a three- or four-step flow that has been five steps since
+Guardrails landed.
+
+**L2 — the rail contradicted the page.** Goal Definition says "not every
+campaign needs one", and the stepper marked it unfinished without one.
+"Complete" means nothing on that step blocks submission, and a goal never
+does, so it is always complete now.
+
+**L3 — fixed by checking rather than blocking.** Removing a Goal Reached
+exit reverts its arm to an open slot, and the picker then offers anything,
+including a Send on the path where the customer has already converted. The
+audit suggested restricting the arm to terminal steps; that would refuse a
+legitimate campaign, because "you've earned it" is a real message to send
+there. What must not pass quietly is the path never arriving at Goal Reached
+— then nobody who took it is counted as converted and the campaign
+under-reports its own success with nothing on screen to explain why. The gate
+walks each Goal Check's Yes arm and says so.
+
+**L4 — "New Status = undefined?"** A goal condition can match a set of
+statuses, stored in `values`; the auto-built Goal Check read `.value` alone.
+`dcConditionValueText` renders the value side once, for both the check and
+the exit beneath it: "Successful or Partially Successful".
+
+**L5 — checked in quibbler, deliberately not built.** Nothing in the nudge
+engine distinguishes an entry-time value from a live one: `asOf`,
+`pointInTime`, `atEntry`, `entryTime` and `snapshot` return nothing across
+`nudges-core/src/main`. `ConfigBasedEligibility` is entity + attribute +
+value + filter, and the filters are plain comparisons. The only time-shaped
+concepts are `OfferCycle` (CURRENT/PREVIOUS) and `CurrentDiffFilter` ("within
+N days"), **both relative to now**. A `valueAt: 'entry' | 'evaluation'`
+control would let an author state an intent the engine cannot honour — the
+same reason `journeyKey` was not added for H6. It stays a documented
+limitation, and it is a backend capability question rather than a builder
+one.
+
+**The audit is closed: 25 of 25.** 22 fixed; three closed by answer rather
+than by code — H5 (leave re-entry as it is), H6 (a run is per account, so
+there is nothing to make configurable) and L5. Deferred by decision, and the
+natural next pieces: the rest of H7's guardrails (frequency capping, pre-send
+re-checks, consent, throttling, cross-campaign holdout) and M6's variant
+assignment unit and stickiness.
+
+**The pattern worth keeping from this whole run:** three of the audit's
+prescribed fixes would have added a control to the builder — `journeyKey`,
+`valueAt`, and a configurable `onEnd` — and in all three cases checking the
+real system first, or asking, turned a "build a setting" into "state the one
+behaviour". A setting is a promise that every option works.
+
+Verified: 432 unit (423 → 432), 58 e2e, clean typecheck, zero lint errors,
+clean build.

@@ -11,7 +11,7 @@ This module is a **builder only** — it saves journeys as config and nothing ex
 | Critical | 3 | **3** |
 | High | 8 | **7** |
 | Medium | 9 | **9** |
-| Low | 5 | 0 |
+| Low | 5 | **5** |
 
 **Fixed so far:** C1, C2, C3, H1, H2, H4, H8, M2 — plus four seed-data defects the new validation found. Each fixed finding is marked below with what closed it.
 
@@ -385,29 +385,41 @@ No node-type validation, no edge-target checks, no `rootId` membership check, no
 
 ## Low
 
-### L1 · Stale copy
+### L1 · Stale copy  ✅ **FIXED**
 
 - **`src/data/typeSub.ts:18`** — Goal Check reads *"(system-generated, not addable)"*, but it is addable and the picker shows this text
 - **`src/data/typeSub.ts:7`** — *"Cohort snapshot"* even for a repeating schedule
 - Header comments disagree with the current five-step flow: `BasicDetailsStep.tsx:1` says "1 of 3", `ReviewStep.tsx:1` says "4 of 4", `DripBuilder.tsx:1-3` says "3 steps"
 
-### L2 · Goal step marked incomplete when no goal is set
+> **Fixed.** Goal Check reads "Has the campaign goal been achieved?" — the line claiming it was "system-generated, not addable" sat in the very picker that offers it, next to a comment saying it is "never shown in the Add Step picker". Entry · Audience reads "Start everyone who matches, once or on a repeating schedule" instead of calling a repeating pull a snapshot. The three headers now say 1 of 5, 5 of 5, and name all five steps.
+
+### L2 · Goal step marked incomplete when no goal is set  ✅ **FIXED**
 
 **`src/wizard/DripBuilder.tsx:311`** marks `goalDefinition` incomplete unless `goal.eventType` exists, despite the step saying not every campaign needs one.
 
-### L3 · Goal Reached arm can be rewired to a Send
+> **Fixed.** "Complete" means nothing on that step blocks submission, and a goal never does — the gate does not require one, and a campaign without one simply gets no auto goal-checks. The rail was contradicting the page it pointed at.
+
+### L3 · Goal Reached arm can be rewired to a Send  ✅ **FIXED** (checked, not blocked)
 
 Removing the Goal Reached exit reverts the arm to an open slot (`graphOps.ts:49`), allowing a Send on the already-converted path. Consider restricting that arm to terminal nodes.
 
-### L4 · Goal Check label breaks for multi-value goals
+> **Fixed by checking rather than restricting.** A message after conversion is a real thing to want — "you've earned it" belongs exactly there — so blocking the arm would refuse a legitimate campaign. What cannot pass quietly is the path never arriving at Goal Reached, because then nobody who took it is counted as having converted and the campaign under-reports its own success for a reason nothing on screen explains. The submit gate now walks each Goal Check's Yes arm and says so when no Goal Reached is reachable from it.
+
+### L4 · Goal Check label breaks for multi-value goals  ✅ **FIXED**
 
 **`src/reducer/campaignReducer.ts:92`** — `` label: `${statusAttr} = ${goalCond.value}?` `` renders "undefined" when the goal uses `values[]`. The canvas usually masks this by recomputing, but the stored label is wrong.
 
-### L5 · No snapshot-vs-live semantics on conditions
+> **Fixed.** One reader, `dcConditionValueText`, renders the value side as a person reads it — "Successful or Partially Successful" — and both the Goal Check and the Exit built beneath it use it. A single value reads exactly as it always did.
+
+### L5 · No snapshot-vs-live semantics on conditions  ⏹ **NOT BUILT, and now verified why**
 
 Nothing says whether a condition reads the value at entry or at evaluation. AJO and Braze distinguish entry properties from live profile attributes.
 
 **Fix.** `valueAt: 'entry' | 'evaluation'` on `DripFilterRow`.
+
+> **Checked in `quibbler` before building anything, and deliberately not built.** Nothing in the nudge engine distinguishes an entry-time value from a live one: `grep` for `asOf`, `pointInTime`, `atEntry`, `entryTime` and `snapshot` across `nudges-core/src/main` returns nothing. `ConfigBasedEligibility` is `entityType` + `attribute` + `entityValue` + `filter`, and the filters are plain comparisons (`EqualTo`, `GreaterThan`, `In`, the percentage variants). The only time-shaped concepts that exist are `OfferCycle` (`CURRENT` / `PREVIOUS`, which cycle's data to fetch) and `CurrentDiffFilter` ("within N days or months"), **both relative to now**.
+>
+> A `valueAt` control would therefore let an author state an intent the engine cannot honour — the same reason `journeyKey` was not added in H6. It stays a documented limitation. The distinction is real and AJO and Braze do make it; this is a backend capability question, not a builder one.
 
 ---
 
@@ -440,7 +452,9 @@ A second pass, once every label was rebuilt from its own `_config`, found **28 o
 
 ## What is left
 
-**Every Critical and every Medium is closed, and the three remaining Highs are now answered** — H6 by production (a run is per account), H5 by decision (leave it), H7 in part (quiet hours built, the rest deferred). What is left is five Lows.
+**All 25 findings are now closed.** 22 fixed; three closed by answer rather than by code — H5 (leave re-entry as it is, by decision), H6 (a run is per account, verified in quibbler, so there is nothing to make configurable), and L5 (the engine has no entry-time snapshot, so a control for it would promise what it cannot do).
+
+**Two things are deferred by decision, and are the natural next pieces if this is picked up again:** the rest of H7's guardrails — frequency capping, pre-send re-checks, per-channel consent, throttling, cross-campaign holdout — and M6's variant assignment unit and stickiness.
 
 **One decision left, not a fix,** and it needs an answer before any code: H6's journey key — what one run is keyed to, customer, account or card — which H5, H7 and M6's variant stickiness all hang off.
 

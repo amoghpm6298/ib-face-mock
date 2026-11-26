@@ -1,6 +1,6 @@
-// Thin step dispatcher holding all shared state — the create/edit flow
-// is now 3 steps (Basic Details -> Goal Definition -> Builder, see the
-// UX-rebuild plan) instead of the old Setup -> Build. `graph` is a small
+// Thin step dispatcher holding all shared state — the create/edit flow is
+// five steps: Basic Details -> Goal Definition -> Builder -> Guardrails ->
+// Review. `graph` is a small
 // history stack rather than a bare useState, so the Builder step can
 // offer real Undo/Redo. Doesn't know about the campaigns list or
 // persistence; emits a finished payload via onSaveDraft/onSubmit for
@@ -344,7 +344,11 @@ export function DripBuilder({
     onSubmit(buildPayload('PENDING_REVIEW'));
   }
 
-  const isStepComplete = (s: BuilderStepKind) => (s === 'basicDetails' ? !!name : s === 'goalDefinition' ? !!(goal && goal.eventType) : true);
+  // "Complete" means nothing on that step is blocking submission. A goal is
+  // genuinely optional — the step says so, the gate never requires one, and a
+  // campaign without one simply gets no auto goal-checks — so the rail used
+  // to contradict the page it was pointing at by marking it unfinished.
+  const isStepComplete = (s: BuilderStepKind) => (s === 'basicDetails' ? !!name : true);
 
   return (
     <div className="dcb-shell">

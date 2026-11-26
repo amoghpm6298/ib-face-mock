@@ -1,4 +1,4 @@
-// Step 4 of 4 — new, added alongside the vertical rail (Phase 3
+// Step 5 of 5 — added alongside the vertical rail (Phase 3
 // refinement). A plain read-back of what's about to be submitted, not a
 // new data-entry surface — every field here is already set on an
 // earlier step; this just confirms it before Save as Draft / Submit for

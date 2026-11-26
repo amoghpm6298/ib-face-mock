@@ -1,4 +1,4 @@
-// Step 1 of 3 — plain sequential form page, no rail. Checked directly
+// Step 1 of 5 — plain sequential form page, no rail. Checked directly
 // against Braze/MoEngage/CleverTap's own setup screens: all three treat
 // campaign/journey setup as a simple form, not a persistent rail+content
 // layout (that pattern belongs to composing one message with a literal
