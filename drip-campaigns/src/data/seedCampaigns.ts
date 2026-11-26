@@ -27,6 +27,7 @@ export const DRIP_CAMPAIGNS: DripCampaign[] =  [
     "description": "Nudges a newly issued card towards activation with up to three reminders, spaced out over a week.",
     "issuer": "IndusInd Bank (IBL)",
     "programs": [],
+    "applyToAllPrograms": true,
     "goal": {
       "eventCategory": "Card Events",
       "eventType": "Virtual card activated",
@@ -278,6 +279,7 @@ export const DRIP_CAMPAIGNS: DripCampaign[] =  [
     "description": "A/B tests WhatsApp vs. SMS for nudging eligible outstanding balances towards EMI conversion.",
     "issuer": "IndusInd Bank (IBL)",
     "programs": [],
+    "applyToAllPrograms": true,
     "goal": {
       "eventCategory": "EMI Events",
       "eventType": "EMI_STATUS_CHANGED",
@@ -673,6 +675,7 @@ export const DRIP_CAMPAIGNS: DripCampaign[] =  [
     "description": "Four independent checkpoints (1/3/6/12 months post-activation), each checking a real milestone benefit's progress before rewarding it — no shared exit, since milestones aren't mutually exclusive.",
     "issuer": "Yes Bank",
     "programs": [],
+    "applyToAllPrograms": true,
     "goal": null,
     "controlPct": 0,
     "status": "DRAFT",
@@ -1098,6 +1101,7 @@ export const DRIP_CAMPAIGNS: DripCampaign[] =  [
     "description": "Monthly scan for points expiring within 30 days, with a last-chance reminder at the 7-day mark for anyone who hasn't redeemed yet.",
     "issuer": "Yes Bank",
     "programs": [],
+    "applyToAllPrograms": true,
     "goal": {
       "eventCategory": "Offer Events",
       "eventType": "Outcome Issuance",
@@ -1285,6 +1289,7 @@ export const DRIP_CAMPAIGNS: DripCampaign[] =  [
     "description": "Nudges an eligible authorized transaction towards EMI consent, then waits for settlement/reconciliation to resolve the outcome before reminding again.",
     "issuer": "IndusInd Bank (IBL)",
     "programs": [],
+    "applyToAllPrograms": true,
     "goal": {
       "eventCategory": "EMI Events",
       "eventType": "EMI_STATUS_CHANGED",
@@ -1695,6 +1700,7 @@ export const DRIP_CAMPAIGNS: DripCampaign[] =  [
     "description": "A channel-strategy test (WhatsApp-first vs. SMS-first) for getting a newly issued card activated and its PIN set.",
     "issuer": "IndusInd Bank (IBL)",
     "programs": [],
+    "applyToAllPrograms": true,
     "goal": {
       "eventCategory": "Card Events",
       "eventType": "Virtual card activated",

@@ -37,7 +37,11 @@ export type DcAddingAt = { kind: 'root' } | { kind: 'edge'; edgeId: string } | {
 const DC_SEND_GOAL_WAIT_DAYS = 3;
 
 // ---------------------------------------------------------------------------
-// Does this wait MEAN the goal, or merely share its event?
+// Does this event-shaped step MEAN the goal, or merely share its event?
+//
+// Asked of a Wait for Event before wiring it to Goal Reached, and of an
+// Entry · Event before letting a campaign submit: if entering the campaign
+// already satisfies the goal, the goal measures nothing.
 //
 // Matching the goal's event category and type is not enough to call the
 // event firing "goal achieved". A goal of "Transaction, amount is at least
@@ -74,7 +78,7 @@ function sameCondition(a: DripGoalCondition, b: DripGoalCondition): boolean {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function dcWaitMeetsGoal(p: any, goal: DripGoal | null): boolean {
+export function dcEventMeetsGoal(p: any, goal: DripGoal | null): boolean {
   if (!goal || !goal.eventType) return false;
   p = p || {};
   if (goal.eventCategory !== p.eventCategory || goal.eventType !== p.eventType) return false;
@@ -147,7 +151,7 @@ function dcAttachWaitOutcome(next: DripGraph, id: string, p: any, goal: DripGoal
       // event firing is never automatically "the goal," regardless of
       // how unambiguous it is, unless a Goal says so.
       const goalMatchesThisEvent = goal && goal.eventCategory === p.eventCategory && goal.eventType === p.eventType;
-      if (dcWaitMeetsGoal(p, goal)) {
+      if (dcEventMeetsGoal(p, goal)) {
         // This wait's own predicate equals or narrows the goal, so the event
         // firing under it IS the goal — nothing left to check.
         const goalExitId = dcNewNodeId();
@@ -465,7 +469,7 @@ export function dcGoalWiringIssues(graph: DripGraph, goal: DripGoal | null): str
       issues.push(
         `"${src.label}" waits for ${cfg.eventType} but exits to Goal Reached, and the campaign goal is ${goal.eventType}. That records a goal that was not achieved.`,
       );
-    } else if (!dcWaitMeetsGoal(src._config, goal)) {
+    } else if (!dcEventMeetsGoal(src._config, goal)) {
       // Same event, broader predicate — it fires for customers the goal
       // would not count.
       issues.push(
@@ -495,9 +499,72 @@ export interface DripIssue {
   message: string;
 }
 
-export function dcValidateCampaign(graph: DripGraph, goal: DripGoal | null): DripIssue[] {
+// ---------------------------------------------------------------------------
+// The campaign's own setup — who it is for and when it runs.
+//
+// These used to be checked, when they were checked at all, in a ternary chain
+// inside the Builder's own render, which is the same split brain C3 fixed for
+// node config: one rule in the gate, another in a component. Everything the
+// submit gate refuses now comes from one list, so the banner can name any of
+// it the same way.
+// ---------------------------------------------------------------------------
+export interface DripCampaignSetup {
+  name: string;
+  issuer: string;
+  applyToAllPrograms?: boolean;
+  programs?: string[];
+  controlPct?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+// Today as YYYY-MM-DD in the viewer's own timezone, which is the same shape
+// the date inputs produce. This app has no timezone model at all — a date is
+// a bare calendar day — so comparing the strings is exactly as precise as the
+// data is, and no more.
+function todayISO(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function dcValidateSetup(setup: DripCampaignSetup): DripIssue[] {
   const issues: DripIssue[] = [];
-  if (!graph.rootId) return [{ nodeId: null, message: 'Add an entry step before submitting.' }];
+  const at = (message: string) => issues.push({ nodeId: null, message });
+
+  if (!String(setup.name || '').trim()) at('Give this campaign a name before submitting.');
+  if (!String(setup.issuer || '').trim()) at('Choose an issuer before submitting.');
+  // An issuer with no programs and the toggle off reaches nobody: the
+  // campaign is complete, valid and addressed to an empty audience.
+  else if (!setup.applyToAllPrograms && !(setup.programs || []).length) {
+    at('No programs are selected, so this campaign would reach nobody. Pick at least one, or apply it to all programs.');
+  }
+
+  // The control group is bounded by the input's own min/max, which a paste or
+  // a restored draft never passes through, and an emptied field reads as NaN.
+  const pct = Number(setup.controlPct);
+  if (setup.controlPct !== undefined) {
+    if (!Number.isFinite(pct) || !Number.isInteger(pct)) at('The control group must be a whole percentage.');
+    else if (pct < 0 || pct > 50) at('The control group must be between 0% and 50%.');
+  }
+
+  const start = String(setup.startDate || '').trim();
+  const end = String(setup.endDate || '').trim();
+  if (start && end && end < start) at('The end date is before the start date.');
+  // An end date already past means the campaign can never run — true whether
+  // this is a new campaign or an edit of an old one. A START date in the past
+  // is deliberately NOT flagged: editing a campaign that began last month is
+  // the ordinary case, and the builder cannot tell the two apart.
+  if (end && end < todayISO()) at('The end date has already passed, so this campaign would never run.');
+  return issues;
+}
+
+export function dcValidateCampaign(graph: DripGraph, goal: DripGoal | null, setup?: DripCampaignSetup): DripIssue[] {
+  const issues: DripIssue[] = setup ? dcValidateSetup(setup) : [];
+  if (!graph.rootId) {
+    issues.push({ nodeId: null, message: 'Add an entry step before submitting.' });
+    return issues;
+  }
 
   // What can actually be reached from the entry step. A mid-edge insert that
   // left more than one open arm used to drop the rest of the chain here —
@@ -543,6 +610,20 @@ export function dcValidateCampaign(graph: DripGraph, goal: DripGoal | null): Dri
     if (terminal && outs.length > 0) {
       issues.push({ nodeId: n.id, message: `"${n.label}" is an exit, so nothing can follow it.` });
     }
+  }
+
+  // A campaign whose entry already satisfies its own goal measures nothing:
+  // everyone converts on arrival, the funnel reads 100%, and no message in it
+  // can have caused anything. Judged by the same predicate comparison the
+  // waits use, so a BROADER entry is fine — entering on any transaction while
+  // aiming for one over ₹5,000 is a real campaign. What is not is an entry
+  // that already means the goal.
+  const root = graph.nodes[graph.rootId];
+  if (root && root.type === 'ENTRY_EVENT' && dcEventMeetsGoal(root._config, goal)) {
+    issues.push({
+      nodeId: root.id,
+      message: `Everyone who enters has already achieved the goal — "${root.label}" is the goal event itself. Narrow the goal, or start the campaign on an earlier event.`,
+    });
   }
 
   for (const m of dcGoalWiringIssues(graph, goal)) issues.push({ nodeId: null, message: m });

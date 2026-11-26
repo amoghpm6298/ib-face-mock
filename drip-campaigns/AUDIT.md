@@ -10,7 +10,7 @@ This module is a **builder only** — it saves journeys as config and nothing ex
 |---|---|---|
 | Critical | 3 | **3** |
 | High | 8 | **5** |
-| Medium | 9 | **5** |
+| Medium | 9 | **7** |
 | Low | 5 | 0 |
 
 **Fixed so far:** C1, C2, C3, H1, H2, H4, H8, M2 — plus four seed-data defects the new validation found. Each fixed finding is marked below with what closed it.
@@ -291,9 +291,11 @@ No randomisation unit or stickiness is defined for either control or variants, w
 
 > **Fixed: the duplicate labels.** `dcNextVariantLabel`/`dcNextBranchLabel` (`src/reducer/defaultConfig.ts`) name a new arm against the names already taken rather than against the arm count, so A/B/C minus B plus one is B again, not a second C. Both Experiment and Branch were affected — Branch had the same bug with "Branch N". A renamed arm frees its name; past Z the fallback is "Variant n", never a duplicate.
 >
-> **Still open:** `controlPct` has no submit-time check (the `min`/`max` are HTML attributes only, and an empty field is `NaN`), per-variant percentages are only checked as a total, and there is still no assignment unit or stickiness. Those belong with H6's journey key, since "what is a variant sticky to" and "what is a run keyed to" are the same question.
+> **`controlPct` is now checked at submit too**, with M7's own setup rules — a whole number between 0 and 50, so a paste, a restored draft or an emptied field reading as `NaN` no longer passes.
+>
+> **Still open:** per-variant percentages are only checked as a total, so a 100/0 split passes with an arm nobody ever reaches, and there is still no assignment unit or stickiness. The latter belongs with H6's journey key, since "what is a variant sticky to" and "what is a run keyed to" are the same question.
 
-### M7 · Scope and schedule are unvalidated
+### M7 · Scope and schedule are unvalidated  ✅ **FIXED** (the checks; `onEnd` is a decision, below)
 
 - **`src/wizard/BasicDetailsStep.tsx`** permits "all programs" before an issuer is chosen
 - Issuer with zero programs and the toggle off still submits (`DripBuilder.tsx:264`)
@@ -302,11 +304,25 @@ No randomisation unit or stickiness is defined for either control or variants, w
 
 **Fix.** Add to `dcValidateCampaign`. Add `onEnd: 'drain' | 'exitAll'`.
 
-### M8 · Nothing prevents the entry event being the goal event
+> **Fixed: the checks.** `dcValidateSetup` is part of the same submit gate as the journey, so everything the gate refuses now comes from one list. It requires a name and an issuer; refuses an issuer with no programs and the all-programs toggle off (a complete, valid campaign addressed to nobody — every one of this suite's own wizard flows was in that state, which is how it was found); bounds the control group at a whole 0–50, which the input's `min`/`max` never did for a paste, a restored draft or an emptied field reading as `NaN`; and refuses an end date before the start or already in the past.
+>
+> **A start date in the past is deliberately not flagged.** Editing a campaign that began last month is the ordinary case and the builder cannot tell that apart from a typo. Timezones are untouched for the same reason the audit raised them: this app has no timezone model, a date is a bare calendar day, and comparing the strings is exactly as precise as the data is.
+>
+> **Name and issuer moved INTO the validator** from a ternary chain inside the Builder's own render — the same split brain C3 fixed for node config, one rule in the gate and another in a component.
+>
+> **The seeds are now held to these rules too**, which is what a fixture should mean. All six named an issuer with no programs; they are marked as applying to all programs, which is what an issuer-wide demo campaign actually is.
+>
+> **Still open, and a decision rather than a fix:** `onEnd: 'drain' | 'exitAll'` — what happens to customers mid-journey when the campaign ends. Letting them finish is the industry default; a hard stop is the right answer when an offer legally expires. Both are defensible, which is why it is not being guessed at here. `dcAppEventsForPrograms` also remains the documented stub it always was.
+
+### M8 · Nothing prevents the entry event being the goal event  ✅ **FIXED**
 
 Entry · Event = "Virtual card activated" with Goal = "Virtual card activated" means every customer has already converted on entry. No warning exists.
 
 **Fix.** Lint for entry event equal to goal event, and for a goal already satisfied by the entry filters.
+
+> **Fixed, both halves, by one comparison.** The submit gate refuses a campaign whose Entry · Event already satisfies the goal, judged by the same `dcEventMeetsGoal` the waits use (renamed from `dcWaitMeetsGoal` when it gained this second reader). That covers the audit's second half for free: it is not a name match but a predicate test, so an entry carrying the goal's own conditions is refused too, and a BROADER entry is correctly allowed — entering on any transaction while aiming for one over ₹5,000 is a real campaign.
+>
+> It blocks rather than warns, because there is no honest reading of a campaign where the funnel reads 100% on arrival: no message in it can have caused anything, and the goal measures nothing. The message names both ways out — narrow the goal, or start on an earlier event.
 
 ### M9 · Import validates almost nothing  ✅ **FIXED**
 
@@ -385,6 +401,8 @@ A second pass, once every label was rebuilt from its own `_config`, found **28 o
 
 ## What is left
 
-**Next:** M8 (entry event equal to the goal event — a campaign where everyone has already converted on entry), then M7's scope and schedule checks, both of which extend `dcValidateCampaign` rather than adding machinery.
+**Next:** M1 is the deepest thing left — branch polarity stored as display text, where an import using `"yes"` or a renamed label silently flips routing. It touches reconcile, analytics and every saved campaign at once, so it wants its own pass rather than being bundled.
+
+**Two decisions, not fixes,** and both are the same shape — they need an answer before any code: H6's journey key (what one run is keyed to: customer, account or card), which H5, H7 and M6's variant stickiness all hang off; and M7's `onEnd` (whether customers mid-journey finish or are dropped when a campaign ends).
 
 **Then H5, H6 and H7 together** — re-entry, journey key and guardrails are one question: what is a journey run keyed to, and when is it finished. H6 is a decision rather than a fix.

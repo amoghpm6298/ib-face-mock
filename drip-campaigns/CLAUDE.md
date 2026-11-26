@@ -1732,3 +1732,57 @@ on an existing graph), 54 e2e (a new one building a broader wait through the
 real drawer, seeing the Goal Check appear, then building the same wait
 narrowed to the goal and seeing it exit straight to Goal Reached), clean
 typecheck, zero lint errors, plus a screenshot of the resulting canvas.
+
+## 2026-11-26 (cont'd) — M7/M8: the submit gate becomes one list, and a
+campaign can no longer be addressed to nobody or already finished
+
+**One gate, one list.** Name and issuer were checked in a ternary chain
+inside `DripBuilder`'s own render while everything else went through
+`dcValidateCampaign` — the same split brain C3 fixed for node config, where
+one rule lives in the gate and another in a component and the two drift the
+moment either moves. `dcValidateSetup` is now part of the same validator, so
+anything the gate refuses comes from one place and the banner names all of it
+the same way.
+
+**What it refuses now** (M7): a missing name or issuer; an issuer with no
+programs and the all-programs toggle off; a control group that is not a whole
+number between 0 and 50; an end date before the start, or already past.
+
+**A start date in the past is deliberately not flagged.** Editing a campaign
+that began last month is the ordinary case and the builder cannot tell it
+apart from a typo. Timezones are untouched for the reason the audit raised
+them: this app has no timezone model, a date is a bare calendar day, and
+comparing the strings is exactly as precise as the data is.
+
+**M8 — a campaign whose entry already achieves its goal.** Refused, judged by
+the same `dcEventMeetsGoal` the waits use (renamed from `dcWaitMeetsGoal`
+when it gained this second reader). One comparison covers both halves the
+audit asked for: it is a predicate test, not a name match, so an entry
+carrying the goal's own conditions is caught too, and a BROADER entry is
+correctly allowed — entering on any transaction while aiming for one over
+₹5,000 is a real campaign. It blocks rather than warns because there is no
+honest reading of a funnel that reads 100% on arrival: no message in the
+campaign can have caused anything.
+
+**Finding it in our own test suite.** The programs check failed two existing
+e2e tests immediately — every wizard flow in the suite picked an issuer and
+stopped there, so every campaign they built reached nobody. The tests were
+right about the old behaviour and wrong about what a complete setup is; they
+now answer it, one of them by picking a real program and the other by the
+toggle, so both routes are exercised.
+
+**The seeds are held to these rules too**, which is what a fixture should
+mean. All six named an issuer and listed no programs; they are marked as
+applying to all programs, which is what an issuer-wide demo campaign is.
+
+**Not guessed at:** `onEnd: 'drain' | 'exitAll'` — whether customers
+mid-journey finish or are dropped when a campaign ends. Letting them finish
+is the industry default; a hard stop is right when an offer legally expires.
+Both are defensible, so it stays a decision rather than an invention, next to
+H6's journey key.
+
+Verified: 388 unit (366 → 388, a new `setupValidation.test.ts` covering scope,
+the control group, the dates and the entry-equals-goal rule in all its
+shapes), 56 e2e (2 new: submit refused for a campaign addressed to no
+programs and then accepted once a program is picked, and refused for an entry
+event that is the goal event), clean typecheck, zero lint errors.

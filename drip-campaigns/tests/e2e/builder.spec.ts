@@ -16,6 +16,9 @@ async function startNewCampaign(page: import('@playwright/test').Page, name: str
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill(name);
   await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  // Say who it is for: an issuer with no programs and the toggle off reaches
+  // nobody, and the submit gate refuses that now.
+  await page.locator('.toggle-row .toggle').first().click();
   // "Skip to Builder" was removed — Continue to Goal is always enabled
   // now, so the same destination is two clicks through the real flow.
   await page.getByText('Continue to Goal →').click();
@@ -34,6 +37,9 @@ async function startNewCampaignWithGoal(page: import('@playwright/test').Page, n
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill(name);
   await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  // Say who it is for: an issuer with no programs and the toggle off reaches
+  // nobody, and the submit gate refuses that now.
+  await page.locator('.toggle-row .toggle').first().click();
   await page.getByText('Continue to Goal →').click();
   await page.waitForTimeout(200);
   const goalSelects = page.locator('select');
@@ -683,6 +689,9 @@ test('Goal Definition: Journey Events shows its own scoping fields + a locked-at
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Builder Spec: Journey Events Goal');
   await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  // Say who it is for: an issuer with no programs and the toggle off reaches
+  // nobody, and the submit gate refuses that now.
+  await page.locator('.toggle-row .toggle').first().click();
   await page.getByText('Continue to Goal →').click();
   await page.waitForTimeout(200);
 
@@ -1267,6 +1276,9 @@ test('a Wait for Event broader than the goal gets a real Goal Check; narrowing i
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Builder Spec: Goal Predicate');
   await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  // Say who it is for: an issuer with no programs and the toggle off reaches
+  // nobody, and the submit gate refuses that now.
+  await page.locator('.toggle-row .toggle').first().click();
   await page.getByText('Continue to Goal →').click();
   await page.waitForTimeout(200);
 
@@ -1322,4 +1334,73 @@ test('a Wait for Event broader than the goal gets a real Goal Check; narrowing i
 
   await expect(page.locator('.dc-node-card:has-text("Goal Reached")')).toHaveCount(1);
   await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
+});
+
+// M7 — an issuer with no programs and the all-programs toggle off reaches
+// nobody. The campaign was otherwise complete and submitted happily.
+test('Submit refuses a campaign addressed to no programs, and accepts it once that is answered', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
+  await page.locator('input[type=text]').first().fill('Builder Spec: No Programs');
+  await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  // Deliberately NOT answering who it is for.
+  await page.getByText('Continue to Goal →').click();
+  await page.waitForTimeout(200);
+  await page.getByText('Continue to Builder →').click();
+  await page.waitForTimeout(300);
+  await addEntryEvent(page, 'Journey Events', 'Pageload');
+  await page.locator('.dc-add-btn').click();
+  await page.locator('.dc-type-opt', { hasText: /^Exit/ }).click();
+  await page.locator('.sd-drawer.open input[type=text]').first().fill('done');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(400);
+
+  await page.getByText('Continue to Guardrails').click();
+  await page.waitForTimeout(300);
+  await page.getByText('Continue to Review').click();
+  await page.waitForTimeout(300);
+  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.waitForTimeout(200);
+  await expect(page.locator('.dcb-validation-banner')).toContainText('reach nobody');
+
+  // Answer it on Basic Details — a real program, not the toggle, to prove
+  // either answer satisfies the gate.
+  await page.locator('.dcb-vstep', { hasText: 'Basic Details' }).click();
+  await page.waitForTimeout(300);
+  // The program chips are plain divs, not a labelled control — picked by
+  // the program's own name, which is what a person reads too.
+  await page.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Program' }) }).getByText('Platinum Aura', { exact: true }).click();
+  await page.waitForTimeout(200);
+  await page.getByText('Continue to Goal →').click();
+  await page.waitForTimeout(200);
+  await page.getByText('Continue to Builder →').click();
+  await page.waitForTimeout(200);
+  await page.getByText('Continue to Guardrails').click();
+  await page.waitForTimeout(300);
+  await page.getByText('Continue to Review').click();
+  await page.waitForTimeout(300);
+  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.waitForTimeout(400);
+  await expect(page.locator('table tbody tr', { hasText: 'Builder Spec: No Programs' })).toBeVisible();
+});
+
+// M8 — entering on the goal event means everyone converts on arrival: the
+// funnel reads 100% and no message in the campaign caused any of it.
+test('Submit refuses a campaign whose entry event is the goal event itself', async ({ page }) => {
+  await startNewCampaignWithGoal(page, 'Builder Spec: Entry Is Goal', 'Card Events', 'Virtual card activated');
+  await addEntryEvent(page, 'Card Events', 'Virtual card activated');
+  await page.locator('.dc-add-btn').click();
+  await page.locator('.dc-type-opt', { hasText: /^Exit/ }).click();
+  await page.locator('.sd-drawer.open input[type=text]').first().fill('done');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(400);
+
+  await page.getByText('Continue to Guardrails').click();
+  await page.waitForTimeout(300);
+  await page.getByText('Continue to Review').click();
+  await page.waitForTimeout(300);
+  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.waitForTimeout(200);
+  await expect(page.locator('.dcb-validation-banner')).toContainText('already achieved the goal');
 });

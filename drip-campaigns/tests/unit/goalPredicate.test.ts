@@ -9,7 +9,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import type { DripGoal, DripGraph } from '../../src/data/graphTypes';
 import { dcResetIdCounters } from '../../src/reducer/idGen';
-import { dcConfirmAddNode, dcWaitMeetsGoal, dcGoalWiringIssues } from '../../src/reducer/campaignReducer';
+import { dcConfirmAddNode, dcEventMeetsGoal, dcGoalWiringIssues } from '../../src/reducer/campaignReducer';
 import { dcDefaultConfig } from '../../src/reducer/defaultConfig';
 
 const BIG_TXN: DripGoal = {
@@ -29,63 +29,63 @@ const wait = (over: Record<string, unknown> = {}) => ({
 
 describe('does this wait mean the goal?', () => {
   it('no, when it shares the event but carries none of the goal\'s conditions — the bug', () => {
-    expect(dcWaitMeetsGoal(wait(), BIG_TXN)).toBe(false);
+    expect(dcEventMeetsGoal(wait(), BIG_TXN)).toBe(false);
   });
 
   it('yes, when it states the same condition', () => {
-    expect(dcWaitMeetsGoal(wait({ conditions: BIG_TXN.conditions }), BIG_TXN)).toBe(true);
+    expect(dcEventMeetsGoal(wait({ conditions: BIG_TXN.conditions }), BIG_TXN)).toBe(true);
   });
 
   it('yes, when it is narrower — extra conditions are AND\'d, so they only match fewer people', () => {
     const narrower = wait({ conditions: [...BIG_TXN.conditions, { attribute: 'Transaction Status', operator: 'is', value: 'APPROVED' }] });
-    expect(dcWaitMeetsGoal(narrower, BIG_TXN)).toBe(true);
+    expect(dcEventMeetsGoal(narrower, BIG_TXN)).toBe(true);
   });
 
   it('no, when the condition is on the right attribute but a different value', () => {
-    expect(dcWaitMeetsGoal(wait({ conditions: [{ attribute: 'Transaction Amount', operator: 'is at least', value: '50' }] }), BIG_TXN)).toBe(false);
+    expect(dcEventMeetsGoal(wait({ conditions: [{ attribute: 'Transaction Amount', operator: 'is at least', value: '50' }] }), BIG_TXN)).toBe(false);
   });
 
   it('no, when the comparison differs', () => {
-    expect(dcWaitMeetsGoal(wait({ conditions: [{ attribute: 'Transaction Amount', operator: 'is at most', value: '5000' }] }), BIG_TXN)).toBe(false);
+    expect(dcEventMeetsGoal(wait({ conditions: [{ attribute: 'Transaction Amount', operator: 'is at most', value: '5000' }] }), BIG_TXN)).toBe(false);
   });
 
   it('reads a legacy operator spelling as the same comparison, not a mismatch', () => {
     // A campaign saved before the wording pass stores "Greater than or equal
     // to" where today's UI writes "is at least". Same question.
     const legacyGoal: DripGoal = { ...BIG_TXN, conditions: [{ attribute: 'Transaction Amount', operator: 'Greater than or equal to', value: '5000' }] };
-    expect(dcWaitMeetsGoal(wait({ conditions: BIG_TXN.conditions }), legacyGoal)).toBe(true);
+    expect(dcEventMeetsGoal(wait({ conditions: BIG_TXN.conditions }), legacyGoal)).toBe(true);
   });
 
   it('reads a single stored value as a one-item set, as everything else here does', () => {
     const multi: DripGoal = { ...BIG_TXN, conditions: [{ attribute: 'Transaction Status', operator: 'is any of', values: ['APPROVED'] }] };
-    expect(dcWaitMeetsGoal(wait({ conditions: [{ attribute: 'Transaction Status', operator: 'is any of', value: 'APPROVED' }] }), multi)).toBe(true);
+    expect(dcEventMeetsGoal(wait({ conditions: [{ attribute: 'Transaction Status', operator: 'is any of', value: 'APPROVED' }] }), multi)).toBe(true);
   });
 
   it('no, for a different event entirely, however many conditions line up', () => {
-    expect(dcWaitMeetsGoal(wait({ eventType: 'Virtual card activated', eventCategory: 'Card Events', conditions: BIG_TXN.conditions }), BIG_TXN)).toBe(false);
+    expect(dcEventMeetsGoal(wait({ eventType: 'Virtual card activated', eventCategory: 'Card Events', conditions: BIG_TXN.conditions }), BIG_TXN)).toBe(false);
   });
 
   it('no, when the goal names a scoping field the wait leaves blank', () => {
     const scoped: DripGoal = { eventCategory: 'Offer Events', eventType: 'Outcome Issuance', conditions: [], offerName: 'Welcome Offer' };
     const w = wait({ eventCategory: 'Offer Events', eventType: 'Outcome Issuance', offerName: '' });
-    expect(dcWaitMeetsGoal(w, scoped)).toBe(false);
-    expect(dcWaitMeetsGoal({ ...w, offerName: 'Welcome Offer' }, scoped)).toBe(true);
+    expect(dcEventMeetsGoal(w, scoped)).toBe(false);
+    expect(dcEventMeetsGoal({ ...w, offerName: 'Welcome Offer' }, scoped)).toBe(true);
   });
 
   it('no, when the goal names a card detail the wait leaves blank', () => {
     const scoped: DripGoal = { eventCategory: 'Card Events', eventType: 'Card hotlisted', conditions: [], cardDetails: { 'Hotlist reason': 'Damaged' } };
     const w = wait({ eventCategory: 'Card Events', eventType: 'Card hotlisted' });
-    expect(dcWaitMeetsGoal(w, scoped)).toBe(false);
-    expect(dcWaitMeetsGoal({ ...w, cardDetails: { 'Hotlist reason': 'Damaged' } }, scoped)).toBe(true);
+    expect(dcEventMeetsGoal(w, scoped)).toBe(false);
+    expect(dcEventMeetsGoal({ ...w, cardDetails: { 'Hotlist reason': 'Damaged' } }, scoped)).toBe(true);
   });
 
   it('an empty detail on the goal means any value, so it constrains nothing', () => {
     const loose: DripGoal = { eventCategory: 'Card Events', eventType: 'Card hotlisted', conditions: [], cardDetails: { 'Hotlist reason': '' } };
-    expect(dcWaitMeetsGoal(wait({ eventCategory: 'Card Events', eventType: 'Card hotlisted' }), loose)).toBe(true);
+    expect(dcEventMeetsGoal(wait({ eventCategory: 'Card Events', eventType: 'Card hotlisted' }), loose)).toBe(true);
   });
 
   it('no goal at all is never met', () => {
-    expect(dcWaitMeetsGoal(wait(), null)).toBe(false);
+    expect(dcEventMeetsGoal(wait(), null)).toBe(false);
   });
 });
 

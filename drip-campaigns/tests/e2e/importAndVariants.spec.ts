@@ -44,6 +44,9 @@ test('a new Experiment variant is never named the same as one already there', as
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Variant naming');
   await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  // Say who it is for: an issuer with no programs and the toggle off reaches
+  // nobody, and the submit gate refuses that now.
+  await page.locator('.toggle-row .toggle').first().click();
   await page.getByText('Continue to Goal →').click();
   await page.waitForTimeout(200);
   await page.getByText('Continue to Builder →').click();

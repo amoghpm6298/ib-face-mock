@@ -280,22 +280,28 @@ export function DripBuilder({
   // enforces, plus the structural ones. Submit used to check only name,
   // issuer, root and open slots, so anything that got into the graph by a
   // route other than the drawer was never examined again.
-  const issues = dcValidateCampaign(graph, goal && goal.eventType ? goal : null);
-  const canSubmit = !!name && !!issuer && graph.rootId !== null && issues.length === 0;
+  // Setup goes through the same validator as the journey. Name and issuer
+  // used to be checked here instead, in a ternary chain of their own, which
+  // is the split brain C3 fixed for node config: one rule in the gate and
+  // another in a component drift the moment either moves.
+  const issues = dcValidateCampaign(graph, goal && goal.eventType ? goal : null, {
+    name,
+    issuer,
+    applyToAllPrograms,
+    programs,
+    controlPct,
+    startDate,
+    endDate,
+  });
+  const canSubmit = issues.length === 0;
 
   const validationMessage: string | null = !showValidation
     ? null
-    : !name
-      ? 'Give this campaign a name first — see Edit Setup.'
-      : !issuer
-        ? 'Set an issuer first — see Edit Setup.'
-        : graph.rootId === null
-          ? 'Add an entry step before submitting.'
-          : issues.length > 0
-            ? issues.length === 1
-              ? issues[0].message
-              : `${issues[0].message} (and ${issues.length - 1} more to resolve)`
-            : null;
+    : issues.length === 0
+      ? null
+      : issues.length === 1
+        ? issues[0].message
+        : `${issues[0].message} (and ${issues.length - 1} more to resolve)`;
 
   function buildPayload(status: 'DRAFT' | 'PENDING_REVIEW'): DripBuilderPayload {
     // Never persist a half-filled goal (category picked, no event type
