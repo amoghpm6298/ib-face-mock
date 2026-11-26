@@ -230,7 +230,7 @@ test('the goal carries a conversion window and an exit rule, read back everywher
   await page.waitForTimeout(200);
 
   // No goal yet, so nothing about conversions is on screen.
-  await expect(page.locator('.dcb-mid-inner')).not.toContainText('Conversion window');
+  await expect(page.locator('.dcb-mid-inner')).not.toContainText('What counts as a conversion');
 
   const goalSelects = page.locator('select');
   await goalSelects.nth(0).selectOption('Card Events');
@@ -239,14 +239,16 @@ test('the goal carries a conversion window and an exit rule, read back everywher
 
   // A window is suggested the moment the goal is set — the journey is empty
   // here, so it is the buffer on its own — and the rule is said in words.
-  const windowField = page.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Conversion window' }) }).locator('input');
+  const windowField = page.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Count it if it happens within' }) }).locator('input[type=number]');
   await expect(windowField).toHaveValue('3');
-  await expect(page.locator('.dcb-mid-inner')).toContainText('A conversion is the first Virtual card activated by the same account after it enters, within 3 days');
-  await expect(page.locator('.dcb-mid-inner')).toContainText('The held-back group is measured the same way');
+  // The window has its own field here, so the sentence above it does not
+  // repeat the number — Review and the campaign view say the long form.
+  await expect(page.locator('.dcb-mid-inner')).toContainText('A conversion is someone doing Virtual card activated after they enter this campaign.');
+  await expect(page.locator('.dcb-mid-inner')).toContainText('This affects reporting only. It does not change who gets messaged.');
 
   await windowField.fill('21');
   await page.waitForTimeout(200);
-  await expect(page.locator('.dcb-mid-inner')).toContainText('within 21 days');
+  await expect(windowField).toHaveValue('21');
 
   await page.getByText('Continue to Builder →').click();
   await page.waitForTimeout(300);
@@ -297,10 +299,10 @@ test('turning exit on offers to clear the Goal Checks it would make dead', async
   await goalSelects.nth(0).selectOption('Card Events');
   await goalSelects.nth(1).selectOption('Virtual card activated');
   await page.waitForTimeout(300);
-  const exitToggle = page.locator('.toggle-row', { hasText: 'Stop messaging customers once they convert' }).locator('.toggle');
+  const exitToggle = page.locator('.toggle-row', { hasText: 'Stop messaging once they convert' }).locator('.toggle');
   await exitToggle.click();
   await page.waitForTimeout(200);
-  await expect(page.locator('.dcb-mid-inner')).toContainText('customers carry on through the journey after converting');
+  await expect(page.locator('.dcb-mid-inner')).toContainText('They carry on through the journey after converting');
 
   await page.getByText('Continue to Builder →').click();
   await page.waitForTimeout(300);
@@ -330,7 +332,7 @@ test('turning exit on offers to clear the Goal Checks it would make dead', async
   await page.waitForTimeout(300);
   const banner = page.locator('.dcb-validation-banner');
   await expect(banner).toContainText('1 Goal Check step');
-  await expect(banner).toContainText('cannot fire while customers exit on conversion');
+  await expect(banner).toContainText('cannot fire while customers stop on conversion');
   await banner.getByRole('button', { name: /Remove it/ }).click();
   await page.waitForTimeout(400);
   await expect(banner).toHaveCount(0);

@@ -2210,3 +2210,46 @@ That closes the five-commit rework. **Still open, and deliberately:** several
 goal events any of which counts as a conversion; the rest of H7's guardrails
 (frequency capping, pre-send re-checks, per-channel consent, throttling,
 cross-campaign holdout); and M6's variant assignment unit and stickiness.
+
+## 2026-11-26 (cont'd) — "Counting conversions" was one heading over two
+unrelated settings
+
+Direct feedback: *"this counting conversions ux and concept is not at all
+clear to me"*. It was not, and the fault was the grouping.
+
+**The window changes a number in a report. The toggle changes who gets
+messaged.** Both sat under one heading called "Counting conversions", so each
+read as the other's kind of thing — the toggle looked like a reporting
+option, and the window looked like it might stop messages. Split into **What
+counts as a conversion** and **While the campaign runs**, which is the shape
+the user picked from three options.
+
+**And the copy never said WHY a window exists.** It explained how it is
+measured and where the number came from, which is the mechanics, not the
+point. It now leads with the reason: someone who converts months after a
+one-week campaign probably was not nudged by it, and counting them would let
+the campaign claim credit it did not earn.
+
+**The note is written against the real journey** (`dcWindowNote`), so it
+reads "This journey runs about 10 days, so that covers it with room after the
+last message." And it catches the case that is actually a mistake: **a window
+SHORTER than the journey**, where the last message goes out after the clock
+has stopped and a conversion it caused is never counted.
+
+**A follow-up question — "so it is primarily for analytics and attribution"
+— found a real bug in the engine note.** `QUIBBLER-REQUIREMENTS.md` said a
+message should be held back when the account "has already converted **and**
+the conversion happened within the conversion window". That couples the two:
+it would have an account that converted outside the window keep receiving
+reminders. The window is attribution only. Corrected in both places it
+appeared, and the UI now says it outright: *"This affects reporting only. It
+does not change who gets messaged."*
+
+**An infrastructure note worth keeping:** the e2e suite started failing in
+bulk with `page.goto: net::ERR_ABORTED` — 2 failures, then 8, then 15, with
+no code change between runs. Not the app: Playwright's `webServer` was
+racing its own vite startup on repeat runs. Starting one server first and
+letting `reuseExistingServer` pick it up returns the suite to 59/59. Worth
+reaching for before debugging a "failure" that moves every run.
+
+Verified: 450 unit (444 → 450), 59 e2e, clean typecheck, zero lint errors.

@@ -12,8 +12,10 @@ The builder tells managers that a message **will not be sent** when, at the
 time it would go out, the account:
 
 - **has already converted**, and the campaign is set to stop messaging on
-  conversion (the default), and the conversion happened within the campaign's
-  conversion window;
+  conversion (the default). **The conversion window does not apply here.** It
+  decides what the report counts, not who gets messaged — someone who
+  converted outside the window has still converted, and messaging them anyway
+  would be wrong;
 - **is excluded** — DNC, NPA, or opted out;
 - **is inside quiet hours**, in which case the message either waits until the
   window lifts or is dropped, as the campaign says.
@@ -45,6 +47,8 @@ cancellation**, by choice.
   with no customer or card id anywhere in the path.
 - A conversion is the **first** qualifying goal event by that account **after
   it entered**, within the campaign's conversion window, measured from entry.
+  This is an **attribution rule only**: it decides what the campaign may claim
+  credit for. It never decides whether a message goes out.
 - The **held-back (control) group is measured the same way**, over the same
   window. Different clocks for the two groups would make the comparison
   meaningless.

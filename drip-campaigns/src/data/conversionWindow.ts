@@ -40,12 +40,42 @@ export function dcSuggestConversionWindow(graph: DripGraph | null | undefined): 
   return { duration: Math.max(1, Math.ceil(dcJourneyLengthDays(graph)) + DC_WINDOW_BUFFER_DAYS), unit: 'days' };
 }
 
-// One sentence saying what will be counted, in the author's own terms. Read
-// by the Goal step, Review and the campaign's details view, so none of the
-// three can describe the rule differently.
-export function dcConversionSentence(goal: { eventType?: string; conversionWindow?: { duration: number; unit: string } } | null): string {
+// What counts as a conversion, in one sentence.
+//
+// Two forms of the same fact, from one function so they cannot drift. The
+// Goal step shows the short one, because the window has its own field right
+// underneath it and saying the number twice reads like a stutter. Review and
+// the campaign view show the long one, because there is no field there to
+// read the number off.
+export function dcConversionSentence(
+  goal: { eventType?: string; conversionWindow?: { duration: number; unit: string } } | null,
+  opts: { withWindow?: boolean } = { withWindow: true },
+): string {
   if (!goal?.eventType) return '';
+  const base = `A conversion is someone doing ${goal.eventType} after they enter this campaign.`;
+  if (!opts.withWindow) return base;
   const w = goal.conversionWindow;
-  const window = w && Number(w.duration) > 0 ? `within ${w.duration} ${w.unit}` : 'with no time limit set';
-  return `A conversion is the first ${goal.eventType} by the same account after it enters, ${window}. The held-back group is measured the same way.`;
+  if (!w || !(Number(w.duration) > 0)) return `${base} No time limit is set, so anything counts.`;
+  return `${base} It counts if it happens within ${w.duration} ${w.unit} of them entering. The held-back group is measured the same way.`;
+}
+
+// Why that number, said against the journey it has to cover. A window
+// SHORTER than the journey is a real mistake and worth naming: the last
+// message goes out after the clock has already stopped, so a conversion it
+// caused is never counted.
+export function dcWindowNote(
+  goal: { conversionWindow?: { duration: number; unit: string } } | null,
+  journeyDays: number,
+): string {
+  const w = goal?.conversionWindow;
+  const days = w ? Number(w.duration) / (w.unit === 'hours' ? 24 : 1) : 0;
+  const journey = Math.ceil(journeyDays);
+  if (!(days > 0)) return 'Someone who converts months later probably was not nudged by this campaign, so a limit keeps the report honest.';
+  if (journey > 0 && days < journey) {
+    return `This journey runs about ${journey} days, so the last message goes out after this window closes. A conversion it caused would not be counted.`;
+  }
+  if (journey > 0) {
+    return `This journey runs about ${journey} days, so that covers it with room after the last message. Someone who converts months later probably was not nudged by this campaign.`;
+  }
+  return 'Someone who converts months later probably was not nudged by this campaign, so a limit keeps the report honest.';
 }
