@@ -1256,3 +1256,70 @@ test('Campaign view: a campaign that never ran says so on Analytics', async ({ p
   await expect(page.locator('.an-empty')).toContainText("hasn't run yet");
   await expect(page.locator('.an-total')).toHaveCount(0);
 });
+
+// H3 — a wait may only exit straight to Goal Reached when its own predicate
+// means the goal. Sharing the goal's event type is not enough: with a goal of
+// "Transaction, amount at least ₹5,000", a wait on any Transaction fires on a
+// ₹50 coffee, and every one of those used to be recorded as a conversion.
+test('a Wait for Event broader than the goal gets a real Goal Check; narrowing it to the goal removes the need', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
+  await page.locator('input[type=text]').first().fill('Builder Spec: Goal Predicate');
+  await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  await page.getByText('Continue to Goal →').click();
+  await page.waitForTimeout(200);
+
+  // Goal: a transaction of at least ₹5,000 — not just any transaction.
+  const goalSelects = page.locator('select');
+  await goalSelects.nth(0).selectOption('Transaction Events');
+  await goalSelects.nth(1).selectOption('Transaction');
+  await page.waitForTimeout(200);
+  await page.getByText('+ Add condition').click();
+  await page.waitForTimeout(200);
+  const goalRow = page.locator('.cond-row').first();
+  await goalRow.locator('select').first().selectOption('Transaction Amount');
+  await page.waitForTimeout(150);
+  await goalRow.locator('select').nth(1).selectOption('is at least');
+  await goalRow.locator('input[placeholder="Value"]').fill('5000');
+  await page.getByText('Continue to Builder →').click();
+  await page.waitForTimeout(300);
+
+  await addEntryEvent(page, 'Journey Events', 'Pageload');
+
+  // A wait on the goal's event with no filters of its own — broader.
+  await page.locator('.dc-add-btn').click();
+  await page.locator('.dc-type-opt:has-text("Wait for Event")').click();
+  const drawer = page.locator('.sd-drawer.open');
+  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Category' }) }).locator('select').selectOption('Transaction Events');
+  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Type' }) }).locator('select').selectOption('Transaction');
+  await drawer.locator('input[type=number]').first().fill('5');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(500);
+
+  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(1);
+  await expect(page.locator('.dc-node-card:has-text("Goal Reached")')).toHaveCount(1);
+
+  // Undo, and build the same wait narrowed to the goal's own condition: now
+  // the event firing IS the goal, so it exits straight to Goal Reached.
+  await page.locator('button:has-text("Undo")').click();
+  await page.waitForTimeout(400);
+  await page.locator('.dc-add-btn').click();
+  await page.locator('.dc-type-opt:has-text("Wait for Event")').click();
+  const d2 = page.locator('.sd-drawer.open');
+  await d2.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Category' }) }).locator('select').selectOption('Transaction Events');
+  await d2.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Type' }) }).locator('select').selectOption('Transaction');
+  await d2.locator('input[type=number]').first().fill('5');
+  await d2.getByText('+ Add condition').click();
+  await page.waitForTimeout(200);
+  const waitRow = d2.locator('.cond-row').first();
+  await waitRow.locator('select').first().selectOption('Transaction Amount');
+  await page.waitForTimeout(150);
+  await waitRow.locator('select').nth(1).selectOption('is at least');
+  await waitRow.locator('input[placeholder="Value"]').fill('5000');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(500);
+
+  await expect(page.locator('.dc-node-card:has-text("Goal Reached")')).toHaveCount(1);
+  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
+});

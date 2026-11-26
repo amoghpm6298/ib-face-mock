@@ -1675,3 +1675,60 @@ removing Experiment arms, and the Import screen's own error), clean typecheck
 (`tsc -p tsconfig.app.json --noEmit`), zero lint errors, clean build, plus
 screenshots of both seeded canvases confirming the rebuilt labels and that
 blanking the stale Send `meta` lost nothing visible.
+
+## 2026-11-26 — H3: a wait may only mean the goal if its predicate says so
+
+The last of the goal-correctness arc (C1, C2, H4, now H3). A Wait for Event
+auto-wired its Yes arm straight to Goal Reached whenever the event *category
+and type* matched the goal, ignoring the goal's own conditions. With a goal
+of "Transaction, amount is at least ₹5,000", a wait on "Transaction" with no
+filters fires on a ₹50 coffee, and every one of those was recorded as a
+conversion — the one error analytics can never recover from, since a false
+conversion is indistinguishable from a real one afterwards.
+
+**`dcWaitMeetsGoal` compares the whole predicate**: every goal condition
+(operators normalised through `dcNormalizeOperator`, so a legacy spelling
+still reads as the same comparison, and a single stored `value` reads as a
+one-item set, as everything else here does), every scoping field the goal
+names, every non-empty card detail. **Equal or narrower qualifies** —
+conditions are AND'd, so carrying more than the goal does only ever matches
+fewer customers, and everyone matched has met the goal. Broader does not.
+
+A broader wait now gets a **real Goal Check** on its Yes arm instead of an
+assumption, with the check's No arm left open: "the event fired but the goal
+was not met" is a real outcome and only the author knows what follows it.
+Removing that check by hand stays safe — `dcRemoveGoalCheck` rewires to the
+No continuation and collects the Goal Reached, so the bad wiring cannot come
+back by that route.
+
+**Conservative where it cannot tell.** An operator spelling or value shape it
+cannot compare reads as "does not meet the goal", which inserts a check
+rather than asserting one. The costs are not symmetric: an unnecessary Goal
+Check is visible on the canvas and one click to remove, a false Goal Reached
+is silent.
+
+**The validator now checks auto-generated waits too, and that found one of
+mine.** `dcGoalWiringIssues` used to skip them, reasoning that
+`dcReconcileGoal` keeps them in step with the goal — true in the builder,
+false for every graph that never passes through it: seeds, imports, anything
+a script migrated. **DRIP-004's second checkpoint was exactly that.** The C1
+migration in `8b2a169` converted it into a wait built from the goal as it
+stood *before* the same batch corrected that goal, so the two edits never saw
+each other: it listened for `Transaction` while exiting to Goal Reached under
+a goal of `Outcome Issuance`, recording any purchase as a reward redemption.
+Corrected to the event the conversion should have produced. The lesson is the
+general one — a migration and a correction applied in the same batch need to
+be ordered against each other, and an exemption justified by "the builder
+keeps this in sync" is worth nothing for data that never enters the builder.
+
+**Left alone deliberately:** the statusAttr branch (EMI's New Status) already
+inserts a Goal Check rather than auto-wiring, which is safe whatever the
+predicate, and it preserves a distinction worth keeping — "resolved, but not
+to the goal outcome" is not the same as "never resolved".
+
+Verified: 366 unit (346 → 366, a new `goalPredicate.test.ts` covering the
+predicate comparison, what the builder wires in each case, and the validator
+on an existing graph), 54 e2e (a new one building a broader wait through the
+real drawer, seeing the Goal Check appear, then building the same wait
+narrowed to the goal and seeing it exit straight to Goal Reached), clean
+typecheck, zero lint errors, plus a screenshot of the resulting canvas.

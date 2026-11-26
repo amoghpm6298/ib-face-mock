@@ -5,9 +5,9 @@
 // Every action below clones its input graph once, then runs the same
 // mutate-style graph-op functions against that clone — same algorithms,
 // new mutation target, per the migration plan.
-import type { DripGraph, DripGoal } from '../data/graphTypes';
+import type { DripGraph, DripGoal, DripGoalCondition } from '../data/graphTypes';
 import type { DcNodeType } from '../data/nodeMeta';
-import { DC_EVENT_ENTITY, DC_PROMOTED_ATTR } from '../data/sharedConstants';
+import { DC_EVENT_ENTITY, DC_PROMOTED_ATTR, dcNormalizeOperator } from '../data/sharedConstants';
 import { dcNewEdgeId, dcNewNodeId } from './idGen';
 import { dcReconcileBranchEdges, dcRemoveEdge as dcRemoveEdgeOp, dcRemoveGoalCheck as dcRemoveGoalCheckOp, dcRemoveRoot as dcRemoveRootOp } from './graphOps';
 import { dcDecisionBranchSummary, dcGoalLabel, dcRecomputeLabelMeta } from './labelMeta';
@@ -35,6 +35,66 @@ export type DcAddingAt = { kind: 'root' } | { kind: 'edge'; edgeId: string } | {
 // on. A default, not a claim about the right number — the author edits it
 // like any other wait.
 const DC_SEND_GOAL_WAIT_DAYS = 3;
+
+// ---------------------------------------------------------------------------
+// Does this wait MEAN the goal, or merely share its event?
+//
+// Matching the goal's event category and type is not enough to call the
+// event firing "goal achieved". A goal of "Transaction, amount is at least
+// ₹5,000" with a wait on "Transaction" and no filters fires on a ₹50 coffee,
+// and wiring that straight to Goal Reached records a goal that was never
+// achieved — the one error analytics can never recover from, since a false
+// conversion is indistinguishable from a real one afterwards.
+//
+// Equal or NARROWER qualifies. Conditions on a wait are AND'd, so carrying
+// more of them than the goal does only ever matches fewer customers, and
+// everyone it matches has met the goal. What disqualifies a wait is being
+// BROADER: missing one of the goal's own conditions, or leaving blank a
+// scoping field or card detail the goal names.
+//
+// Deliberately conservative where it cannot tell. An operator spelling it
+// does not recognise, or a value shape it cannot compare, reads as "does not
+// meet the goal" — which inserts a real check rather than asserting one. The
+// costs are not symmetric: an unnecessary Goal Check is visible on the canvas
+// and removable in one click, while a false Goal Reached is silent.
+// ---------------------------------------------------------------------------
+function valuesOf(c: { value?: string; values?: string[]; value2?: string }): string {
+  // A condition saved before multi-select existed carries only `value`;
+  // dcSelectedMulti reads that as a one-item set, and so does this.
+  const set = c.values && c.values.length ? [...c.values] : c.value ? [c.value] : [];
+  return JSON.stringify([set.map((v) => String(v).trim()).sort(), String(c.value2 ?? '').trim()]);
+}
+
+function sameCondition(a: DripGoalCondition, b: DripGoalCondition): boolean {
+  return (
+    String(a.attribute ?? '').trim() === String(b.attribute ?? '').trim() &&
+    dcNormalizeOperator(a.operator) === dcNormalizeOperator(b.operator) &&
+    valuesOf(a) === valuesOf(b)
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function dcWaitMeetsGoal(p: any, goal: DripGoal | null): boolean {
+  if (!goal || !goal.eventType) return false;
+  p = p || {};
+  if (goal.eventCategory !== p.eventCategory || goal.eventType !== p.eventType) return false;
+
+  const mine: DripGoalCondition[] = p.conditions || [];
+  for (const need of goal.conditions || []) {
+    if (!mine.some((have) => sameCondition(have, need))) return false;
+  }
+
+  for (const key of ['journey', 'batch', 'offerType', 'offerName'] as const) {
+    const want = String(goal[key] ?? '').trim();
+    if (want && String(p[key] ?? '').trim() !== want) return false;
+  }
+
+  for (const [key, want] of Object.entries(goal.cardDetails || {})) {
+    if (!want) continue; // an empty detail on the goal means any value
+    if (String((p.cardDetails || {})[key] ?? '').trim() !== String(want).trim()) return false;
+  }
+  return true;
+}
 
 // The outcome wiring for a Wait For Event, shared by the two routes that
 // create one: a hand-placed Wait For Event, and the one auto-inserted
@@ -87,10 +147,26 @@ function dcAttachWaitOutcome(next: DripGraph, id: string, p: any, goal: DripGoal
       // event firing is never automatically "the goal," regardless of
       // how unambiguous it is, unless a Goal says so.
       const goalMatchesThisEvent = goal && goal.eventCategory === p.eventCategory && goal.eventType === p.eventType;
-      if (goalMatchesThisEvent) {
+      if (dcWaitMeetsGoal(p, goal)) {
+        // This wait's own predicate equals or narrows the goal, so the event
+        // firing under it IS the goal — nothing left to check.
         const goalExitId = dcNewNodeId();
         next.nodes[goalExitId] = { id: goalExitId, type: 'GOAL_EXIT', label, meta: '', _config: null, autoGenerated: true };
         next.edges.push({ id: dcNewEdgeId(), from: id, to: goalExitId, branchLabel: 'Yes', autoGenerated: true });
+      } else if (goalMatchesThisEvent) {
+        // Right event, broader predicate: the goal asks for something this
+        // wait does not. Insert a real Goal Check rather than assuming —
+        // it evaluates the whole goal, so the author gets the right answer
+        // without having to restate the goal's filters on the wait. Its No
+        // arm is left open: "the event fired but the goal was not met" is a
+        // real outcome, and only the author knows what should follow it.
+        const checkId = dcNewNodeId();
+        const goalExitId = dcNewNodeId();
+        next.nodes[checkId] = { id: checkId, type: 'GOAL_CHECK', label: (dcGoalLabel(goal) || 'Goal') + '?', meta: '', _config: null, autoGenerated: true };
+        next.nodes[goalExitId] = { id: goalExitId, type: 'GOAL_EXIT', label: dcGoalLabel(goal) || 'Goal achieved', meta: '', _config: null, autoGenerated: true };
+        next.edges.push({ id: dcNewEdgeId(), from: id, to: checkId, branchLabel: 'Yes', autoGenerated: true });
+        next.edges.push({ id: dcNewEdgeId(), from: checkId, to: goalExitId, branchLabel: 'Yes', autoGenerated: true });
+        next.edges.push({ id: dcNewEdgeId(), from: checkId, to: null, branchLabel: 'No', autoGenerated: false });
       } else {
         next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'Yes', autoGenerated: false });
       }
@@ -368,17 +444,32 @@ export function dcGoalWiringIssues(graph: DripGraph, goal: DripGoal | null): str
     return issues;
   }
 
-  // A Goal Reached wired off a hand-placed wait for some OTHER event records
-  // goal attainment for something that is not the goal.
+  // A Goal Reached wired off a wait that does not mean the goal records goal
+  // attainment for something that is not the goal.
+  //
+  // Auto-generated waits are checked too, which they did not used to be. The
+  // old reasoning was that dcReconcileGoal keeps them in step with the goal —
+  // true in the builder, and false for every graph that never passes through
+  // it: a seeded campaign, an imported one, anything migrated by a script.
+  // That exemption hid a real defect in this repo's own seed data, where a
+  // wait left listening for Transaction exited to Goal Reached under a goal
+  // of Outcome Issuance, recording any purchase as a reward redemption.
   for (const n of nodes) {
     if (n.type !== 'GOAL_EXIT') continue;
     const incoming = graph.edges.find((e) => e.to === n.id);
     const src = incoming ? graph.nodes[incoming.from] : null;
-    if (!src || src.type !== 'WAIT_UNTIL' || src.autoGenerated) continue;
-    const evt = ((src._config || {}) as { eventType?: string }).eventType;
-    if (evt && evt !== goal.eventType) {
+    if (!src || src.type !== 'WAIT_UNTIL') continue;
+    const cfg = (src._config || {}) as { eventType?: string };
+    if (!cfg.eventType) continue;
+    if (cfg.eventType !== goal.eventType) {
       issues.push(
-        `"${src.label}" waits for ${evt} but exits to Goal Reached, and the campaign goal is ${goal.eventType}. That records a goal that was not achieved.`,
+        `"${src.label}" waits for ${cfg.eventType} but exits to Goal Reached, and the campaign goal is ${goal.eventType}. That records a goal that was not achieved.`,
+      );
+    } else if (!dcWaitMeetsGoal(src._config, goal)) {
+      // Same event, broader predicate — it fires for customers the goal
+      // would not count.
+      issues.push(
+        `"${src.label}" exits to Goal Reached, but it waits for ${cfg.eventType} more broadly than the goal does. Narrow it to match the goal, or put a Goal Check between them.`,
       );
     }
   }

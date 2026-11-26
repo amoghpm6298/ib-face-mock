@@ -9,7 +9,7 @@ This module is a **builder only** — it saves journeys as config and nothing ex
 | | Count | Fixed |
 |---|---|---|
 | Critical | 3 | **3** |
-| High | 8 | **4** |
+| High | 8 | **5** |
 | Medium | 9 | **5** |
 | Low | 5 | 0 |
 
@@ -126,7 +126,7 @@ const MID_EDGE_RESTRICTED_TYPES: DcNodeType[] = ['DECISION_SPLIT', 'RANDOM_SPLIT
 
 **Fix.** Either restrict both types, or reattach to a chosen port — `No` for Condition, timeout for Wait for Event. Add an unreachable-node check.
 
-### H3 · Wait for Event wires to Goal Reached on event identity alone
+### H3 · Wait for Event wires to Goal Reached on event identity alone  ✅ **FIXED**
 
 **`src/reducer/campaignReducer.ts:83` and `:116`**
 
@@ -137,6 +137,14 @@ const goalMatchesThisEvent = goal && goal.eventCategory === p.eventCategory && g
 The goal's `conditions`, `cardDetails` and journey/offer scoping are ignored. Goal = *Transaction, amount ≥ ₹5,000* with a Wait for *Transaction* and no filters sends every transaction down the Goal Reached path.
 
 **Fix.** Auto-wire only when the Wait's predicate equals or narrows the goal's. Otherwise insert a real `GOAL_CHECK`.
+
+> **Fixed, as prescribed.** `dcWaitMeetsGoal` compares the whole predicate — every goal condition (operators normalised through `dcNormalizeOperator`, so a legacy spelling still reads as the same comparison, and a single stored `value` reads as a one-item set), every scoping field the goal names, every non-empty card detail. Equal or narrower qualifies: conditions are AND'd, so carrying more than the goal does only ever matches fewer customers. Broader does not, and gets a real Goal Check on the wait's Yes arm, with its No arm left open — "the event fired but the goal was not met" is a real outcome only the author can route.
+>
+> Deliberately conservative where it cannot tell: an unrecognised operator or value shape reads as *not* meeting the goal. The costs are not symmetric — an unnecessary Goal Check is visible on the canvas and removable in one click, while a false Goal Reached is silent and indistinguishable from a real conversion afterwards.
+>
+> **The validator now checks auto-generated waits too**, which it did not before. The old exemption reasoned that `dcReconcileGoal` keeps them in step with the goal — true in the builder, false for any graph that never passes through it. **It was hiding a real defect in this repo's own seed data, introduced by the C1 migration in `8b2a169`:** DRIP-004's second checkpoint was converted into a wait built from the goal as it stood *before* that same batch corrected the goal, so it listened for `Transaction` while exiting to Goal Reached under a goal of `Outcome Issuance` — recording any purchase at all as a reward redemption. The seed is corrected to the event the conversion should have produced.
+>
+> The statusAttr branch (EMI's New Status) is deliberately unchanged: it already inserts a Goal Check rather than auto-wiring, which is safe whatever the predicate, and it preserves a distinction worth keeping — "resolved, but not to the goal outcome" is not the same as "never resolved".
 
 ### H4 · Editing the Goal leaves stale wiring  ✅ **FIXED**
 
