@@ -2142,3 +2142,40 @@ Verified: 433 unit (428 → 433), 59 e2e (1 new, driving the whole clash: exit
 off so a Goal Check can be added, the check added, exit back on, the offer
 appearing, the removal, and the canvas afterwards), clean typecheck, zero
 lint errors, clean build.
+
+## 2026-11-26 (cont'd) — Commit 4: where the conversions came from
+
+The campaign total is one number. These are the two breakdowns a reader
+actually asks for, and they are worded as **different claims on purpose**:
+
+- **A Send is CREDITED with conversions** — it was the last message those
+  accounts received before converting. Not that it caused them.
+- **A wait is where people WERE** when it happened — "converted while here",
+  which is not a claim about that step at all.
+
+**Last-touch, computed from counts already walked.** A Send's pool is the
+people who reached it and did not go on to receive another message; reaching
+a later Send moves the credit forward. `downstreamSendCount` walks past waits
+and conditions and stops at the first Send on each path. The shares sum to
+the campaign total by construction, with the remainder going to the largest
+pool rather than being dropped.
+
+**An honest consequence worth knowing before anyone reads the numbers**: on a
+linear chain where nearly everyone receives all three messages, nearly
+everyone's *last* message is the third one, so the final Send carries most of
+the credit. That is what last-touch means, not a bug in the model.
+
+**"Converted while here" is only counted when exit on conversion is on.**
+With it off nobody leaves at the moment of conversion, so there is no "here"
+to name — and the map stays empty rather than inventing a step.
+
+**Both groups on one clock.** The note under the totals says the window, both
+rates and the difference **with its sign**: "Measured over 13 days from
+entry, for both groups. 29.8% of those messaged converted, against 12.1% of
+those held back, 17.7 points higher." A negative result reads "points LOWER",
+because "uplift: -2.1pp" is a number people read as a success out of habit.
+The tile is "Converted", not "Reached the goal" — it is a count within a
+window now, not arrivals at a node.
+
+Verified: 444 unit (433 → 444), 59 e2e, clean typecheck, zero lint errors,
+clean build, plus a screenshot of the funnel.

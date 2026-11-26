@@ -26,7 +26,7 @@ test('Analytics shows the two totals and an annotated journey for a live campaig
   // Two totals, each with its held-back figure beside it.
   await expect(page.locator('.an-total')).toHaveCount(2);
   await expect(page.locator('.an-total').first()).toContainText('Entered');
-  await expect(page.locator('.an-total').nth(1)).toContainText('Reached the goal');
+  await expect(page.locator('.an-total').nth(1)).toContainText('Converted');
   // Annotated journey — nodes carry a "reached" stat line.
   await expect(page.locator('.dc-node-stat').first()).toBeVisible();
 });

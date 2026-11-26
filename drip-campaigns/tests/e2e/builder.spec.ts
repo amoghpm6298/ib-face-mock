@@ -1212,7 +1212,9 @@ test('Campaign view: Analytics totals, arrow splits, and following one path', as
   // rate and no single still-in-sequence total.
   await expect(page.locator('.an-total')).toHaveCount(2);
   await expect(page.locator('.an-total').first()).toContainText('Held back');
-  await expect(page.locator('.an-total').nth(1)).toContainText('Held back, reached it anyway');
+  await expect(page.locator('.an-total').nth(1)).toContainText('Held back, converted anyway');
+  // Both groups, one window, and the difference said with its sign.
+  await expect(page.locator('.an-note')).toContainText('for both groups');
   await expect(page.getByText('Conversion Rate')).toHaveCount(0);
   await expect(page.getByText('Still In Sequence')).toHaveCount(0);
 
