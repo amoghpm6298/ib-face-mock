@@ -143,7 +143,6 @@ function NodeForm({
       // directly for this type instead of routing through NodeForm, since
       // it also needs the onGoToGoal callback this switch doesn't carry.
       return null;
-    case 'GOAL_EXIT':
     case 'EXIT':
       // Same form, but the two end different things — see ReasonForm.
       return <Forms.ReasonForm p={p} onChange={onChange} terminal={type} />;

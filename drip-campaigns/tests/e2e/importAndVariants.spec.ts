@@ -216,3 +216,126 @@ test('quiet hours are on by default, editable, and read back on the campaign', a
   // And what one run counts as, which is the thing re-entry depends on.
   await expect(details).toContainText('A customer with two cards on one account goes through this campaign once');
 });
+
+// Commit 2 — the Goal step says what counts as a conversion, suggests a
+// window from the journey, and reads both back on Review and the campaign.
+test('the goal carries a conversion window and an exit rule, read back everywhere', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
+  await page.locator('input[type=text]').first().fill('Conversion settings');
+  await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  await page.locator('.toggle-row .toggle').first().click();
+  await page.getByText('Continue to Goal →').click();
+  await page.waitForTimeout(200);
+
+  // No goal yet, so nothing about conversions is on screen.
+  await expect(page.locator('.dcb-mid-inner')).not.toContainText('Conversion window');
+
+  const goalSelects = page.locator('select');
+  await goalSelects.nth(0).selectOption('Card Events');
+  await goalSelects.nth(1).selectOption('Virtual card activated');
+  await page.waitForTimeout(300);
+
+  // A window is suggested the moment the goal is set — the journey is empty
+  // here, so it is the buffer on its own — and the rule is said in words.
+  const windowField = page.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Conversion window' }) }).locator('input');
+  await expect(windowField).toHaveValue('3');
+  await expect(page.locator('.dcb-mid-inner')).toContainText('A conversion is the first Virtual card activated by the same account after it enters, within 3 days');
+  await expect(page.locator('.dcb-mid-inner')).toContainText('The held-back group is measured the same way');
+
+  await windowField.fill('21');
+  await page.waitForTimeout(200);
+  await expect(page.locator('.dcb-mid-inner')).toContainText('within 21 days');
+
+  await page.getByText('Continue to Builder →').click();
+  await page.waitForTimeout(300);
+  await page.locator('.dc-add-entry-placeholder').click();
+  await page.locator('.dc-type-opt:has-text("Entry · Event")').click();
+  const entry = page.locator('.sd-drawer.open');
+  await entry.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Category' }) }).locator('select').selectOption('Card Events');
+  await entry.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Type' }) }).locator('select').selectOption('Virtual card issued');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(300);
+  await page.locator('.dc-add-btn').click();
+  await page.locator('.dc-type-opt', { hasText: /^Exit/ }).click();
+  await page.locator('.sd-drawer.open input[type=text]').first().fill('done');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(400);
+
+  await page.getByText('Continue to Guardrails').click();
+  await page.waitForTimeout(300);
+  await page.getByText('Continue to Review').click();
+  await page.waitForTimeout(300);
+  await expect(page.locator('.dcb-mid-inner')).toContainText('within 21 days');
+  await expect(page.locator('.dcb-mid-inner')).toContainText('Customers stop receiving messages once they convert');
+
+  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.waitForTimeout(400);
+  await page.locator('table tbody tr', { hasText: 'Conversion settings' }).click();
+  await page.waitForTimeout(500);
+  const details = page.locator('.dv-body, .bd-wrap, main').first();
+  await expect(details).toContainText('within 21 days');
+  await expect(details).toContainText('Customers stop receiving messages, wherever they are in the journey.');
+});
+
+// Commit 3 — a Goal Check and exit-on-conversion contradict each other, and
+// the Goal step offers to resolve it where the switch is rather than leaving
+// the submit gate to refuse two steps later.
+test('turning exit on offers to clear the Goal Checks it would make dead', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
+  await page.locator('input[type=text]').first().fill('Goal check clash');
+  await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  await page.locator('.toggle-row .toggle').first().click();
+  await page.getByText('Continue to Goal →').click();
+  await page.waitForTimeout(200);
+
+  // Set a goal, then turn exit OFF so a Goal Check can be added at all.
+  const goalSelects = page.locator('select');
+  await goalSelects.nth(0).selectOption('Card Events');
+  await goalSelects.nth(1).selectOption('Virtual card activated');
+  await page.waitForTimeout(300);
+  const exitToggle = page.locator('.toggle-row', { hasText: 'Stop messaging customers once they convert' }).locator('.toggle');
+  await exitToggle.click();
+  await page.waitForTimeout(200);
+  await expect(page.locator('.dcb-mid-inner')).toContainText('customers carry on through the journey after converting');
+
+  await page.getByText('Continue to Builder →').click();
+  await page.waitForTimeout(300);
+  await page.locator('.dc-add-entry-placeholder').click();
+  await page.locator('.dc-type-opt:has-text("Entry · Event")').click();
+  const entry = page.locator('.sd-drawer.open');
+  await entry.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Category' }) }).locator('select').selectOption('Card Events');
+  await entry.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Type' }) }).locator('select').selectOption('Virtual card issued');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(300);
+
+  // Now Goal Check is offered, because exit is off.
+  await page.locator('.dc-add-btn').click();
+  const tile = page.locator('.dc-type-opt', { hasText: 'Goal Check' });
+  await expect(tile).not.toHaveClass(/disabled/);
+  await tile.click();
+  await page.waitForTimeout(200);
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(400);
+  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(1);
+
+  // Turn exit back on: the Goal step says the check cannot fire, and offers
+  // to remove it right there.
+  await page.locator('.dcb-vstep', { hasText: 'Goal' }).click();
+  await page.waitForTimeout(300);
+  await exitToggle.click();
+  await page.waitForTimeout(300);
+  const banner = page.locator('.dcb-validation-banner');
+  await expect(banner).toContainText('1 Goal Check step');
+  await expect(banner).toContainText('cannot fire while customers exit on conversion');
+  await banner.getByRole('button', { name: /Remove it/ }).click();
+  await page.waitForTimeout(400);
+  await expect(banner).toHaveCount(0);
+
+  await page.locator('.dcb-vstep', { hasText: 'Builder' }).click();
+  await page.waitForTimeout(500);
+  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
+});

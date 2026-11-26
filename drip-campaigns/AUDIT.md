@@ -450,6 +450,37 @@ A second pass, once every label was rebuilt from its own `_config`, found **28 o
 
 **One seed-design question this raised, left open rather than guessed:** DRIP-004 ("Reward Points Expiry Reminder") has a goal of `Outcome Issuance` with no conditions, so any outcome issuance counts as redemption. Its exits say "Redeemed". Narrowing the goal to `Outcome Status = Redeemed` is probably what it means, but it would change what every wait in that campaign listens for, so it is a decision rather than a correction.
 
+## The goal rework (2026-11-26) — decisions
+
+This audit's fixes assumed conversion was something drawn on the canvas. It
+is not any more, and several findings above were closed by code that has
+since been deleted. What replaced them, and the calls made on the way:
+
+| Decision | Why |
+|---|---|
+| **Conversion is a campaign setting, not a node** | A node only evaluates where it sits, so a goal drawn into the journey only catches someone who converts at that point. C1's fix shrank that race; it could not close it. |
+| **Exit on conversion is a toggle, on by default** | "Stop messaging customers once they convert." Off is a real campaign — one that keeps messaging after conversion — and it is the only state in which a Goal Check can fire. |
+| **The conversion window is measured from entry** | Not from the last message. One clock per account, and the same clock for the held-back group. |
+| **The window is suggested once, never recomputed** | Longest branch plus a three-day buffer, offered when the goal is first set. A figure that silently changes as the canvas is edited is worse than one the author can see. |
+| **The end date stops messages; the window still counts** | An account that entered keeps its own window, so a late entrant is not judged on a shorter clock than an early one. |
+| **Conversions are credited to the last message received** | And "converted while here" names where the account was standing, which is a different claim from crediting a step. |
+| **One goal event in Phase 1** | Several events, any of which counts, is a real ask and a later one. |
+| **Exclusions go through entry filters** | Rather than a second list on the Goal step. |
+| **Goal Reached is gone; Exit is "End journey"** | Conversion is counted from the event within the window, so a step declaring it was a second source of truth for the same fact. |
+
+**What this retired:** H3's wiring half, H4's goal reconcile, L3's Yes-arm
+rule, and L4's defect (the label that printed "undefined" was built by code
+that no longer exists). H3's predicate comparison survives — M8 still asks it
+of an Entry · Event. The findings stay marked fixed above: they were, and
+then the ground moved.
+
+**What the engine still has to confirm** is in `QUIBBLER-REQUIREMENTS.md`.
+The builder says a converted account "receives no further messages" rather
+than "is removed the moment they convert", because whether a queued message
+can be cancelled on the event — as opposed to declined when its turn comes —
+could not be established from reading `quibbler`. The weaker wording is true
+either way, and no screen depends on the stronger one.
+
 ## What is left
 
 **All 25 findings are now closed.** 22 fixed; three closed by answer rather than by code — H5 (leave re-entry as it is, by decision), H6 (a run is per account, verified in quibbler, so there is nothing to make configurable), and L5 (the engine has no entry-time snapshot, so a control for it would promise what it cannot do).

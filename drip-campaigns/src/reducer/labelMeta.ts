@@ -265,7 +265,6 @@ export function dcRecomputeLabelMeta(type: DcNodeType, p: any, goal: DripGoal | 
   // every existing Goal Check's label for free, with no second copy of
   // the goal stored on any node.
   if (type === 'GOAL_CHECK') return { label: (dcGoalLabel(goal) || 'Goal') + '?', meta: '' };
-  if (type === 'GOAL_EXIT') return { label: p.reason || 'Goal reached', meta: '' };
-  if (type === 'EXIT') return { label: p.reason || 'Exit', meta: '' };
+  if (type === 'EXIT') return { label: p.reason || 'End journey', meta: '' };
   return { label: '', meta: '' };
 }

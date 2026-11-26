@@ -253,7 +253,7 @@ export function SendForm({ p, onChange }: FormProps) {
         // not a step on the canvas, not counted in analytics, and not
         // listening for the goal, so a customer who converted during it was
         // messaged anyway. Use a Wait step for a gap.
-        <p className="f-hint" style={{ marginTop: -4 }}>To leave a gap before this message, add a Wait step before it. A wait is visible on the canvas and stops the moment the goal is reached.</p>
+        <p className="f-hint" style={{ marginTop: -4 }}>To leave a gap before this message, add a Wait step before it. A wait is visible on the canvas, and someone who converts gets no further messages from this campaign.</p>
       )}
       <AccountTemplateFields channel={p.channel} p={p} onChange={onChange} />
       <div className="f-group">

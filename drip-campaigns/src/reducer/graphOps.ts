@@ -199,7 +199,7 @@ export function dcReconcileBranchEdges(
 export function dcGraphHasOpenBranches(graph: DripGraph): boolean {
   if (!graph.rootId) return true;
   const leafOpen = Object.values(graph.nodes).some(
-    (nd) => !graph.edges.some((e) => e.from === nd.id) && nd.type !== 'GOAL_EXIT' && nd.type !== 'EXIT',
+    (nd) => !graph.edges.some((e) => e.from === nd.id) && nd.type !== 'EXIT',
   );
   const slotOpen = graph.edges.some((e) => e.to === null);
   return leafOpen || slotOpen;

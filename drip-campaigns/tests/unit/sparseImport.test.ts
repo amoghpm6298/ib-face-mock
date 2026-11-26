@@ -78,9 +78,11 @@ describe('ingest names the steps a file did not name', () => {
   });
 
   it('a node with a null config still gets a readable name', () => {
-    const r = ingestCampaignJson(graphOf({ n1: node('GOAL_EXIT', { label: '', _config: null }) }), 'DRIP-3');
+    // Was filed as a GOAL_EXIT, which no longer exists. An Exit is the same
+    // shape of case: a terminal step whose whole config is its reason.
+    const r = ingestCampaignJson(graphOf({ n1: node('EXIT', { label: '', _config: null }) }), 'DRIP-3');
     if (!r.ok) throw new Error('rejected');
-    expect(r.campaign.root!.nodes.n1.label).toBe('Goal reached');
+    expect(r.campaign.root!.nodes.n1.label).toBe('End journey');
   });
 });
 

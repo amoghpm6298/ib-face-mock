@@ -9,7 +9,7 @@ import { dcPortOf } from '../../src/data/ports';
 import type { DripGraph, DripGoal } from '../../src/data/graphTypes';
 import { dcResetIdCounters } from '../../src/reducer/idGen';
 import { dcGraphHasOpenBranches } from '../../src/reducer/graphOps';
-import { dcConfirmAddNode, dcConfirmEditNode, dcRemoveEdge, dcRemoveGoalCheck, dcRenameEdge, type DcAddingAt, dcReconcileGoal, dcGoalWiringIssues, dcValidateCampaign } from '../../src/reducer/campaignReducer';
+import { dcConfirmAddNode, dcConfirmEditNode, dcRemoveEdge, dcRemoveGoalCheck, dcRenameEdge, type DcAddingAt, dcReconcileGoal, dcValidateCampaign } from '../../src/reducer/campaignReducer';
 import { dcDefaultConfig, dcAddFormValid } from '../../src/reducer/defaultConfig';
 import { resolveEntryEventAttrSource, EVENT_ATTR_BY_TYPE, MILESTONE_OFFERS, dcFilterOptionGroups } from '../../src/data/sharedConstants';
 import { dcMilestoneSummary } from '../../src/reducer/labelMeta';
@@ -23,7 +23,7 @@ const EMPTY_GRAPH: DripGraph = { nodes: {}, edges: [], rootId: null };
 const TEST_GOAL: DripGoal = { eventCategory: 'Card Events', eventType: 'Virtual card activated', conditions: [] };
 
 function addEntryEvent(graph: DripGraph, overrides: Record<string, unknown> = {}): DripGraph {
-  const p = { ...dcDefaultConfig('ENTRY_EVENT', null), eventCategory: 'Journey Events', eventType: 'Pageload', ...overrides };
+  const p = { ...dcDefaultConfig('ENTRY_EVENT'), eventCategory: 'Journey Events', eventType: 'Pageload', ...overrides };
   return dcConfirmAddNode(graph, 'ENTRY_EVENT', p, { kind: 'root' }, null);
 }
 
@@ -37,7 +37,7 @@ describe('Entry nodes', () => {
   // so a Segment's meta line never repeats them — the condition itself
   // still lives in _config, just not rendered on the card.
   it('Entry Segment meta omits condition detail — conditions stay in _config, not on canvas', () => {
-    const p = { ...dcDefaultConfig('ENTRY_SEGMENT', null), conditions: [{ attribute: 'Status', operator: 'Equals', value: 'Active' }] };
+    const p = { ...dcDefaultConfig('ENTRY_SEGMENT'), conditions: [{ attribute: 'Status', operator: 'Equals', value: 'Active' }] };
     const g = dcConfirmAddNode(EMPTY_GRAPH, 'ENTRY_SEGMENT', p, { kind: 'root' }, null);
     expect(g.rootId).toBeTruthy();
     const root = g.nodes[g.rootId!];
@@ -53,7 +53,7 @@ describe('Entry nodes', () => {
   });
 
   it('Entry Segment with repeat on shows only the recurrence in meta — no entity, no condition detail', () => {
-    const p = { ...dcDefaultConfig('ENTRY_SEGMENT', null), repeat: true, entity: 'Account', conditions: [{ attribute: 'Status', operator: 'Equals', value: 'Active' }] };
+    const p = { ...dcDefaultConfig('ENTRY_SEGMENT'), repeat: true, entity: 'Account', conditions: [{ attribute: 'Status', operator: 'Equals', value: 'Active' }] };
     const g = dcConfirmAddNode(EMPTY_GRAPH, 'ENTRY_SEGMENT', p, { kind: 'root' }, null);
     const root = g.nodes[g.rootId!];
     expect(root.meta).toContain('every month');
@@ -63,161 +63,57 @@ describe('Entry nodes', () => {
   });
 });
 
-describe('Send -> auto goal-check', () => {
-  it('Send auto-inserts a WAIT_UNTIL on the goal event — never a zero-delay GOAL_CHECK — and a second Send chains under its timeout', () => {
+// Conversion is a campaign setting now, so none of these steps grows a goal
+// node any more. What each one does grow is the plain open slot that says
+// "something comes next, and you choose it".
+describe('Send, Pause and Wait grow nothing of their own', () => {
+  it('a Send gets one open slot, with or without a goal', () => {
+    for (const goal of [TEST_GOAL, null]) {
+      dcResetIdCounters();
+      let g = addEntryEvent(EMPTY_GRAPH);
+      const sendP = { ...dcDefaultConfig('SEND'), name: 'Msg1', channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3313' };
+      g = dcConfirmAddNode(g, 'SEND', sendP, { kind: 'growLeaf', nodeId: g.rootId! }, goal);
+      const send = Object.values(g.nodes).find((n) => n.type === 'SEND')!;
+      expect(Object.values(g.nodes).map((n) => n.type)).toEqual(['ENTRY_EVENT', 'SEND']);
+      expect(g.edges.filter((e) => e.from === send.id)).toHaveLength(1);
+      expect(g.edges.find((e) => e.from === send.id)!.to).toBeNull();
+    }
+  });
+
+  it('a Pause gets one open slot, with or without a goal', () => {
+    for (const goal of [TEST_GOAL, null]) {
+      dcResetIdCounters();
+      let g = addEntryEvent(EMPTY_GRAPH);
+      g = dcConfirmAddNode(g, 'PAUSE', { duration: 3, unit: 'days' }, { kind: 'growLeaf', nodeId: g.rootId! }, goal);
+      expect(Object.values(g.nodes).map((n) => n.type)).toEqual(['ENTRY_EVENT', 'PAUSE']);
+      expect(g.edges.filter((e) => e.to === null)).toHaveLength(1);
+    }
+  });
+
+  it('nothing anywhere auto-inserts a Goal Check', () => {
     let g = addEntryEvent(EMPTY_GRAPH);
-    const sendP = { ...dcDefaultConfig('SEND', null), name: 'Msg1', channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' };
+    const sendP = { ...dcDefaultConfig('SEND'), name: 'M', channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3313' };
     g = dcConfirmAddNode(g, 'SEND', sendP, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
-    expect(Object.keys(g.nodes).length).toBeGreaterThanOrEqual(3); // Entry + Send + auto WAIT_UNTIL (+ GOAL_EXIT)
-
-    const send = Object.values(g.nodes).find((n) => n.label === 'Msg1')!;
-    const splitEdge = g.edges.find((e) => e.from === send.id)!;
-    const split = g.nodes[splitEdge.to!];
-    // The whole point: time has to pass before the goal can be judged, so
-    // what follows a Send is a wait on the goal event, not a check.
-    expect(split.type).toBe('WAIT_UNTIL');
-    expect(split.autoGenerated).toBe(true);
-    // The goal's own predicate travels onto the wait, so it means the
-    // goal and not merely the goal's event type.
-    expect((split._config as { eventType?: string }).eventType).toBe(TEST_GOAL.eventType);
-    const yesEdge = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'event')!;
-    expect(g.nodes[yesEdge.to!].type).toBe('GOAL_EXIT');
-
-    const noEdge = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'timeout')!;
-    expect(noEdge.to).toBeNull();
-
-    // chain a second Send, this one with a fallback channel configured,
-    // under the No branch
-    const fallbackSendP = { ...dcDefaultConfig('SEND', null), name: 'Msg2', channel: 'WHATSAPP', account: 'IBL-Karix-Txns', templateId: 'CT-3311', fallbackChannel: 'SMS', fallbackAccount: 'IBL-Karix-Txns', fallbackTemplateId: 'CT-3301' };
-    g = dcConfirmAddNode(g, 'SEND', fallbackSendP, { kind: 'edge', edgeId: noEdge.id }, TEST_GOAL);
-    const send2 = Object.values(g.nodes).find((n) => n.label === 'Msg2')!;
-    expect((send2._config as typeof fallbackSendP).fallbackChannel).toBe('SMS');
-    const send2SplitEdge = g.edges.find((e) => e.from === send2.id)!;
-    expect(g.nodes[send2SplitEdge.to!].type).toBe('WAIT_UNTIL');
-  });
-
-  // The regression guard for the bug this replaced: a Send must never be
-  // followed straight into a goal check, because no time has passed at
-  // that point and the answer can only ever be No.
-  it('no Send anywhere is followed directly by a GOAL_CHECK', () => {
-    let g = addEntryEvent(EMPTY_GRAPH);
-    const mk = (n: string) => ({ ...dcDefaultConfig('SEND', null), name: n, channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' });
-    g = dcConfirmAddNode(g, 'SEND', mk('A'), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
-    const wait = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const timeout = g.edges.find((e) => e.from === wait.id && dcPortOf(e) === 'timeout')!;
-    g = dcConfirmAddNode(g, 'SEND', mk('B'), { kind: 'edge', edgeId: timeout.id }, TEST_GOAL);
-
-    const offenders = g.edges.filter(
-      (e) => g.nodes[e.from]?.type === 'SEND' && e.to && g.nodes[e.to]?.type === 'GOAL_CHECK',
-    );
-    expect(offenders).toEqual([]);
-  });
-});
-
-describe('Pause', () => {
-  it('Pause gets its own auto GOAL_CHECK when a goal is defined', () => {
-    let g = addEntryEvent(EMPTY_GRAPH);
-    g = dcConfirmAddNode(g, 'PAUSE', { duration: 3, unit: 'days' }, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
-    const pause = Object.values(g.nodes).find((n) => n.type === 'PAUSE')!;
-    const edge = g.edges.find((e) => e.from === pause.id)!;
-    expect(g.nodes[edge.to!].type).toBe('GOAL_CHECK');
-  });
-
-  it('Pause gets a plain open slot, not a goal-check, when no goal is defined', () => {
-    let g = addEntryEvent(EMPTY_GRAPH);
-    g = dcConfirmAddNode(g, 'PAUSE', { duration: 3, unit: 'days' }, { kind: 'growLeaf', nodeId: g.rootId! }, null);
-    const pause = Object.values(g.nodes).find((n) => n.type === 'PAUSE')!;
-    const edge = g.edges.find((e) => e.from === pause.id)!;
-    expect(edge.to).toBeNull();
+    const slot = g.edges.find((e) => e.to === null)!;
+    g = dcConfirmAddNode(g, 'PAUSE', { duration: 1, unit: 'days' }, { kind: 'edge', edgeId: slot.id }, TEST_GOAL);
+    expect(Object.values(g.nodes).some((n) => n.autoGenerated)).toBe(false);
+    expect(Object.values(g.nodes).map((n) => n.type)).not.toContain('GOAL_CHECK');
   });
 });
 
 describe('Goal-check removal', () => {
-  it('removing the auto goal-check Split reconnects its parent straight to whatever the No branch led to', () => {
+  it('removing a hand-added Goal Check reconnects its parent to whatever the No branch led to', () => {
     let g = addEntryEvent(EMPTY_GRAPH);
-    // A Pause is what carries an auto goal-check now — a Send gets a wait
-    // on the goal instead, so this starts from the Pause.
-    g = dcConfirmAddNode(g, 'PAUSE', { duration: 2, unit: 'days' }, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
-    const pause = Object.values(g.nodes).find((n) => n.type === 'PAUSE')!;
-    const splitEdge = g.edges.find((e) => e.from === pause.id)!;
-    const splitId = splitEdge.to!;
-    expect(g.nodes[splitId].type).toBe('GOAL_CHECK');
-    const noEdge = g.edges.find((e) => e.from === splitId && dcPortOf(e) === 'no')!;
+    g = dcConfirmAddNode(g, 'GOAL_CHECK', null, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
+    const check = Object.values(g.nodes).find((n) => n.type === 'GOAL_CHECK')!;
+    const noEdge = g.edges.find((e) => e.from === check.id && dcPortOf(e) === 'no')!;
+    g = dcConfirmAddNode(g, 'EXIT', { reason: 'Done' }, { kind: 'edge', edgeId: noEdge.id }, TEST_GOAL);
+    const exit = Object.values(g.nodes).find((n) => n.type === 'EXIT')!;
 
-    // Build something real under the No branch before removing the check.
-    g = dcConfirmAddNode(g, 'PAUSE', { duration: 5, unit: 'days' }, { kind: 'edge', edgeId: noEdge.id }, TEST_GOAL);
-    const pause2 = Object.values(g.nodes).find((n) => n.type === 'PAUSE' && n.id !== pause.id)!;
-
-    g = dcRemoveGoalCheck(g, splitId);
-    expect(g.nodes[splitId]).toBeUndefined();
-    const pauseEdge = g.edges.find((e) => e.from === pause.id)!;
-    expect(pauseEdge.to).toBe(pause2.id);
-  });
-});
-
-describe('Wait Until', () => {
-  const goal: DripGoal = { eventCategory: 'EMI Events', eventType: 'EMI_STATUS_CHANGED', conditions: [{ attribute: 'New Status', operator: 'Equals', value: 'Successful' }] };
-
-  it('promoted attribute matching the campaign Goal -> real outcome-check GOAL_CHECK', () => {
-    let g = addEntryEvent(EMPTY_GRAPH, { eventCategory: 'Transaction Events', eventType: 'Transaction' });
-    const p = { eventCategory: 'EMI Events', eventType: 'EMI_STATUS_CHANGED', duration: 7, unit: 'days', conditions: [] };
-    g = dcConfirmAddNode(g, 'WAIT_UNTIL', p, { kind: 'growLeaf', nodeId: g.rootId! }, goal);
-    const wu = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const toSplitEdge = g.edges.find((e) => e.from === wu.id && e.branchLabel === '')!;
-    const split = g.nodes[toSplitEdge.to!];
-    expect(split.type).toBe('GOAL_CHECK');
-    const yes = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'yes')!;
-    const no = g.edges.find((e) => e.from === split.id && dcPortOf(e) === 'no')!;
-    expect(g.nodes[yes.to!].type).toBe('GOAL_EXIT');
-    expect(g.nodes[no.to!].type).toBe('EXIT');
-  });
-
-  // Regression: this used to auto-wire Yes -> GOAL_EXIT for ANY
-  // unambiguous event (no promoted attribute), even with no campaign
-  // Goal defined at all — surfaced directly by the user seeing a "Goal
-  // Reached" node on a Wait for Event step in a goal-less campaign. An
-  // event firing is never automatically "the goal" on its own; it only
-  // is when a real campaign Goal says so.
-  it('unambiguous event (no promoted attribute), no campaign Goal -> Yes stays open, no GOAL_EXIT invented', () => {
-    let g = addEntryEvent(EMPTY_GRAPH);
-    const p = { eventCategory: 'Journey Events', eventType: 'Journey Progress', duration: 10, unit: 'days', conditions: [] };
-    g = dcConfirmAddNode(g, 'WAIT_UNTIL', p, { kind: 'growLeaf', nodeId: g.rootId! }, null);
-    const wu = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const yes = g.edges.find((e) => e.from === wu.id && dcPortOf(e) === 'event')!;
-    expect(yes.to).toBeNull();
-    expect(Object.values(g.nodes).some((n) => n.type === 'GOAL_EXIT')).toBe(false);
-  });
-
-  it('unambiguous event (no promoted attribute), campaign Goal matches this exact event -> Yes -> GOAL_EXIT', () => {
-    const matchingGoal: DripGoal = { eventCategory: 'Journey Events', eventType: 'Journey Progress', conditions: [] };
-    let g = addEntryEvent(EMPTY_GRAPH);
-    const p = { eventCategory: 'Journey Events', eventType: 'Journey Progress', duration: 10, unit: 'days', conditions: [] };
-    g = dcConfirmAddNode(g, 'WAIT_UNTIL', p, { kind: 'growLeaf', nodeId: g.rootId! }, matchingGoal);
-    const wu = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const yes = g.edges.find((e) => e.from === wu.id && dcPortOf(e) === 'event')!;
-    expect(g.nodes[yes.to!].type).toBe('GOAL_EXIT');
-  });
-
-  it('unambiguous event (no promoted attribute), campaign Goal defined but for a DIFFERENT event -> Yes stays open', () => {
-    const otherGoal: DripGoal = { eventCategory: 'EMI Events', eventType: 'EMI_STATUS_CHANGED', conditions: [] };
-    let g = addEntryEvent(EMPTY_GRAPH);
-    const p = { eventCategory: 'Journey Events', eventType: 'Journey Progress', duration: 10, unit: 'days', conditions: [] };
-    g = dcConfirmAddNode(g, 'WAIT_UNTIL', p, { kind: 'growLeaf', nodeId: g.rootId! }, otherGoal);
-    const wu = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const yes = g.edges.find((e) => e.from === wu.id && dcPortOf(e) === 'event')!;
-    expect(yes.to).toBeNull();
-  });
-
-  it('promoted attribute NOT matching the campaign Goal -> both branches open, no guess', () => {
-    const otherGoal: DripGoal = { eventCategory: 'Journey Events', eventType: 'Journey Progress', conditions: [] };
-    let g = addEntryEvent(EMPTY_GRAPH, { eventCategory: 'Transaction Events', eventType: 'Transaction' });
-    const p = { eventCategory: 'EMI Events', eventType: 'EMI_STATUS_CHANGED', duration: 5, unit: 'days', conditions: [] };
-    g = dcConfirmAddNode(g, 'WAIT_UNTIL', p, { kind: 'growLeaf', nodeId: g.rootId! }, otherGoal);
-    const wu = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const toSplitEdge = g.edges.find((e) => e.from === wu.id && e.branchLabel === '')!;
-    const split = g.nodes[toSplitEdge.to!];
-    const openEdges = g.edges.filter((e) => e.from === split.id && e.to === null);
-    expect(openEdges.length).toBe(2);
+    g = dcRemoveGoalCheck(g, check.id);
+    expect(Object.values(g.nodes).some((n) => n.type === 'GOAL_CHECK')).toBe(false);
+    expect(g.nodes[exit.id]).toBeTruthy();
+    expect(g.edges.find((e) => e.from === g.rootId)!.to).toBe(exit.id);
   });
 });
 
@@ -430,13 +326,13 @@ describe('Journey/Offer Events condition narrowing (locked attribute)', () => {
 
 describe('Entry · Audience — additional entity filters, and Transaction as a real entity choice', () => {
   it('dcDefaultConfig starts with an empty filter list', () => {
-    const p = dcDefaultConfig('ENTRY_SEGMENT', null);
+    const p = dcDefaultConfig('ENTRY_SEGMENT');
     expect(p.filters).toEqual([]);
   });
 
   it('extra entity groups persist into _config untouched, alongside the primary entity/conditions, and stay out of canvas meta', () => {
     const p = {
-      ...dcDefaultConfig('ENTRY_SEGMENT', null),
+      ...dcDefaultConfig('ENTRY_SEGMENT'),
       entity: 'Account',
       conditions: [{ attribute: 'Status', operator: 'Equals', value: 'Dormant' }],
       extraEntityGroups: [{ entity: 'Card', conditions: [{ attribute: 'Status', operator: 'Equals', value: 'Active' }] }],
@@ -455,7 +351,7 @@ describe('Entry · Audience — additional entity filters, and Transaction as a 
 
   it('Transaction is a real entity choice, not a separate toggle — its lookback/existence fields persist on the primary block exactly like entity/conditions do, and it can coexist with another entity in extraEntityGroups', () => {
     const p = {
-      ...dcDefaultConfig('ENTRY_SEGMENT', null),
+      ...dcDefaultConfig('ENTRY_SEGMENT'),
       entity: 'Transaction',
       conditions: [{ attribute: 'Transaction Type', operator: 'Any of', values: ['AUTHORIZE'] }],
       lookbackDuration: 90,
@@ -505,7 +401,7 @@ describe('Decision Split', () => {
   });
 
   it('dcAddFormValid blocks when a branch value is missing', () => {
-    const p = { ...dcDefaultConfig('DECISION_SPLIT', null), attribute: 'Transaction Amount' };
+    const p = { ...dcDefaultConfig('DECISION_SPLIT'), attribute: 'Transaction Amount' };
     expect(dcAddFormValid('DECISION_SPLIT', p)).toBe(false); // branch values empty by default
   });
 });
@@ -541,7 +437,7 @@ describe('Send fallback channel validation', () => {
 describe('Edit round-trip', () => {
   it('editing a Send name/channel never disturbs its auto Split/GOAL_EXIT subtree', () => {
     let g = addEntryEvent(EMPTY_GRAPH);
-    const sendP = { ...dcDefaultConfig('SEND', null), name: 'Original', channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' };
+    const sendP = { ...dcDefaultConfig('SEND'), name: 'Original', channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' };
     g = dcConfirmAddNode(g, 'SEND', sendP, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const before = Object.keys(g.nodes).length;
     const send = Object.values(g.nodes).find((n) => n.label === 'Original')!;
@@ -626,7 +522,7 @@ describe('dcRemoveEdge', () => {
 
   it('fully removes a plain growLeaf edge (no slot concept) and cascade-GCs its target', () => {
     let g = addEntryEvent(EMPTY_GRAPH);
-    const sendP = { ...dcDefaultConfig('SEND', null), name: 'Msg1', channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' };
+    const sendP = { ...dcDefaultConfig('SEND'), name: 'Msg1', channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' };
     g = dcConfirmAddNode(g, 'SEND', sendP, { kind: 'growLeaf', nodeId: g.rootId! }, null);
     const growEdge = g.edges.find((e) => e.from === g.rootId && e.branchLabel === '')!;
     g = dcRemoveEdge(g, growEdge.id);
@@ -760,7 +656,6 @@ describe('Fan-out — parallel paths from one node', () => {
     [...(['SPLIT', 'DECISION_SPLIT', 'RANDOM_SPLIT', 'GOAL_CHECK', 'WAIT_UNTIL'] as const)].forEach((t) => expect(dcCanFanOut(t)).toBe(false));
     // Terminals have no outgoing paths at all.
     expect(dcCanFanOut('EXIT')).toBe(false);
-    expect(dcCanFanOut('GOAL_EXIT')).toBe(false);
     // Everything else can hold genuinely parallel paths.
     expect(dcCanFanOut('ENTRY_EVENT')).toBe(true);
     expect(dcCanFanOut('ENTRY_SEGMENT')).toBe(true);
@@ -775,20 +670,20 @@ describe('Fan-out — parallel paths from one node', () => {
 // graphs: the auto Goal Check wired Yes straight to Goal Reached, while a
 // Goal-source Condition left both arms open.
 describe('Goal Check — one node type, one behaviour, added either way', () => {
-  it('a hand-added Goal Check wires Yes to Goal Reached, exactly like the auto one', () => {
+  it('a hand-added Goal Check leaves both arms open — there is no Goal Reached to wire to', () => {
     let g = addEntryEvent(EMPTY_GRAPH);
-    g = dcConfirmAddNode(g, 'GOAL_CHECK', dcDefaultConfig('GOAL_CHECK', TEST_GOAL), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
+    g = dcConfirmAddNode(g, 'GOAL_CHECK', dcDefaultConfig('GOAL_CHECK'), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
     const check = Object.values(g.nodes).find((n) => n.type === 'GOAL_CHECK')!;
     expect(check).toBeTruthy();
     const yes = g.edges.find((e) => e.from === check.id && dcPortOf(e) === 'yes')!;
     const no = g.edges.find((e) => e.from === check.id && dcPortOf(e) === 'no')!;
-    expect(g.nodes[yes.to!].type).toBe('GOAL_EXIT');
+    expect(yes.to).toBeNull();
     expect(no.to).toBeNull();
   });
 
   it('its question is derived live from the Goal, not stored on the node', () => {
     let g = addEntryEvent(EMPTY_GRAPH);
-    g = dcConfirmAddNode(g, 'GOAL_CHECK', dcDefaultConfig('GOAL_CHECK', TEST_GOAL), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
+    g = dcConfirmAddNode(g, 'GOAL_CHECK', dcDefaultConfig('GOAL_CHECK'), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
     const check = Object.values(g.nodes).find((n) => n.type === 'GOAL_CHECK')!;
     expect(check.label).toBe('Virtual card activated?');
     expect(check._config).toBeNull(); // nothing of its own to configure
@@ -796,7 +691,7 @@ describe('Goal Check — one node type, one behaviour, added either way', () => 
 
   it('a hand-added one is not flagged autoGenerated — that badge is for steps the builder added unasked', () => {
     let g = addEntryEvent(EMPTY_GRAPH);
-    g = dcConfirmAddNode(g, 'GOAL_CHECK', dcDefaultConfig('GOAL_CHECK', TEST_GOAL), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
+    g = dcConfirmAddNode(g, 'GOAL_CHECK', dcDefaultConfig('GOAL_CHECK'), { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
     const check = Object.values(g.nodes).find((n) => n.type === 'GOAL_CHECK')!;
     expect(check.autoGenerated).toBe(false);
   });
@@ -808,67 +703,53 @@ describe('Goal Check — one node type, one behaviour, added either way', () => 
     expect(dcAddFormValid('SPLIT', { customSource: 'Goal', customConditions: [] }, TEST_GOAL)).toBe(false);
   });
 
-  it('Goal Check is in the Add Step list; Goal Reached stays too — they are question and answer', () => {
+  it('Goal Check is still in the Add Step list; Goal Reached is not a step any more', () => {
     expect(DC_STEP_TYPES).toContain('GOAL_CHECK');
-    expect(DC_STEP_TYPES).toContain('GOAL_EXIT');
+    expect(DC_STEP_TYPES.map(String)).not.toContain('GOAL_EXIT');
   });
 });
 
-describe('Goal reconciliation (H4)', () => {
-  it('changing the goal re-points the wait a Send auto-inserted, so it stops listening for the old event', () => {
+describe('Goal reconciliation', () => {
+  // All that is left to reconcile is a Goal Check's question. No node is
+  // wired to the goal any more: a Send grows nothing, and a Wait for Event
+  // listens for whatever its author told it to.
+  it("a Goal Check's question follows the goal", () => {
     let g = addEntryEvent(EMPTY_GRAPH);
-    const sendP = { ...dcDefaultConfig('SEND', null), name: 'Msg1', channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' };
-    g = dcConfirmAddNode(g, 'SEND', sendP, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
+    g = dcConfirmAddNode(g, 'GOAL_CHECK', null, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
+    const before = Object.values(g.nodes).find((n) => n.type === 'GOAL_CHECK')!;
+    expect(before.label).toBe('Virtual card activated?');
+    before.autoGenerated = true; // reconcile only rewrites what it owns
 
-    const before = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    expect((before._config as { eventType?: string }).eventType).toBe(TEST_GOAL.eventType);
-
-    // A real event in the same category — 'PIN set' is in CARD_EVENTS.
-    const newGoal = { ...TEST_GOAL, eventType: 'PIN set', conditions: [] };
-    g = dcReconcileGoal(g, newGoal);
-
-    const after = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    expect((after._config as { eventType?: string }).eventType).toBe('PIN set');
-    expect(after.label).toBe('PIN set');
+    g = dcReconcileGoal(g, { ...TEST_GOAL, eventType: 'PIN set', conditions: [] });
+    expect(Object.values(g.nodes).find((n) => n.type === 'GOAL_CHECK')!.label).toBe('PIN set?');
   });
 
-  it('clearing the goal leaves goal wiring in place but reports it, rather than silently deleting the author’s graph', () => {
+  it('a hand-placed Wait for Event is left alone, whatever the goal says', () => {
     let g = addEntryEvent(EMPTY_GRAPH);
-    g = dcConfirmAddNode(g, 'PAUSE', { duration: 2, unit: 'days' }, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
-    expect(Object.values(g.nodes).some((n) => n.type === 'GOAL_CHECK')).toBe(true);
-
-    g = dcReconcileGoal(g, null);
-    // still there — removing someone's steps on a goal edit would be worse
-    expect(Object.values(g.nodes).some((n) => n.type === 'GOAL_CHECK')).toBe(true);
-    const issues = dcGoalWiringIssues(g, null);
-    expect(issues.length).toBe(1);
-    expect(issues[0]).toContain('no goal is defined');
-  });
-
-  it('flags a hand-placed wait on a non-goal event that exits to Goal Reached', () => {
-    let g = addEntryEvent(EMPTY_GRAPH);
-    // A wait on the goal's own event auto-wires to Goal Reached legitimately.
     g = dcConfirmAddNode(
       g,
       'WAIT_UNTIL',
-      { ...dcDefaultConfig('WAIT_UNTIL', null), eventCategory: TEST_GOAL.eventCategory, eventType: TEST_GOAL.eventType },
+      { ...dcDefaultConfig('WAIT_UNTIL'), eventCategory: 'Card Events', eventType: 'PIN set', duration: 3, unit: 'days' },
       { kind: 'growLeaf', nodeId: g.rootId! },
       TEST_GOAL,
     );
+    g = dcReconcileGoal(g, { ...TEST_GOAL, eventType: 'Virtual card activated', conditions: [] });
     const wait = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    // Hand-placed, and now pointed at something that is not the goal.
-    wait.autoGenerated = false;
-    wait._config = { ...(wait._config as object), eventType: 'Some other event' };
+    expect((wait._config as { eventType?: string }).eventType).toBe('PIN set');
+  });
 
-    const issues = dcGoalWiringIssues(g, TEST_GOAL);
-    expect(issues.length).toBeGreaterThan(0);
-    expect(issues[0]).toContain('Some other event');
+  it('clearing the goal leaves the author\'s steps alone', () => {
+    let g = addEntryEvent(EMPTY_GRAPH);
+    g = dcConfirmAddNode(g, 'GOAL_CHECK', null, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
+    g = dcReconcileGoal(g, null);
+    expect(Object.values(g.nodes).some((n) => n.type === 'GOAL_CHECK')).toBe(true);
   });
 });
 
+
 describe('Campaign validation (C3)', () => {
   function sendOn(g: DripGraph, name: string, at: Parameters<typeof dcConfirmAddNode>[3]) {
-    const p = { ...dcDefaultConfig('SEND', null), name, channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' };
+    const p = { ...dcDefaultConfig('SEND'), name, channel: 'WHATSAPP', account: 'IBL-Karix-Onb', templateId: 'CT-3310' };
     return dcConfirmAddNode(g, 'SEND', p, at, TEST_GOAL);
   }
 
@@ -903,18 +784,22 @@ describe('Campaign validation (C3)', () => {
   });
 
   it('names the branch that still needs a next step, not just that one exists', () => {
+    // A Pause grows nothing now, so the named-branch case comes from a step
+    // that really does fork: a hand-added Goal Check, with its Yes and No.
     let g = addEntryEvent(EMPTY_GRAPH);
-    g = dcConfirmAddNode(g, 'PAUSE', { duration: 2, unit: 'days' }, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
+    g = dcConfirmAddNode(g, 'GOAL_CHECK', null, { kind: 'growLeaf', nodeId: g.rootId! }, TEST_GOAL);
     const issues = dcValidateCampaign(g, TEST_GOAL);
     expect(issues.some((i) => i.message.includes('"No" branch'))).toBe(true);
+    expect(issues.some((i) => i.message.includes('"Yes" branch'))).toBe(true);
   });
 
   it('a complete campaign produces no issues', () => {
+    // Entry -> Send -> End journey. That is a whole campaign now: conversion
+    // takes people out of it without a step saying so.
     let g = addEntryEvent(EMPTY_GRAPH);
     g = sendOn(g, 'Msg1', { kind: 'growLeaf', nodeId: g.rootId! });
-    const wait = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!;
-    const timeout = g.edges.find((e) => e.from === wait.id && dcPortOf(e) === 'timeout')!;
-    g = dcConfirmAddNode(g, 'EXIT', { reason: 'Sequence exhausted' }, { kind: 'edge', edgeId: timeout.id }, TEST_GOAL);
+    const slot = g.edges.find((e) => e.to === null)!;
+    g = dcConfirmAddNode(g, 'EXIT', { reason: 'Sequence exhausted' }, { kind: 'edge', edgeId: slot.id }, TEST_GOAL);
     expect(dcValidateCampaign(g, TEST_GOAL)).toEqual([]);
   });
 });

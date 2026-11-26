@@ -105,15 +105,33 @@ describe('what the journey shows on Analytics', () => {
 });
 
 describe('the two totals', () => {
-  it('the held-back group reaches the goal at a lower rate than the messaged group', () => {
+  // This used to assert the held-back group ALWAYS converts at a lower rate,
+  // which is exactly the guarantee audit H8 removed: if control can only come
+  // in under treatment, the dashboard can never show a campaign that failed.
+  // It passed anyway, because conversions were arrivals at a Goal Reached
+  // node and those were always large. Both groups are now drawn
+  // independently, so what is actually guaranteed is that both are real
+  // rates, measured the same way.
+  it('both groups are measured the same way, and neither is guaranteed to win', () => {
     for (const c of DRIP_CAMPAIGNS) {
       const { totals } = generateDripAnalytics(c);
       if (!totals.entered || !totals.control) continue;
       const messagedRate = totals.reachedGoal / totals.entered;
       const heldBackRate = totals.controlReachedGoal / totals.control;
-      expect(heldBackRate).toBeLessThan(messagedRate);
-      expect(totals.controlReachedGoal).toBeGreaterThanOrEqual(0);
+      for (const rate of [messagedRate, heldBackRate]) {
+        expect(rate).toBeGreaterThanOrEqual(0);
+        expect(rate).toBeLessThanOrEqual(1);
+      }
+      expect(totals.reachedGoal).toBeLessThanOrEqual(totals.entered);
+      expect(totals.controlReachedGoal).toBeLessThanOrEqual(totals.control);
     }
+  });
+
+  it('a campaign with no goal converts nobody, rather than inventing a rate', () => {
+    const noGoal = { ...DRIP_CAMPAIGNS[0], goal: null };
+    const { totals } = generateDripAnalytics(noGoal);
+    expect(totals.reachedGoal).toBe(0);
+    expect(totals.controlReachedGoal).toBe(0);
   });
 
   it('is deterministic, like every other seeded number here', () => {

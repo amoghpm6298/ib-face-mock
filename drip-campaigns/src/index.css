@@ -291,6 +291,7 @@ select:focus { outline: 2px solid var(--info-bg); }
 .sp-result { background: var(--gray-50); border-radius: 8px; padding: 2px 12px 8px; margin-bottom: 12px; }
 
 .an-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 4px; }
+.an-note { font-size: 12.5px; color: var(--gray-500); margin: 10px 0 0; line-height: 1.5; }
 .an-total { border: 1px solid var(--gray-200); border-radius: 10px; padding: 14px 16px; background: #fff; }
 .an-total-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--gray-500); margin-bottom: 8px; }
 .an-total-pair { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }

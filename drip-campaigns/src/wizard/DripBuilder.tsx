@@ -7,6 +7,7 @@
 // whatever owns the list (Phase 4) to persist.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useState } from 'react';
+import { dcSuggestConversionWindow } from '../data/conversionWindow';
 import type { DripCampaign, DripGoal, DripGraph, DripQuietHours } from '../data/graphTypes';
 import { DC_STEP_TYPES, type DcNodeType } from '../data/nodeMeta';
 import { DC_ENTRY_TYPES } from '../data/typeSub';
@@ -49,7 +50,7 @@ const MID_EDGE_DISABLED_REASON = "Branching and terminal steps can't be inserted
 // chain was silently orphaned — still in `nodes`, unreachable, counted in
 // Review's totals and saved in the payload. Condition and Wait For Event
 // both leave two.
-const MID_EDGE_RESTRICTED_TYPES: DcNodeType[] = ['DECISION_SPLIT', 'RANDOM_SPLIT', 'SPLIT', 'WAIT_UNTIL', 'GOAL_EXIT', 'EXIT'];
+const MID_EDGE_RESTRICTED_TYPES: DcNodeType[] = ['DECISION_SPLIT', 'RANDOM_SPLIT', 'SPLIT', 'WAIT_UNTIL', 'EXIT'];
 
 // Goal Reached is only a legitimate manual pick on an already-forked
 // branch arm (Phase 1 §5) — anywhere else it would silently mark
@@ -57,7 +58,7 @@ const MID_EDGE_RESTRICTED_TYPES: DcNodeType[] = ['DECISION_SPLIT', 'RANDOM_SPLIT
 // unconditionally, with no way back (the exact dead-end pattern this
 // restriction exists to prevent).
 const GOAL_CHECK_NO_GOAL_REASON = 'No campaign Goal is defined yet, so there is nothing for this to check. Set one on the Goal step first.';
-const GOAL_REACHED_LINEAR_REASON = 'This would mark everyone who reaches this point as having achieved the goal, unconditionally. Add a Condition or Branch first if you want to check for it.';
+const GOAL_CHECK_EXIT_ON_REASON = 'Customers leave the journey as soon as they convert, so this could only ever answer No. Turn off "Stop messaging customers once they convert" on the Goal step if you need to ask it.';
 
 export interface DripBuilderPayload {
   name: string;
@@ -130,7 +131,17 @@ export function DripBuilder({
   // wiring was derived from whatever the goal was when each node was added.
   // Re-derive it here so the two cannot drift — same shape as changePrograms
   // below, which already does this for app events.
-  function changeGoal(next: DripGoal | null) {
+  // The window is suggested ONCE, the first time a goal gets an event, from
+  // the length of the journey as it stands. Never recomputed afterwards: a
+  // number that silently changes as the canvas is edited is worse than one
+  // the author can see and correct.
+  function withSuggestedWindow(next: DripGoal | null): DripGoal | null {
+    if (!next?.eventType || next.conversionWindow) return next;
+    return { ...next, conversionWindow: dcSuggestConversionWindow(graph) };
+  }
+
+  function changeGoal(incoming: DripGoal | null) {
+    const next = withSuggestedWindow(incoming);
     setGoal(next);
     const reconciled = dcReconcileGoal(graph, next);
     if (reconciled !== graph) pushGraph(reconciled);
@@ -174,19 +185,13 @@ export function DripBuilder({
         d[t] = MID_EDGE_DISABLED_REASON;
       });
     }
-    // Goal Reached is only offered on an already-forked branch arm — a
-    // real edge coming off a node with 2+ outgoing edges (Condition/
-    // Branch/Experiment/Goal Check). `growLeaf` and a source with only
-    // one outgoing edge are both the plain, linear "whatever comes next"
-    // case this restriction exists to catch.
-    const sourceOutCount = addingAtSourceId ? graph.edges.filter((e) => e.from === addingAtSourceId).length : 0;
-    const isBranchArm = addingAt?.kind === 'edge' && sourceOutCount > 1;
-    if (!isBranchArm && !d['GOAL_EXIT']) d['GOAL_EXIT'] = GOAL_REACHED_LINEAR_REASON;
     // A Goal Check asks one question — "has the campaign Goal been
-    // achieved?" — so with no Goal defined there is literally nothing
-    // for it to check. Same shape of gate as Goal Reached above:
+    // achieved?" — so with no Goal defined there is nothing for it to
+    // check. And with exit on conversion ON, an account that converts has
+    // already left the journey, so the answer could only ever be No:
     // offered, visibly disabled, with the reason stated.
-    if (!goal?.eventType && !d['GOAL_CHECK']) d['GOAL_CHECK'] = GOAL_CHECK_NO_GOAL_REASON;
+    if (!goal?.eventType) d['GOAL_CHECK'] = GOAL_CHECK_NO_GOAL_REASON;
+    else if (goal.exitOnConversion !== false) d['GOAL_CHECK'] = GOAL_CHECK_EXIT_ON_REASON;
     return d;
   }, [addingAt, addingAtSourceId, graph, goal]);
 
@@ -220,7 +225,7 @@ export function DripBuilder({
 
   function pickType(t: DcNodeType) {
     setAddingType(t);
-    const config = dcDefaultConfig(t, goal);
+    const config = dcDefaultConfig(t);
     if (t === 'EXIT') config.reason = dcDefaultExitReason(graph, addingAt);
     setPendingConfig(config);
   }
@@ -252,7 +257,7 @@ export function DripBuilder({
     // branch). dcDefaultConfig gives a type-correct, sensibly-prefilled
     // starting point instead — exactly the shape a brand-new node of
     // this type would start from.
-    setPendingConfig(node._config ? structuredClone(node._config) : dcDefaultConfig(node.type, goal));
+    setPendingConfig(node._config ? structuredClone(node._config) : dcDefaultConfig(node.type));
   }
   function cancelEdit() {
     setEditingNodeId(null);
@@ -300,6 +305,7 @@ export function DripBuilder({
     startDate,
     endDate,
     quietHours,
+    goal: goal && goal.eventType ? goal : null,
   });
   const canSubmit = issues.length === 0;
 
@@ -388,7 +394,22 @@ export function DripBuilder({
 
         {step === 'goalDefinition' && (
           <div className="dcb-step-body">
-            <GoalDefinitionStep goal={goal} onGoalChange={changeGoal} onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))} onContinue={() => setStep('builder')} />
+            <GoalDefinitionStep
+              goal={goal}
+              onGoalChange={changeGoal}
+              goalCheckCount={Object.values(graph.nodes).filter((n) => n.type === 'GOAL_CHECK').length}
+              onRemoveGoalChecks={() => {
+                // Each removal keeps whatever was under its No arm, exactly
+                // as removing it from the canvas would.
+                let next = graph;
+                for (const n of Object.values(graph.nodes)) {
+                  if (n.type === 'GOAL_CHECK') next = dcRemoveGoalCheck(next, n.id);
+                }
+                if (next !== graph) pushGraph(next);
+              }}
+              onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))}
+              onContinue={() => setStep('builder')}
+            />
           </div>
         )}
 
@@ -433,6 +454,7 @@ export function DripBuilder({
               onNpaChange={setNpa}
               quietHours={quietHours}
               onQuietHoursChange={setQuietHours}
+              conversionCheck={!goal?.eventType ? 'noGoal' : goal.exitOnConversion === false ? 'off' : 'on'}
               onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))}
               onContinue={() => setStep('review')}
             />

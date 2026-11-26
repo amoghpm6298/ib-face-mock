@@ -107,7 +107,7 @@ export function computeDagreLayout(graph: DripGraph, measuredHeights: Record<str
   const growSlotIds: Record<string, string> = {};
   Object.values(graph.nodes).forEach((nd) => {
     const outCount = graph.edges.filter((e) => e.from === nd.id).length;
-    if (outCount === 0 && nd.type !== 'GOAL_EXIT' && nd.type !== 'EXIT') {
+    if (outCount === 0 && nd.type !== 'EXIT') {
       const slotId = '__growslot_' + nd.id;
       growSlotIds[nd.id] = slotId;
       g.setNode(slotId, { width: DC_SLOT_LAYOUT_W, height: DC_SLOT_SIZE });

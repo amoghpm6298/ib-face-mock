@@ -52,7 +52,7 @@ describe('what the builder writes', () => {
 
   function build(type: Parameters<typeof dcConfirmAddNode>[1], cfg: Record<string, unknown>, goal: DripGoal | null = GOAL) {
     let g: DripGraph = { nodes: {}, edges: [], rootId: null };
-    g = dcConfirmAddNode(g, 'ENTRY_EVENT', { ...dcDefaultConfig('ENTRY_EVENT', null), eventCategory: 'Journey Events', eventType: 'Pageload' }, { kind: 'root' }, goal);
+    g = dcConfirmAddNode(g, 'ENTRY_EVENT', { ...dcDefaultConfig('ENTRY_EVENT'), eventCategory: 'Journey Events', eventType: 'Pageload' }, { kind: 'root' }, goal);
     return dcConfirmAddNode(g, type, cfg, { kind: 'growLeaf', nodeId: g.rootId! }, goal);
   }
 
@@ -63,7 +63,7 @@ describe('what the builder writes', () => {
   });
 
   it('names a Wait for Event\'s arms by what they mean, not by the Yes/No it displays', () => {
-    const g = build('WAIT_UNTIL', { ...dcDefaultConfig('WAIT_UNTIL', null), eventCategory: 'Card Events', eventType: 'Virtual card activated', duration: 3, unit: 'days' });
+    const g = build('WAIT_UNTIL', { ...dcDefaultConfig('WAIT_UNTIL'), eventCategory: 'Card Events', eventType: 'Virtual card activated', duration: 3, unit: 'days' });
     const waitId = Object.values(g.nodes).find((n) => n.type === 'WAIT_UNTIL')!.id;
     const outs = g.edges.filter((e) => e.from === waitId);
     expect(outs.map((e) => e.port).sort()).toEqual(['event', 'timeout']);
@@ -75,11 +75,12 @@ describe('what the builder writes', () => {
   });
 
   it('gives a Goal Check yes and no, and an Experiment\'s arms branch ports', () => {
-    const pause = build('PAUSE', { duration: 1, unit: 'days' });
-    const check = Object.values(pause.nodes).find((n) => n.type === 'GOAL_CHECK')!;
-    expect(pause.edges.filter((e) => e.from === check.id).map((e) => e.port).sort()).toEqual(['no', 'yes']);
+    // Added by hand — nothing auto-inserts a Goal Check any more.
+    const checkGraph = build('GOAL_CHECK', null);
+    const check = Object.values(checkGraph.nodes).find((n) => n.type === 'GOAL_CHECK')!;
+    expect(checkGraph.edges.filter((e) => e.from === check.id).map((e) => e.port).sort()).toEqual(['no', 'yes']);
 
-    const exp = build('RANDOM_SPLIT', { ...dcDefaultConfig('RANDOM_SPLIT', null) });
+    const exp = build('RANDOM_SPLIT', { ...dcDefaultConfig('RANDOM_SPLIT') });
     const node = Object.values(exp.nodes).find((n) => n.type === 'RANDOM_SPLIT')!;
     const arms = exp.edges.filter((e) => e.from === node.id);
     expect(arms.length).toBe(2);
@@ -91,7 +92,7 @@ describe('what the builder writes', () => {
 
   it('gives a Branch\'s catch-all its own port, so renaming it cannot turn it into an arm', () => {
     const cfg = {
-      ...dcDefaultConfig('DECISION_SPLIT', null),
+      ...dcDefaultConfig('DECISION_SPLIT'),
       what: { group: 'Account', field: 'Current limit' },
       branches: [{ id: 'b1', label: 'High', operator: 'is at least', value: '100000', values: [] }],
     };
@@ -108,8 +109,8 @@ describe('renaming cannot re-route', () => {
 
   it('a renamed arm keeps its port, so nothing downstream changes meaning', () => {
     let g: DripGraph = { nodes: {}, edges: [], rootId: null };
-    g = dcConfirmAddNode(g, 'ENTRY_EVENT', { ...dcDefaultConfig('ENTRY_EVENT', null), eventCategory: 'Journey Events', eventType: 'Pageload' }, { kind: 'root' }, GOAL);
-    g = dcConfirmAddNode(g, 'PAUSE', { duration: 1, unit: 'days' }, { kind: 'growLeaf', nodeId: g.rootId! }, GOAL);
+    g = dcConfirmAddNode(g, 'ENTRY_EVENT', { ...dcDefaultConfig('ENTRY_EVENT'), eventCategory: 'Journey Events', eventType: 'Pageload' }, { kind: 'root' }, GOAL);
+    g = dcConfirmAddNode(g, 'GOAL_CHECK', null, { kind: 'growLeaf', nodeId: g.rootId! }, GOAL);
     const check = Object.values(g.nodes).find((n) => n.type === 'GOAL_CHECK')!;
     const yes = g.edges.find((e) => e.from === check.id && e.port === 'yes')!;
 
@@ -125,9 +126,9 @@ describe('renaming cannot re-route', () => {
 
   it('a renamed catch-all survives a Branch edit instead of being deleted as a stray arm', () => {
     let g: DripGraph = { nodes: {}, edges: [], rootId: null };
-    g = dcConfirmAddNode(g, 'ENTRY_EVENT', { ...dcDefaultConfig('ENTRY_EVENT', null), eventCategory: 'Journey Events', eventType: 'Pageload' }, { kind: 'root' }, null);
+    g = dcConfirmAddNode(g, 'ENTRY_EVENT', { ...dcDefaultConfig('ENTRY_EVENT'), eventCategory: 'Journey Events', eventType: 'Pageload' }, { kind: 'root' }, null);
     const cfg = {
-      ...dcDefaultConfig('DECISION_SPLIT', null),
+      ...dcDefaultConfig('DECISION_SPLIT'),
       what: { group: 'Account', field: 'Current limit' },
       branches: [{ id: 'b1', label: 'High', operator: 'is at least', value: '100000', values: [] }],
     };

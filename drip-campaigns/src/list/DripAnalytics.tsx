@@ -61,6 +61,15 @@ function Total({ label, value, besideLabel, besideValue }: { label: string; valu
   );
 }
 
+const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+// Said in words, with its sign, because "uplift: -2.1pp" is a number people
+// read as a success by habit.
+function upliftText(treatment: number, control: number): string {
+  const diff = (treatment - control) * 100;
+  if (Math.abs(diff) < 0.05) return ', the same within rounding';
+  return diff > 0 ? `, ${diff.toFixed(1)} points higher` : `, ${Math.abs(diff).toFixed(1)} points LOWER`;
+}
+
 export function DripAnalytics({ campaign, hasRun }: { campaign: DripCampaign; hasRun: boolean }) {
   const data = useMemo(() => generateDripAnalytics(campaign), [campaign]);
   const [openNodeId, setOpenNodeId] = useState<string | null>(null);
@@ -80,8 +89,20 @@ export function DripAnalytics({ campaign, hasRun }: { campaign: DripCampaign; ha
     <div>
       <div className="an-totals">
         <Total label="Entered" value={fmt(totals.entered)} besideLabel="Held back" besideValue={fmt(totals.control)} />
-        <Total label="Reached the goal" value={fmt(totals.reachedGoal)} besideLabel="Held back, reached it anyway" besideValue={fmt(totals.controlReachedGoal)} />
+        <Total label="Converted" value={fmt(totals.reachedGoal)} besideLabel="Held back, converted anyway" besideValue={fmt(totals.controlReachedGoal)} />
       </div>
+
+      {/* Both rates over the SAME window, and the uplift between them stated
+          rather than left to be worked out. It can be negative: the two are
+          drawn independently, so a campaign that did nothing can show it. */}
+      {totals.conversionWindowDays !== null && (
+        <p className="an-note">
+          Measured over {totals.conversionWindowDays} day{totals.conversionWindowDays === 1 ? '' : 's'} from entry, for both groups.{' '}
+          {pct(totals.conversionRate)} of those messaged converted, against {pct(totals.controlConversionRate)} of those held back
+          {upliftText(totals.conversionRate, totals.controlConversionRate)}.
+          {campaign.endDate ? ' The end date stops messages; conversions by accounts that already entered still count until each window closes.' : ''}
+        </p>
+      )}
 
       {path && (
         <div className="an-path">

@@ -2011,3 +2011,202 @@ behaviour". A setting is a promise that every option works.
 
 Verified: 432 unit (423 → 432), 58 e2e, clean typecheck, zero lint errors,
 clean build.
+
+## 2026-11-26 (cont'd) — Commit 1 of the goal rework: conversion comes off
+the canvas
+
+The audit's C1/C2 fix made a Send grow a Wait listening for the goal. That
+shrank the race but could not close it: a node only evaluates where it sits,
+so an account that converted while sitting in a Pause, or on a parallel path,
+went unnoticed until it reached the next wait. Conversion is a property of
+the campaign, not of a position in it.
+
+**Gone from the canvas:** the Wait a Send auto-inserted, the Goal Check a
+Pause auto-inserted, the goal shortcut a Wait for Event got when its
+predicate met the goal (the wiring half of H3), **and Goal Reached as a node
+type**. Exit is just "End journey". With them went `dcGoalWiringIssues`, the
+goal half of `dcReconcileGoal` (H4), and L3's Yes-arm rule — all of which
+existed to keep a drawn goal honest.
+
+**Kept, and worth being clear why:** the outcome Condition after a
+multi-outcome wait. EMI_STATUS_CHANGED fires the same event for Successful,
+Failed, Expired and Cancelled, so "it happened" is not an answer — that was
+never about the goal. `dcEventMeetsGoal` also stays: M8 still asks it of an
+Entry · Event, because a campaign whose entry already satisfies its goal
+measures nothing.
+
+**Goal Check survives as a hand-added step, gated.** With exit on conversion
+on, an account that converts has already left, so the check could only answer
+No — the tile is offered and visibly disabled with that reason. **It is
+unreachable through the UI in this commit**, because the switch itself lands
+with the Goal step's settings next. Its behaviour is held by reducer tests
+meanwhile, and its e2e interaction coverage comes back when the toggle does.
+
+**The seeds were hand-cleaned, not migrated.** All six are ours, and we know
+what each step was for: a Wait that existed only to listen for the goal
+became a plain Wait of the same length. DRIP-001 went from 13 nodes to 8 and
+is now a straight line — Send, wait 3 days, Send, wait 4 days, Send, wait 3
+days, End journey — which is exactly how someone would build it today. The
+alternative, keeping every goal-guarding Wait with a dead "Yes → End" arm,
+would have left all six demo campaigns carrying scar tissue.
+
+**Imported files get the cautious rule instead** (`migrateGoal.ts`), because
+there we cannot know intent: Goal Check removed and its No path reconnected,
+Goal Reached converted to End journey in place, nothing else touched. It runs
+BEFORE the import integrity check — a file written against the old model
+carries GOAL_EXIT, which is no longer a kind of step, so checking first would
+reject it for being old. The real designer fixture goes from 28 nodes to 16,
+all twelve removed being Goal Check / Goal Reached pairs, and the migration
+reports what it changed rather than restructuring someone's campaign in
+silence.
+
+**Analytics conversion became a campaign-level count** rather than arrivals
+at a Goal Reached node, drawn independently for treatment and control. Credit
+to the last message, and counting where people converted, is the next piece;
+this is the total both have to add up to. One test was passing for the wrong
+reason and is now honest: it asserted the held-back group ALWAYS converts
+lower, which is exactly the guarantee H8 removed.
+
+Verified: 414 unit, 57 e2e, clean typecheck, zero lint errors, clean build,
+plus a screenshot of the migrated DRIP-001.
+
+## 2026-11-26 (cont'd) — Commit 2: the Goal step says what a conversion is
+
+With conversion off the canvas, the two things a Goal Check used to imply
+have to be said somewhere.
+
+**Conversion window**, measured from entry, suggested ONCE when a goal first
+gets an event and never recomputed. The suggestion is the waiting time along
+the longest branch — Waits and Wait-for-Event timeouts; Sends take no time of
+their own since the delay moved out of them — plus a three-day buffer. A
+figure that silently changed as the canvas was edited would be worse than one
+the author can see and correct, which is why it is a suggestion and not a
+derived value. `dcJourneyLengthDays` guards against a graph that loops rather
+than assuming it cannot.
+
+**"Stop messaging customers once they convert"**, on by default, with the
+sub-line that says the thing that actually changed: *checked wherever they
+are in the journey, not just at a step that asks*.
+
+**One sentence, three readers.** `dcConversionSentence` is written once and
+read by the Goal step, Review and the campaign's details view: "A conversion
+is the first Virtual card activated by the same account after it enters,
+within 21 days. The held-back group is measured the same way." Three places
+describing the same rule in three ways is how the send-timing line drifted
+for months.
+
+**The end date versus the window**, the one case where the two could
+contradict each other: the end date stops messages, and the window still
+decides what counts. An account that entered before the end date keeps its
+own window, and the held-back group is measured the same way, so a late
+entrant is not judged on a shorter clock than an early one. Said in one line
+on the campaign view, and only when there is an end date to qualify.
+
+**The gate refuses a goal with no usable window**, because a goal that counts
+nothing is not a goal. `dcValidateSetup` now takes the goal for that reason,
+and the seeds are held to it like everything else.
+
+Verified: 428 unit (414 → 428), 58 e2e (1 new, driving the window from the
+suggestion through an edit to Review and the saved campaign), clean
+typecheck, zero lint errors, plus a screenshot of the Goal step.
+
+## 2026-11-26 (cont'd) — Commit 3: the contradiction is resolved where it
+is made, and one place lists what stops a send
+
+**A Goal Check and exit-on-conversion contradict each other.** Anyone who
+converts has already left, so the check's Yes arm is a path nobody takes: the
+campaign reads as though it branches on conversion and does not. The submit
+gate blocks it, naming the step it follows — *"The Goal Check after
+'Reminder 1' can never fire while customers exit on conversion"* — and
+carrying the node id so the UI can jump to it.
+
+**But the gate is the wrong place to find out.** The switch is on the Goal
+step, two steps earlier, so turning it on offers the fix right there: *"This
+campaign has 1 Goal Check step. It cannot fire while customers exit on
+conversion… Remove it."* Removing keeps whatever was under each check's No
+arm, exactly as removing it from the canvas would — the `dcReconcileGoal`
+pattern, offered rather than done silently.
+
+**"Checked before every message"** on Guardrails, read-only. Four separate
+settings decide whether a given message actually goes out, and they live on
+three different steps, so the one place that answers *what can stop this
+send?* lists them rather than owning them: conversion, the exclusion lists,
+opt-outs, quiet hours.
+
+**A copy bug caught in the screenshot, not the tests.** That list read "Not
+checked — this campaign keeps messaging after conversion" for a campaign with
+**no goal at all**, which is a different thing entirely: nothing counts as a
+conversion there. Three states, not two.
+
+Verified: 433 unit (428 → 433), 59 e2e (1 new, driving the whole clash: exit
+off so a Goal Check can be added, the check added, exit back on, the offer
+appearing, the removal, and the canvas afterwards), clean typecheck, zero
+lint errors, clean build.
+
+## 2026-11-26 (cont'd) — Commit 4: where the conversions came from
+
+The campaign total is one number. These are the two breakdowns a reader
+actually asks for, and they are worded as **different claims on purpose**:
+
+- **A Send is CREDITED with conversions** — it was the last message those
+  accounts received before converting. Not that it caused them.
+- **A wait is where people WERE** when it happened — "converted while here",
+  which is not a claim about that step at all.
+
+**Last-touch, computed from counts already walked.** A Send's pool is the
+people who reached it and did not go on to receive another message; reaching
+a later Send moves the credit forward. `downstreamSendCount` walks past waits
+and conditions and stops at the first Send on each path. The shares sum to
+the campaign total by construction, with the remainder going to the largest
+pool rather than being dropped.
+
+**An honest consequence worth knowing before anyone reads the numbers**: on a
+linear chain where nearly everyone receives all three messages, nearly
+everyone's *last* message is the third one, so the final Send carries most of
+the credit. That is what last-touch means, not a bug in the model.
+
+**"Converted while here" is only counted when exit on conversion is on.**
+With it off nobody leaves at the moment of conversion, so there is no "here"
+to name — and the map stays empty rather than inventing a step.
+
+**Both groups on one clock.** The note under the totals says the window, both
+rates and the difference **with its sign**: "Measured over 13 days from
+entry, for both groups. 29.8% of those messaged converted, against 12.1% of
+those held back, 17.7 points higher." A negative result reads "points LOWER",
+because "uplift: -2.1pp" is a number people read as a success out of habit.
+The tile is "Converted", not "Reached the goal" — it is a count within a
+window now, not arrivals at a node.
+
+Verified: 444 unit (433 → 444), 59 e2e, clean typecheck, zero lint errors,
+clean build, plus a screenshot of the funnel.
+
+## 2026-11-26 (cont'd) — Commit 5: the decisions written down, and what the
+engine still has to confirm
+
+**`AUDIT.md` gained a decisions table for the rework**, because several of
+its own findings were closed by code that has since been deleted and a reader
+coming to it cold would otherwise be misled: H3's wiring half, H4's goal
+reconcile, L3's Yes-arm rule, and L4's defect — the label that printed
+"undefined" was built by code that no longer exists. They stay marked fixed:
+they were, and then the ground moved. H3's predicate comparison survives,
+because M8 still asks it of an Entry · Event.
+
+**`QUIBBLER-REQUIREMENTS.md`** is the note for whoever owns the nudge engine.
+One question first — **does the dispatch path re-check eligibility before
+sending a queued message?** — because everything else depends on it.
+`NudgeCommunicationData` rows queue with `dispatched = false` and a cron
+picks them up, which is the right shape for a pre-dispatch check, but whether
+the check happens could not be established from reading the repo.
+Cancelling on the event is explicitly optional, and **no UI depends on it**.
+
+**The wording was swept to match what can be promised**: "receives no further
+messages from this campaign" everywhere, never "removed the moment they
+convert". The weaker claim is true whether the engine cancels a queued
+message or merely declines to send it when its turn comes. The comment on
+`exitOnConversion` says why, so the next person does not quietly strengthen
+it.
+
+That closes the five-commit rework. **Still open, and deliberately:** several
+goal events any of which counts as a conversion; the rest of H7's guardrails
+(frequency capping, pre-send re-checks, per-channel consent, throttling,
+cross-campaign holdout); and M6's variant assignment unit and stickiness.

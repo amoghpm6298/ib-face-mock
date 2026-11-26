@@ -33,6 +33,13 @@ export interface DripAnalyticsMetrics {
   // People sitting on a wait right now, out of the number that reached it.
   // Only present for the two waiting node types.
   waitingByNodeId: Record<string, number>;
+  // Conversions credited to the last message an account received before it
+  // converted. Only on SEND nodes, and they sum to the campaign total.
+  conversionsByNodeId: Record<string, number>;
+  // Where accounts were standing when they converted, when converting takes
+  // them out of the journey. Empty when it does not: with exit off nobody
+  // leaves at the moment of conversion, so there is no "here" to name.
+  convertedHereByNodeId: Record<string, number>;
 }
 
 export interface DripAnalyticsTotals {
@@ -43,11 +50,16 @@ export interface DripAnalyticsTotals {
   exitedWithoutGoal: number;
   stillActive: number;
   conversionRate: number;
-  // What the held-back group did without ever being messaged. Illustrative,
-  // from the same seed as everything else, and deliberately a lower rate
-  // than the treatment group's — a campaign that did nothing would not be
-  // worth running.
+  // What the held-back group did without ever being messaged, over the SAME
+  // window as the messaged group — measuring the two on different clocks
+  // would make the comparison meaningless. Illustrative, from the same seed
+  // as everything else, and drawn independently: a campaign that did nothing
+  // should be able to show that.
   controlReachedGoal: number;
+  controlConversionRate: number;
+  // The window both groups were measured over, so the report can say it
+  // rather than leave the reader to find it on another tab.
+  conversionWindowDays: number | null;
 }
 
 export interface DripAnalyticsData {
@@ -126,7 +138,6 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
   const edgeCounts: Record<string, { count: number; pct: number }> = {};
   const engagementByNodeId: Record<string, { deliveredPct: number; openedPct: number; clickedPct: number }> = {};
   const waitingByNodeId: Record<string, number> = {};
-  let reachedGoal = 0;
   let exitedWithoutGoal = 0;
   let stillActive = 0;
 
@@ -171,10 +182,10 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
         const clickedPct = Math.round(openedPct * (0.2 + nodeRand() * 0.25)); // 20-45% of opened
         engagementByNodeId[nodeId] = { deliveredPct, openedPct, clickedPct };
       }
-      if (node.type === 'GOAL_EXIT') {
-        reachedGoal += total;
-        continue;
-      }
+      // Conversion is no longer counted from arrivals at a Goal Reached
+      // node — there isn't one. It becomes a campaign-level count within
+      // the conversion window (Commit 4). Until then every Exit is just an
+      // end, and the goal totals are computed below from the campaign.
       if (node.type === 'EXIT') {
         exitedWithoutGoal += total;
         continue;
@@ -232,20 +243,99 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
     }
   }
 
-  const conversionRate = entered > 0 ? reachedGoal / entered : 0;
-  // The held-back group converts on its own, at a materially lower rate —
-  // 45-70% of the messaged rate, from the same seeded sequence. Rounded
-  // down so it can never tie the treatment result at small numbers.
-  // Derived from its own seed, not from the treatment rate. The previous
-  // form was conversionRate * (0.45..0.70), which made control strictly
-  // lower than treatment every time — so uplift was positive by
-  // construction and the dashboard could never show that a campaign had
-  // failed. An independent draw can land either side.
-  const controlRate = Math.max(0, Math.min(1, 0.04 + rand() * 0.16));
+  // Conversion is a campaign-level count now, not arrivals at a Goal Reached
+  // node — there is no such node. Both groups are drawn the same way, each
+  // from its own seeded rate, which is what lets uplift land either side:
+  // the old form made control a fraction of treatment, so a campaign could
+  // never be shown to have failed (audit H8).
+  //
+  // Crediting a conversion to the last message an account received, and
+  // counting where people converted, is the next piece of work; this is the
+  // campaign total that both of those have to add up to.
+  const win = campaign.goal?.conversionWindow;
+  const windowDays = win && Number(win.duration) > 0 ? Number(win.duration) / (win.unit === 'hours' ? 24 : 1) : null;
+  const exitsOnConversion = !!campaign.goal?.eventType && campaign.goal.exitOnConversion !== false;
+  const treatmentRate = campaign.goal ? Math.max(0, Math.min(1, 0.10 + rand() * 0.25)) : 0;
+  const reachedGoalTotal = Math.floor(entered * treatmentRate);
+  const conversionRate = entered > 0 ? reachedGoalTotal / entered : 0;
+  const controlRate = campaign.goal ? Math.max(0, Math.min(1, 0.04 + rand() * 0.16)) : 0;
   const controlReachedGoal = Math.floor(control * controlRate);
 
+
+  // ---------------------------------------------------------------------
+  // Where the conversions came from.
+  //
+  // Last-touch: an account is credited to the last message it received
+  // before converting. So a Send's share is the people who reached it and
+  // did NOT go on to receive another message — reaching a later Send moves
+  // the credit forward. That pool is computable from the counts already
+  // walked above, and the shares add up to the campaign total by
+  // construction, with the remainder going to the largest pool rather than
+  // being dropped.
+  //
+  // And where they were standing when it happened: with exit on, an account
+  // converts somewhere, and that somewhere is whatever follows the message
+  // it last received — usually a wait. If nothing follows, it converted at
+  // the Send itself.
+  // ---------------------------------------------------------------------
+  const conversionsByNodeId: Record<string, number> = {};
+  const convertedHereByNodeId: Record<string, number> = {};
+  const g = graph; // narrowed: everything below only runs with a real graph
+  const sendIds = g ? Object.values(g.nodes).filter((n) => n.type === 'SEND').map((n) => n.id) : [];
+
+  const downstreamSendCount = (id: string): number => {
+    // The messages an account goes on to receive after this one. Walks past
+    // waits and conditions, and stops at the first Send on each path.
+    let total = 0;
+    const seen = new Set<string>([id]);
+    const queue = g!.edges.filter((e) => e.from === id && e.to).map((e) => e.to!);
+    while (queue.length) {
+      const cur = queue.shift()!;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      if (g!.nodes[cur]?.type === 'SEND') {
+        total += nodeCounts[cur] || 0;
+        continue;
+      }
+      for (const e of g!.edges) if (e.from === cur && e.to && !seen.has(e.to)) queue.push(e.to);
+    }
+    return total;
+  };
+
+  const pools = sendIds.map((id) => ({ id, pool: Math.max(0, (nodeCounts[id] || 0) - downstreamSendCount(id)) }));
+  const poolTotal = pools.reduce((t, p) => t + p.pool, 0);
+  if (poolTotal > 0 && reachedGoalTotal > 0) {
+    let assigned = 0;
+    for (const p of pools) {
+      const share = Math.floor((reachedGoalTotal * p.pool) / poolTotal);
+      conversionsByNodeId[p.id] = share;
+      assigned += share;
+    }
+    const biggest = pools.reduce((a, b) => (b.pool > a.pool ? b : a));
+    conversionsByNodeId[biggest.id] += reachedGoalTotal - assigned;
+
+    if (exitsOnConversion) {
+      for (const p of pools) {
+        const after = g!.edges.find((e) => e.from === p.id && e.to)?.to;
+        const where = after && g!.nodes[after] && g!.nodes[after].type !== 'EXIT' ? after : p.id;
+        convertedHereByNodeId[where] = (convertedHereByNodeId[where] || 0) + (conversionsByNodeId[p.id] || 0);
+      }
+    }
+  }
+
   return {
-    metrics: { nodeCounts, edgeCounts, engagementByNodeId, waitingByNodeId },
-    totals: { totalMatched, control, entered, reachedGoal, exitedWithoutGoal, stillActive, conversionRate, controlReachedGoal },
+    metrics: { nodeCounts, edgeCounts, engagementByNodeId, waitingByNodeId, conversionsByNodeId, convertedHereByNodeId },
+    totals: {
+      totalMatched,
+      control,
+      entered,
+      reachedGoal: reachedGoalTotal,
+      exitedWithoutGoal,
+      stillActive,
+      conversionRate,
+      controlReachedGoal,
+      controlConversionRate: control > 0 ? controlReachedGoal / control : 0,
+      conversionWindowDays: windowDays,
+    },
   };
 }

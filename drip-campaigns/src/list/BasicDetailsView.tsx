@@ -2,6 +2,7 @@
 // the wizard's own Basic Details, Goal and Guardrails steps; this is the
 // read-back, not a second place to change them.
 import type { DripCampaign } from '../data/graphTypes';
+import { dcConversionSentence } from '../data/conversionWindow';
 import { dcQuietHoursSentence } from '../data/quietHours';
 import { dcGoalLabel } from '../reducer/labelMeta';
 import { ImportedFilePanel } from '../components/ImportedFilePanel';
@@ -77,6 +78,26 @@ export function BasicDetailsView({ campaign }: { campaign: DripCampaign }) {
       <section className="bd-section">
         <div className="bd-section-title">Goal</div>
         <Row label="Goal" value={dcGoalLabel(c.goal) || none('No goal defined')} />
+        {c.goal?.eventType ? (
+          <>
+            <Row label="Counts as a conversion" value={dcConversionSentence(c.goal)} />
+            <Row
+              label="On converting"
+              value={
+                c.goal.exitOnConversion === false
+                  ? 'Customers carry on through the journey.'
+                  : 'Customers stop receiving messages, wherever they are in the journey.'
+              }
+            />
+            {/* The end date stops the journey; the window still decides what
+                counts. An account that entered before the end date keeps its
+                own window, and the held-back group is measured the same way,
+                so late entrants are not judged on a shorter clock. */}
+            {c.endDate ? (
+              <Row label="After the end date" value="No further messages. Conversions by accounts that already entered still count until each one's window closes." />
+            ) : null}
+          </>
+        ) : null}
       </section>
 
       <section className="bd-section">
