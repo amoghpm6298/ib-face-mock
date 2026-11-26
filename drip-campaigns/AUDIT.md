@@ -10,7 +10,7 @@ This module is a **builder only** — it saves journeys as config and nothing ex
 |---|---|---|
 | Critical | 3 | **3** |
 | High | 8 | **4** |
-| Medium | 9 | **4** |
+| Medium | 9 | **5** |
 | Low | 5 | 0 |
 
 **Fixed so far:** C1, C2, C3, H1, H2, H4, H8, M2 — plus four seed-data defects the new validation found. Each fixed finding is marked below with what closed it.
@@ -243,7 +243,7 @@ Zero, blank or negative means either an instant timeout or a run that waits fore
 
 **Fix.** Move delays out of Send into Wait nodes. Give Send `sendWindow?: { at: 'HH:mm'; tz: 'customer'|'issuer' }` with next-occurrence semantics. Remove or expose `relativeAnchor`.
 
-### M4 · Seed data contradicts itself
+### M4 · Seed data contradicts itself  ✅ **FIXED** (both contradictions; one targeting question stands)
 
 | Issue | Location |
 |---|---|
@@ -254,6 +254,10 @@ Zero, blank or negative means either an instant timeout or a run that waits fore
 **Correction to the original audit.** It also flagged DRIP-006 "Card Issuance to Activation (Set PIN)" against goal "Virtual card activated" as a contradiction. That is a naming question, not a defect — setting a PIN is plausibly part of activation. Dropped.
 
 **Fix.** Correct the seeds. Add a test that rebuilds each node's label from its `_config` and asserts they match.
+
+> **Fixed.** Both contradictions are gone: DRIP-004's goal now names the event its own graph waits for, and the label drift was fixed wholesale — 28 of 94 nodes, not the two spotted here — with `tests/unit/seedLabels.test.ts` rebuilding every node and requiring an exact match. See the seed-defect tables below.
+>
+> **Still open, as a question rather than a defect:** DRIP-004's audience has no filters, so a reward-expiry campaign targets every account monthly. An audience with no filters targeting everyone is a deliberate, real answer in this builder, so this is not wrong on its own — but for this campaign it almost certainly should narrow to accounts holding points that are about to lapse, and there is no attribute for that today. Same family as the DRIP-004 goal-narrowing question below.
 
 ### M5 · Parallel paths don't define terminal scope
 
