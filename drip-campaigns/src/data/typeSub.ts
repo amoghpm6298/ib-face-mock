@@ -16,6 +16,5 @@ export const DC_TYPE_SUB: Record<DcNodeType, string> = {
   // This line used to say "system-generated, not addable" — in the picker
   // that offers it.
   GOAL_CHECK: 'Has the campaign goal been achieved?',
-  GOAL_EXIT: 'Mark the goal as achieved',
-  EXIT: 'End the journey',
+  EXIT: 'End the journey for this path',
 };

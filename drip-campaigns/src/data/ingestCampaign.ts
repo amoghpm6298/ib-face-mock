@@ -24,12 +24,17 @@ import type { DripCampaign, DripGoal, DripGraph, DripNode } from './graphTypes';
 import { dcBranchWhatOf, dcFiltersOf } from './filters';
 import { DC_NODE_META } from './nodeMeta';
 import { DC_PORTS, dcIsPort } from './ports';
+import { dcMigrateGoalNodes, dcNeedsGoalMigration } from './migrateGoal';
 import { dcRecomputeLabelMeta } from '../reducer/labelMeta';
 
 const ENTITY_ATTRIBUTE = /^(.+) attribute$/i;
 
 export type IngestResult =
-  | { ok: true; campaign: DripCampaign }
+  // `notes` says what the goal migration changed, when it ran. Nothing reads
+  // it on screen yet — surfacing it belongs with the validation work — but it
+  // is returned rather than discarded, because restructuring someone's
+  // campaign silently is not a thing to design in.
+  | { ok: true; campaign: DripCampaign; notes?: string[] }
   | { ok: false; error: string };
 
 function asCampaign(raw: unknown): { name?: string; root?: DripGraph | null } | null {
@@ -170,7 +175,15 @@ export function ingestCampaignJson(raw: unknown, nextId: string, sourceText?: st
   if (!parsed?.root || typeof parsed.root.nodes !== 'object' || !Array.isArray(parsed.root.edges)) {
     return { ok: false, error: 'This is not a drip campaign.' };
   }
-  const integrity = graphIntegrityError(parsed.root);
+  // Goal nodes are migrated BEFORE the integrity check, not after: a file
+  // written against the old model carries GOAL_EXIT, which is no longer a
+  // kind of step this builder has, and the integrity check would reject the
+  // whole file for it. Migrating first means an old file imports as the new
+  // model rather than being refused for being old.
+  const migrated = dcNeedsGoalMigration(parsed.root) ? dcMigrateGoalNodes(parsed.root) : { graph: parsed.root, notes: [] };
+  const root = migrated.graph;
+
+  const integrity = graphIntegrityError(root);
   if (integrity) return { ok: false, error: integrity };
   const name = String(parsed.name ?? '').trim() || 'Untitled';
   const src = parsed as Partial<DripCampaign>;
@@ -181,10 +194,13 @@ export function ingestCampaignJson(raw: unknown, nextId: string, sourceText?: st
     issuer: src.issuer ?? '',
     applyToAllPrograms: src.applyToAllPrograms ?? false,
     programs: Array.isArray(src.programs) ? src.programs : [],
-    goal: src.goal ?? null,
+    // A campaign that names a goal gets the new conversion settings, since
+    // the old model had no way to express them. Exit on conversion matches
+    // the default a new campaign gets.
+    goal: src.goal ? { ...src.goal, exitOnConversion: src.goal.exitOnConversion ?? true } : null,
     controlPct: typeof src.controlPct === 'number' ? src.controlPct : 10,
     status: 'DRAFT',
-    root: normalizeGraph(parsed.root, src.goal ?? null),
+    root: normalizeGraph(root, src.goal ?? null),
     startDate: src.startDate ?? '',
     endDate: src.endDate ?? '',
     versionOf: null,
@@ -197,7 +213,7 @@ export function ingestCampaignJson(raw: unknown, nextId: string, sourceText?: st
     reEntryCooloffUnit: src.reEntryCooloffUnit,
     guardrails: src.guardrails,
   };
-  return { ok: true, campaign };
+  return { ok: true, campaign, notes: migrated.notes };
 }
 
 export function parseCampaignFile(text: string, nextId: string): IngestResult {

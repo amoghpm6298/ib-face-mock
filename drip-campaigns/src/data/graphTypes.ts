@@ -160,6 +160,20 @@ export interface DripGoal {
   eventCategory: string;
   eventType: string;
   conditions: DripGoalCondition[];
+  // Conversion is a campaign-level fact, not a step on the canvas. A node
+  // only evaluates where it sits, so a goal drawn into the journey can only
+  // ever catch someone who converted at that point — convert while sitting
+  // in a Wait, or on another path, and nothing noticed. These two settings
+  // replace the Goal Check / Goal Reached nodes entirely.
+  //
+  // `exitOnConversion` stops messaging an account the moment the goal event
+  // fires, wherever it is in the journey. On by default. Phase 2 (the Goal
+  // step's own UI) adds the control; it is read here from Phase 1 so the
+  // picker can already gate Goal Check on it.
+  exitOnConversion?: boolean;
+  // How long after ENTRY a conversion still counts toward this campaign.
+  // Suggested once when the goal is first set and never recomputed.
+  conversionWindow?: { duration: number; unit: 'days' | 'hours' };
   // Journey/Offer Events' own scoping — which journey/batch or offer
   // type/name this event is about. Optional and only meaningful for
   // those two categories; absent (not just empty-string) on every other

@@ -126,7 +126,6 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
   const edgeCounts: Record<string, { count: number; pct: number }> = {};
   const engagementByNodeId: Record<string, { deliveredPct: number; openedPct: number; clickedPct: number }> = {};
   const waitingByNodeId: Record<string, number> = {};
-  let reachedGoal = 0;
   let exitedWithoutGoal = 0;
   let stillActive = 0;
 
@@ -171,10 +170,10 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
         const clickedPct = Math.round(openedPct * (0.2 + nodeRand() * 0.25)); // 20-45% of opened
         engagementByNodeId[nodeId] = { deliveredPct, openedPct, clickedPct };
       }
-      if (node.type === 'GOAL_EXIT') {
-        reachedGoal += total;
-        continue;
-      }
+      // Conversion is no longer counted from arrivals at a Goal Reached
+      // node — there isn't one. It becomes a campaign-level count within
+      // the conversion window (Commit 4). Until then every Exit is just an
+      // end, and the goal totals are computed below from the campaign.
       if (node.type === 'EXIT') {
         exitedWithoutGoal += total;
         continue;
@@ -232,20 +231,23 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
     }
   }
 
-  const conversionRate = entered > 0 ? reachedGoal / entered : 0;
-  // The held-back group converts on its own, at a materially lower rate —
-  // 45-70% of the messaged rate, from the same seeded sequence. Rounded
-  // down so it can never tie the treatment result at small numbers.
-  // Derived from its own seed, not from the treatment rate. The previous
-  // form was conversionRate * (0.45..0.70), which made control strictly
-  // lower than treatment every time — so uplift was positive by
-  // construction and the dashboard could never show that a campaign had
-  // failed. An independent draw can land either side.
-  const controlRate = Math.max(0, Math.min(1, 0.04 + rand() * 0.16));
+  // Conversion is a campaign-level count now, not arrivals at a Goal Reached
+  // node — there is no such node. Both groups are drawn the same way, each
+  // from its own seeded rate, which is what lets uplift land either side:
+  // the old form made control a fraction of treatment, so a campaign could
+  // never be shown to have failed (audit H8).
+  //
+  // Crediting a conversion to the last message an account received, and
+  // counting where people converted, is the next piece of work; this is the
+  // campaign total that both of those have to add up to.
+  const treatmentRate = campaign.goal ? Math.max(0, Math.min(1, 0.10 + rand() * 0.25)) : 0;
+  const reachedGoalTotal = Math.floor(entered * treatmentRate);
+  const conversionRate = entered > 0 ? reachedGoalTotal / entered : 0;
+  const controlRate = campaign.goal ? Math.max(0, Math.min(1, 0.04 + rand() * 0.16)) : 0;
   const controlReachedGoal = Math.floor(control * controlRate);
 
   return {
     metrics: { nodeCounts, edgeCounts, engagementByNodeId, waitingByNodeId },
-    totals: { totalMatched, control, entered, reachedGoal, exitedWithoutGoal, stillActive, conversionRate, controlReachedGoal },
+    totals: { totalMatched, control, entered, reachedGoal: reachedGoalTotal, exitedWithoutGoal, stillActive, conversionRate, controlReachedGoal },
   };
 }

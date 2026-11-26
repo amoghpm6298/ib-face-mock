@@ -44,7 +44,7 @@ describe('when a send goes out', () => {
 
 describe('a new Send carries no delay fields at all', () => {
   it('because there is no longer anywhere to put one', () => {
-    const cfg = dcDefaultConfig('SEND', null) as Record<string, unknown>;
+    const cfg = dcDefaultConfig('SEND') as Record<string, unknown>;
     expect(cfg.relativeDuration).toBeUndefined();
     expect(cfg.relativeUnit).toBeUndefined();
     // relativeAnchor was stored and no form ever offered it, while the one

@@ -124,7 +124,6 @@ function StepConfig({ node, campaign, graph }: { node: DripNode; campaign: DripC
       return <Row label="Split" value={<Lines items={(p.branches || []).map((b: { label: string; pct: number }) => `${b.label} ${b.pct}%`)} empty="No variants." />} />;
     case 'GOAL_CHECK':
       return <Row label="Campaign goal" value={dcGoalLabel(campaign.goal) || <span className="sp-empty">No goal defined</span>} />;
-    case 'GOAL_EXIT':
     case 'EXIT':
       return <Row label="Reason" value={p.reason || '—'} />;
     default:

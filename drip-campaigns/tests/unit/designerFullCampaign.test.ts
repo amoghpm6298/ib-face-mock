@@ -25,11 +25,38 @@ function imported(): DripCampaign {
 const graph = (c: DripCampaign): DripGraph => c.root!;
 
 describe('the real designer file imports whole', () => {
-  it('keeps every node and every edge', () => {
+  // The file was written against the old goal model: six Goal Checks, each
+  // with a Goal Reached on its Yes arm. Conversion is a campaign setting now,
+  // so those twelve steps are migrated out on import — the six checks because
+  // nobody is still in the journey to answer them, and the six Goal Reached
+  // steps because they only recorded a conversion that is now counted without
+  // them. Everything else arrives untouched.
+  it('keeps every node and edge that still means something, and migrates the goal steps out', () => {
     const g = graph(imported());
-    expect(Object.keys(g.nodes)).toHaveLength(28);
-    expect(g.edges).toHaveLength(27);
+    expect(Object.keys(g.nodes)).toHaveLength(16);
+    expect(g.edges).toHaveLength(15);
     expect(g.rootId).toBe('dcn1');
+    expect(Object.values(g.nodes).map((n) => String(n.type))).not.toContain('GOAL_CHECK');
+    expect(Object.values(g.nodes).map((n) => String(n.type))).not.toContain('GOAL_EXIT');
+  });
+
+  it('says what it changed, rather than restructuring the campaign silently', () => {
+    const r = parseCampaignFile(TEXT, 'DRIP-901');
+    if (!r.ok) throw new Error(r.error);
+    const notes = (r.notes || []).join(' | ');
+    expect(notes).toMatch(/6 Goal Check steps removed/);
+    expect(notes).toMatch(/6 Goal Reached steps dropped/);
+  });
+
+  it('every step that is left is still reachable from the entry', () => {
+    const g = graph(imported());
+    const seen = new Set([g.rootId!]);
+    const queue = [g.rootId!];
+    while (queue.length) {
+      const cur = queue.shift()!;
+      for (const e of g.edges) if (e.from === cur && e.to && !seen.has(e.to)) { seen.add(e.to); queue.push(e.to); }
+    }
+    expect(seen.size).toBe(Object.keys(g.nodes).length);
   });
 
   it('decides identity itself and discards what the file claimed', () => {
@@ -67,11 +94,17 @@ describe('nothing in it throws, and nothing reads as undefined', () => {
     }
   });
 
-  it('the twelve nodes with no config at all still name themselves', () => {
+  // This used to check the twelve nodes that arrived with no config at all —
+  // every one of them a Goal Check or a Goal Reached, so after migration the
+  // file has none left. Asserting "0 of them name themselves" would pass
+  // without testing anything, so it asks the stronger question instead:
+  // every step that survived names itself, config or no config.
+  it('every step that survived names itself', () => {
     const c = imported();
-    const nullConfig = Object.entries(graph(c).nodes).filter(([, n]) => n._config === null);
-    expect(nullConfig).toHaveLength(12);
-    for (const [id, n] of nullConfig) {
+    const entries = Object.entries(graph(c).nodes);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [id, n] of entries) {
+      expect(n.label.trim(), id).not.toBe('');
       expect(dcRecomputeLabelMeta(n.type, n._config, c.goal).label.trim(), id).not.toBe('');
     }
   });
@@ -79,8 +112,8 @@ describe('nothing in it throws, and nothing reads as undefined', () => {
   it('builds a canvas with no undefined anywhere on it', () => {
     const c = imported();
     const els = graphToFlowElements(graph(c), { editable: true, goal: c.goal });
-    expect(els.nodes).toHaveLength(28);
-    expect(els.edges).toHaveLength(27);
+    expect(els.nodes).toHaveLength(16);
+    expect(els.edges).toHaveLength(15);
     expect(els.nodes.filter((n) => /undefined/i.test(JSON.stringify(n.data)))).toEqual([]);
   });
 

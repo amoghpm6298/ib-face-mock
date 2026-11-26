@@ -16,13 +16,18 @@ export type DcNodeType =
   | 'SPLIT' | 'DECISION_SPLIT' | 'RANDOM_SPLIT'
   // First-class, real node type (Phase 1 IA, approved) — not a SPLIT with
   // a `_config.basis === 'Goal reached'` flag. Zero local configuration:
-  // its question is always derived live from the campaign Goal. Inserted
-  // automatically after every Send/Wait when a Goal exists, AND addable
-  // by hand from the picker for the places auto-insertion doesn't reach
-  // (after a Wait for Event, or on a Branch/Experiment/Condition arm).
-  // Both routes build the identical node — see campaignReducer.ts.
+  // its question is always derived live from the campaign Goal.
+  //
+  // Never auto-inserted any more, and only offered at all when exit on
+  // conversion is OFF: with it on, an account that converts leaves the
+  // journey, so a Goal Check could only ever answer No. Conversion itself
+  // is a campaign setting — see DripGoal.exitOnConversion.
   | 'GOAL_CHECK'
-  | 'GOAL_EXIT' | 'EXIT';
+  // GOAL_EXIT ("Goal Reached") is gone. Conversion is counted from the goal
+  // event within the conversion window, not from arrivals at a node, so a
+  // step that declared it was a second source of truth for the same fact.
+  // An Exit is an Exit: "End journey".
+  | 'EXIT';
 
 // One category per distinct visual/semantic treatment (Phase 2 §10):
 // Experiment gets its own (allocation-by-chance is a different mental
@@ -58,7 +63,6 @@ export const DC_NODE_ICON: Record<DcNodeType, string> = {
   DECISION_SPLIT: 'split3',
   RANDOM_SPLIT: 'flask',
   GOAL_CHECK: 'targetCheck',
-  GOAL_EXIT: 'award',
   EXIT: 'doorExit',
 };
 
@@ -74,7 +78,6 @@ export const DC_NODE_META: Record<DcNodeType, { cat: DcNodeCategory; type: strin
   DECISION_SPLIT: { cat: 'split', type: 'Branch', size: 'standard' },
   RANDOM_SPLIT: { cat: 'experiment', type: 'Experiment', size: 'standard' },
   GOAL_CHECK: { cat: 'goalcheck', type: 'Goal Check', size: 'compact' },
-  GOAL_EXIT: { cat: 'goal', type: 'Goal Reached', size: 'compact' },
   EXIT: { cat: 'exit', type: 'Exit', size: 'compact' },
 };
 
@@ -86,21 +89,18 @@ export const DC_NODE_META: Record<DcNodeType, { cat: DcNodeCategory; type: strin
 // Yes/No, exactly like Condition and Branch. It used to be absent here
 // entirely (system-generated only), with Condition carrying a "Goal"
 // source as the manual equivalent. That was one question with two node
-// types and, worse, two behaviours: the auto one wired Yes straight to
-// Goal Reached, the Condition one left both arms open. The Goal source
-// is gone; this is now the single way to ask it, auto-inserted or added
-// by hand. Only ever enabled when a campaign Goal actually exists —
-// see DripBuilder's disabledTypes. GOAL_EXIT ("Goal Reached") is
-// similarly gated, to an already-forked branch arm.
+// types and, worse, two behaviours. The Goal source is gone; this is now
+// the single way to ask it, and it is only enabled when a campaign Goal
+// exists AND exit on conversion is off — see DripBuilder's disabledTypes.
 export const DC_TYPE_CATEGORIES: { label: string; types: DcNodeType[] }[] = [
   { label: 'Actions', types: ['SEND'] },
   { label: 'Wait', types: ['PAUSE', 'WAIT_UNTIL'] },
   { label: 'Decisions', types: ['SPLIT', 'DECISION_SPLIT', 'GOAL_CHECK'] },
   { label: 'Experiment', types: ['RANDOM_SPLIT'] },
-  { label: 'End the Journey', types: ['EXIT', 'GOAL_EXIT'] },
+  { label: 'End the Journey', types: ['EXIT'] },
 ];
 
-export const DC_STEP_TYPES: DcNodeType[] = ['SEND', 'PAUSE', 'WAIT_UNTIL', 'SPLIT', 'DECISION_SPLIT', 'GOAL_CHECK', 'RANDOM_SPLIT', 'GOAL_EXIT', 'EXIT'];
+export const DC_STEP_TYPES: DcNodeType[] = ['SEND', 'PAUSE', 'WAIT_UNTIL', 'SPLIT', 'DECISION_SPLIT', 'GOAL_CHECK', 'RANDOM_SPLIT', 'EXIT'];
 
 // Routing vs. fan-out — the single distinction behind parallel paths.
 //
@@ -125,7 +125,7 @@ export const DC_STEP_TYPES: DcNodeType[] = ['SEND', 'PAUSE', 'WAIT_UNTIL', 'SPLI
 // its children or gives each child the full count. A stored flag could
 // drift out of sync with the node's actual type; a derived rule cannot.
 export const DC_ROUTING_TYPES: DcNodeType[] = ['SPLIT', 'DECISION_SPLIT', 'RANDOM_SPLIT', 'GOAL_CHECK', 'WAIT_UNTIL'];
-export const DC_TERMINAL_TYPES: DcNodeType[] = ['GOAL_EXIT', 'EXIT'];
+export const DC_TERMINAL_TYPES: DcNodeType[] = ['EXIT'];
 
 export function dcIsRoutingNode(type: DcNodeType): boolean {
   return DC_ROUTING_TYPES.includes(type);

@@ -99,11 +99,11 @@ async function addFilter(page: import('@playwright/test').Page) {
   await page.waitForTimeout(150);
 }
 
-// A Send auto-inserts a WAIT FOR EVENT on the goal, never a bare Goal Check:
-// a check right after a send runs with zero elapsed time, so it can only
-// catch customers who had already converted before the message went out. The
-// wait listens for the goal instead, and exits the moment it fires.
-test('Send auto-inserts a Wait for Event on the goal + GOAL_EXIT; a fallback channel on Send shows the FALLBACK tag on canvas', async ({ page }) => {
+// A Send grows one open slot and nothing else. It used to auto-insert a Wait
+// listening for the goal — the best a positional model could do — but
+// conversion is a campaign setting now, checked wherever the customer is, so
+// the step is redundant and the canvas stays the author's.
+test('Send grows one open slot, no goal steps; a fallback channel shows the FALLBACK tag on canvas', async ({ page }) => {
   await startNewCampaignWithGoal(page, 'Builder Spec: Send Chain', 'Card Events', 'Virtual card activated');
   await addEntryEvent(page, 'Journey Events', 'Pageload');
 
@@ -120,18 +120,15 @@ test('Send auto-inserts a Wait for Event on the goal + GOAL_EXIT; a fallback cha
   await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
   await page.waitForTimeout(400);
 
-  // The goal is Card Events / Virtual card activated — an unambiguous event,
-  // so the wait's Yes arm goes straight to a Goal Reached exit and its
-  // timeout arm is the open slot the author carries on from.
-  await expect(page.locator('.dc-node-card:has-text("Wait for Event")')).toHaveCount(1);
+  // A goal is defined, and still nothing is drawn for it.
+  await expect(page.locator('.dc-node-card:has-text("Wait for Event")')).toHaveCount(0);
   await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
-  await expect(page.locator('.dc-node-card:has-text("Goal Reached")')).toHaveCount(1);
-  // A wait's arms say what they are: the event arrived, or the wait gave up.
-  await expect(page.locator('.dc-branch-label:has-text("Event received")')).toHaveCount(1);
-  await expect(page.locator('.dc-branch-label:has-text("Timed out")')).toHaveCount(1);
+  await expect(page.locator('.dc-node-card:has-text("Goal Reached")')).toHaveCount(0);
+  await expect(page.locator('.dc-node-card')).toHaveCount(2); // entry + send
+  await expect(page.locator('.dc-add-btn')).toHaveCount(1);
   await expect(page.locator('.dc-node-fallback-row')).toHaveCount(0);
 
-  await page.locator('.dc-add-btn').click(); // the open "No" slot
+  await page.locator('.dc-add-btn').click(); // the Send's own open slot
   await page.locator('.dc-type-opt', { hasText: /^Send/ }).click();
   await page.locator('.sd-drawer.open input[type=text]').first().fill('Msg2');
   const send2Selects = page.locator('.sd-drawer.open select');
@@ -154,7 +151,7 @@ test('Send auto-inserts a Wait for Event on the goal + GOAL_EXIT; a fallback cha
   await page.waitForTimeout(400);
 
   await expect(page.locator('.dc-node-fallback-row')).toHaveCount(1);
-  await expect(page.locator('.dc-node-card:has-text("Wait for Event")')).toHaveCount(2);
+  await expect(page.locator('.dc-node-card')).toHaveCount(3); // entry + two sends
   await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
 });
 
@@ -178,40 +175,23 @@ test('Send does NOT get an auto goal-check when no campaign Goal is defined', as
   await expect(page.locator('.dc-add-btn')).toHaveCount(1);
 });
 
-// Driven off a PAUSE rather than a Send: a Pause is now the only type that
-// auto-inserts a Goal Check, and it is the right one to — time has actually
-// passed by the time it runs, which is exactly what a check after a Send
-// lacked.
-test('Clicking "remove goal check" on an auto-inserted check collapses it, keeping whatever was under No', async ({ page }) => {
-  await startNewCampaignWithGoal(page, 'Builder Spec: Remove Goal Check', 'Card Events', 'Virtual card activated');
+// Goal Check is still a step you can add, but only while exit on conversion
+// is off: with it on, an account that converts has already left the journey,
+// so the check could only ever answer No. The switch itself lands with the
+// Goal step's own settings, so for now every campaign has it on and the tile
+// is offered-but-disabled, with the reason said out loud. The node's own
+// behaviour (both arms open, removable) is covered in the reducer tests.
+test('Goal Check is offered but disabled while customers exit on conversion', async ({ page }) => {
+  await startNewCampaignWithGoal(page, 'Builder Spec: Goal Check Gate', 'Card Events', 'Virtual card activated');
   await addEntryEvent(page, 'Journey Events', 'Pageload');
 
   await page.locator('.dc-add-btn').click();
-  await page.locator('.dc-type-opt:has-text("Wait for a fixed duration")').click();
-  await page.locator('.sd-drawer.open input[type=number]').first().fill('3');
-  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
-  await page.waitForTimeout(400);
-
-  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(1);
-  await expect(page.locator('.dc-goalcheck-badge')).toHaveCount(1);
-
-  // Build something real under the "No" branch before removing the check,
-  // to prove the removal preserves it rather than discarding it too.
-  await page.locator('.dc-add-btn').click();
-  await page.locator('.dc-type-opt:has-text("Wait for a fixed duration")').click();
-  await page.locator('.sd-drawer.open input[type=number]').first().fill('2');
-  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
-  await page.waitForTimeout(400);
-  await expect(page.locator('.dc-node-card:has-text("Wait 2 days")')).toHaveCount(1);
-  // That second Pause brought its own auto goal-check — 2 in total now, so
-  // removing the first one has something to leave behind.
-  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(2);
-
-  await page.locator('.dc-goalcheck-badge').first().click();
-  await page.waitForTimeout(400);
-
-  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(1);
-  await expect(page.locator('.dc-node-card:has-text("Wait 2 days")')).toHaveCount(1);
+  const tile = page.locator('.dc-type-opt', { hasText: 'Goal Check' });
+  await expect(tile).toHaveCount(1);
+  await expect(tile).toHaveClass(/disabled/);
+  await expect(tile).toHaveAttribute('title', /leave the journey as soon as they convert/);
+  // And Goal Reached is not a step at all any more.
+  await expect(page.locator('.dc-type-opt', { hasText: 'Goal Reached' })).toHaveCount(0);
 });
 
 test('A Send card shows a visible, hover-revealed remove button, not just the hidden edge "x"', async ({ page }) => {
@@ -286,7 +266,7 @@ test('Mid-chain insert explains why its type list is narrower, instead of lookin
   await expect(branchTile).toHaveAttribute('title', /can't be inserted mid-chain/);
 });
 
-test('Pause gets its own auto goal-check; auto-badge click-to-replace opens the add drawer', async ({ page }) => {
+test('Pause grows a plain open slot; the one step still auto-inserted carries the replace badge', async ({ page }) => {
   await startNewCampaignWithGoal(page, 'Builder Spec: Pause', 'Card Events', 'Virtual card activated');
   await addEntryEvent(page, 'Journey Events', 'Pageload');
 
@@ -296,11 +276,24 @@ test('Pause gets its own auto goal-check; auto-badge click-to-replace opens the 
   await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
   await page.waitForTimeout(400);
 
-  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(1);
+  // No goal step of any kind, and one slot to carry on from.
+  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
+  await expect(page.locator('.dc-node-card')).toHaveCount(2);
+  await expect(page.locator('.dc-add-btn')).toHaveCount(1);
 
-  // The auto goal-check Split itself now also carries a "remove" badge —
-  // this test is specifically about the GOAL_EXIT's own "replace" badge,
-  // so target it precisely rather than the first .dc-auto-badge found.
+  // A Wait for Event on a multi-outcome event still inserts its outcome
+  // Condition — that was never about the goal: EMI_STATUS_CHANGED fires the
+  // same event for Successful, Failed and Expired, so "it happened" is not
+  // an answer. That node is auto-generated, and carries the replace badge.
+  await page.locator('.dc-add-btn').click();
+  await page.locator('.dc-type-opt:has-text("Wait for Event")').click();
+  const drawer = page.locator('.sd-drawer.open');
+  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Category' }) }).locator('select').selectOption('EMI Events');
+  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Type' }) }).locator('select').selectOption('EMI_STATUS_CHANGED');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(400);
+
+  await expect(page.locator('.dc-node-card:has-text("New Status?")')).toHaveCount(1);
   await page.locator('.dc-replace-badge').first().click();
   await page.waitForTimeout(300);
   await expect(page.locator('.sd-title')).toHaveText('Add Next Step');
@@ -878,21 +871,10 @@ test('A single linear connector is never offered a name — only genuinely paral
 });
 
 
-test('Goal Check is addable by hand when a Goal exists, and Condition has no Source control at all', async ({ page }) => {
-  await startNewCampaignWithGoal(page, 'Builder Spec: Manual Goal Check', 'Journey Events', 'Pageload');
+test('Condition picks its question from the one what list, with no Goal entry', async ({ page }) => {
+  await startNewCampaignWithGoal(page, 'Builder Spec: Condition Source', 'Journey Events', 'Pageload');
   await addEntryEvent(page, 'Journey Events', 'Pageload');
 
-  await page.locator('.dc-add-btn').click();
-  await expect(page.locator('.dc-type-opt:has-text("Goal Check")')).toBeVisible();
-  await page.locator('.dc-type-opt:has-text("Goal Check")').click();
-  await page.waitForTimeout(200);
-  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
-  await page.waitForTimeout(400);
-  await expect(page.locator('.dc-node-card', { hasText: 'Pageload?' })).toHaveCount(1);
-  await expect(page.locator('.dc-node-card', { hasText: 'Goal Reached' })).toHaveCount(1);
-
-  // Condition's Source control is gone entirely: the question is picked
-  // from the one grouped what list, which has no Goal entry.
   await page.locator('.dc-add-btn').first().click();
   await page.locator('.dc-type-opt:has-text("Condition")').first().click();
   await page.waitForTimeout(200);
@@ -905,6 +887,7 @@ test('Goal Check is addable by hand when a Goal exists, and Condition has no Sou
   await drawer.locator('.sd-foot button.btn.secondary').click();
   await page.waitForTimeout(250);
 });
+
 
 test('Goal Check is offered but disabled when no campaign Goal is defined', async ({ page }) => {
   await startNewCampaign(page, 'Builder Spec: Goal Check No Goal');
@@ -1217,7 +1200,10 @@ test('Campaign view: clicking a step opens it read-only, without starting an edi
 
 test('Campaign view: Analytics totals, arrow splits, and following one path', async ({ page }) => {
   await page.goto('/');
-  await page.locator('tr', { hasText: 'Card Activation Reminder' }).first().click();
+  // Card Activation Reminder is a straight line now that conversion is not
+  // drawn on the canvas, so it has no fork to measure. OS to EMI still
+  // splits — a real Experiment, which is what this is about.
+  await page.locator('tr', { hasText: 'OS to EMI' }).first().click();
   await page.waitForTimeout(600);
   await page.locator('.dv-tab', { hasText: 'Analytics' }).click();
   await page.waitForTimeout(1400);
@@ -1230,23 +1216,21 @@ test('Campaign view: Analytics totals, arrow splits, and following one path', as
   await expect(page.getByText('Conversion Rate')).toHaveCount(0);
   await expect(page.getByText('Still In Sequence')).toHaveCount(0);
 
-  // A split writes counts on its arrows; nothing anywhere carries a %.
+  // A split writes counts on its arrows. The experiment's own allocation is
+  // part of each arm's NAME, so the "no %" rule is checked on the count that
+  // follows it rather than on the whole chip.
   const labels = await page.locator('.dc-branch-label').allTextContents();
-  expect(labels.some((l) => /Eventreceived[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
-  expect(labels.some((l) => /Timedout[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
-  for (const l of labels) expect(l).not.toContain('%');
+  expect(labels.some((l) => /WhatsApp\(50%\)[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
+  expect(labels.some((l) => /SMS\(50%\)[\d,]/.test(l.replace(/\s/g, '')))).toBe(true);
+  for (const l of labels) expect(l.replace(/\(\d+%\)/, '')).not.toContain('%');
 
-  // Following the timeout arrow — the customers who never converted — fades
-  // everything off that path.
-  await page.locator('.dc-branch-label', { hasText: 'Timed out' }).first().click();
+  // Following one arm of the experiment fades everything off that path.
+  await page.locator('.dc-branch-label', { hasText: 'SMS' }).first().click();
   await page.waitForTimeout(600);
   await expect(page.locator('.an-path')).toBeVisible();
   const items = await page.locator('.an-path-list li').allTextContents();
-  // The checkpoint on this path is a Wait for Event on the goal, which is
-  // what the old "wait a bit, then check" pair collapsed into — the fixed
-  // wait's duration became the wait's timeout.
-  expect(items.join(' ')).toMatch(/Virtual card activated/);
-  expect(items.join(' ')).toMatch(/Reminder/);
+  expect(items.join(' ')).toMatch(/OS to EMI Offer/);
+  expect(items.join(' ')).toMatch(/Wait/);
   const faded = await page.locator('.dc-node-card').evaluateAll((els) => els.filter((e) => parseFloat(getComputedStyle(e).opacity) < 0.5).length);
   expect(faded).toBeGreaterThan(0);
 
@@ -1269,75 +1253,13 @@ test('Campaign view: a campaign that never ran says so on Analytics', async ({ p
   await expect(page.locator('.an-total')).toHaveCount(0);
 });
 
-// H3 — a wait may only exit straight to Goal Reached when its own predicate
-// means the goal. Sharing the goal's event type is not enough: with a goal of
-// "Transaction, amount at least ₹5,000", a wait on any Transaction fires on a
-// ₹50 coffee, and every one of those used to be recorded as a conversion.
-test('a Wait for Event broader than the goal gets a real Goal Check; narrowing it to the goal removes the need', async ({ page }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
-  await page.getByRole('button', { name: /Create from scratch/ }).click();
-  await page.locator('input[type=text]').first().fill('Builder Spec: Goal Predicate');
-  await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
-  // Say who it is for: an issuer with no programs and the toggle off reaches
-  // nobody, and the submit gate refuses that now.
-  await page.locator('.toggle-row .toggle').first().click();
-  await page.getByText('Continue to Goal →').click();
-  await page.waitForTimeout(200);
+// The H3 suite lived here: a Wait for Event used to shortcut to Goal Reached
+// when its predicate met the goal, and get a Goal Check when it was broader.
+// A wait wires neither now — conversion is a campaign setting — so there is
+// no behaviour left for this to drive. The predicate comparison it was built
+// around survives, and is still tested: an Entry · Event that already
+// satisfies the goal is refused at submit (goalPredicate.test.ts).
 
-  // Goal: a transaction of at least ₹5,000 — not just any transaction.
-  const goalSelects = page.locator('select');
-  await goalSelects.nth(0).selectOption('Transaction Events');
-  await goalSelects.nth(1).selectOption('Transaction');
-  await page.waitForTimeout(200);
-  await page.getByText('+ Add condition').click();
-  await page.waitForTimeout(200);
-  const goalRow = page.locator('.cond-row').first();
-  await goalRow.locator('select').first().selectOption('Transaction Amount');
-  await page.waitForTimeout(150);
-  await goalRow.locator('select').nth(1).selectOption('is at least');
-  await goalRow.locator('input[placeholder="Value"]').fill('5000');
-  await page.getByText('Continue to Builder →').click();
-  await page.waitForTimeout(300);
-
-  await addEntryEvent(page, 'Journey Events', 'Pageload');
-
-  // A wait on the goal's event with no filters of its own — broader.
-  await page.locator('.dc-add-btn').click();
-  await page.locator('.dc-type-opt:has-text("Wait for Event")').click();
-  const drawer = page.locator('.sd-drawer.open');
-  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Category' }) }).locator('select').selectOption('Transaction Events');
-  await drawer.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Type' }) }).locator('select').selectOption('Transaction');
-  await drawer.locator('input[type=number]').first().fill('5');
-  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
-  await page.waitForTimeout(500);
-
-  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(1);
-  await expect(page.locator('.dc-node-card:has-text("Goal Reached")')).toHaveCount(1);
-
-  // Undo, and build the same wait narrowed to the goal's own condition: now
-  // the event firing IS the goal, so it exits straight to Goal Reached.
-  await page.locator('button:has-text("Undo")').click();
-  await page.waitForTimeout(400);
-  await page.locator('.dc-add-btn').click();
-  await page.locator('.dc-type-opt:has-text("Wait for Event")').click();
-  const d2 = page.locator('.sd-drawer.open');
-  await d2.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Category' }) }).locator('select').selectOption('Transaction Events');
-  await d2.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Type' }) }).locator('select').selectOption('Transaction');
-  await d2.locator('input[type=number]').first().fill('5');
-  await d2.getByText('+ Add condition').click();
-  await page.waitForTimeout(200);
-  const waitRow = d2.locator('.cond-row').first();
-  await waitRow.locator('select').first().selectOption('Transaction Amount');
-  await page.waitForTimeout(150);
-  await waitRow.locator('select').nth(1).selectOption('is at least');
-  await waitRow.locator('input[placeholder="Value"]').fill('5000');
-  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
-  await page.waitForTimeout(500);
-
-  await expect(page.locator('.dc-node-card:has-text("Goal Reached")')).toHaveCount(1);
-  await expect(page.locator('.dc-node-card:has-text("Goal Check")')).toHaveCount(0);
-});
 
 // M7 — an issuer with no programs and the all-programs toggle off reaches
 // nobody. The campaign was otherwise complete and submitted happily.

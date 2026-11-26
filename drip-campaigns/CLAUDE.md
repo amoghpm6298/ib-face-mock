@@ -2011,3 +2011,61 @@ behaviour". A setting is a promise that every option works.
 
 Verified: 432 unit (423 → 432), 58 e2e, clean typecheck, zero lint errors,
 clean build.
+
+## 2026-11-26 (cont'd) — Commit 1 of the goal rework: conversion comes off
+the canvas
+
+The audit's C1/C2 fix made a Send grow a Wait listening for the goal. That
+shrank the race but could not close it: a node only evaluates where it sits,
+so an account that converted while sitting in a Pause, or on a parallel path,
+went unnoticed until it reached the next wait. Conversion is a property of
+the campaign, not of a position in it.
+
+**Gone from the canvas:** the Wait a Send auto-inserted, the Goal Check a
+Pause auto-inserted, the goal shortcut a Wait for Event got when its
+predicate met the goal (the wiring half of H3), **and Goal Reached as a node
+type**. Exit is just "End journey". With them went `dcGoalWiringIssues`, the
+goal half of `dcReconcileGoal` (H4), and L3's Yes-arm rule — all of which
+existed to keep a drawn goal honest.
+
+**Kept, and worth being clear why:** the outcome Condition after a
+multi-outcome wait. EMI_STATUS_CHANGED fires the same event for Successful,
+Failed, Expired and Cancelled, so "it happened" is not an answer — that was
+never about the goal. `dcEventMeetsGoal` also stays: M8 still asks it of an
+Entry · Event, because a campaign whose entry already satisfies its goal
+measures nothing.
+
+**Goal Check survives as a hand-added step, gated.** With exit on conversion
+on, an account that converts has already left, so the check could only answer
+No — the tile is offered and visibly disabled with that reason. **It is
+unreachable through the UI in this commit**, because the switch itself lands
+with the Goal step's settings next. Its behaviour is held by reducer tests
+meanwhile, and its e2e interaction coverage comes back when the toggle does.
+
+**The seeds were hand-cleaned, not migrated.** All six are ours, and we know
+what each step was for: a Wait that existed only to listen for the goal
+became a plain Wait of the same length. DRIP-001 went from 13 nodes to 8 and
+is now a straight line — Send, wait 3 days, Send, wait 4 days, Send, wait 3
+days, End journey — which is exactly how someone would build it today. The
+alternative, keeping every goal-guarding Wait with a dead "Yes → End" arm,
+would have left all six demo campaigns carrying scar tissue.
+
+**Imported files get the cautious rule instead** (`migrateGoal.ts`), because
+there we cannot know intent: Goal Check removed and its No path reconnected,
+Goal Reached converted to End journey in place, nothing else touched. It runs
+BEFORE the import integrity check — a file written against the old model
+carries GOAL_EXIT, which is no longer a kind of step, so checking first would
+reject it for being old. The real designer fixture goes from 28 nodes to 16,
+all twelve removed being Goal Check / Goal Reached pairs, and the migration
+reports what it changed rather than restructuring someone's campaign in
+silence.
+
+**Analytics conversion became a campaign-level count** rather than arrivals
+at a Goal Reached node, drawn independently for treatment and control. Credit
+to the last message, and counting where people converted, is the next piece;
+this is the total both have to add up to. One test was passing for the wrong
+reason and is now honest: it asserted the held-back group ALWAYS converts
+lower, which is exactly the guarantee H8 removed.
+
+Verified: 414 unit, 57 e2e, clean typecheck, zero lint errors, clean build,
+plus a screenshot of the migrated DRIP-001.

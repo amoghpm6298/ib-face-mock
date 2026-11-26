@@ -1,10 +1,9 @@
 // Ported from journeysnudgesemi/emi-conversions-prototype.html's
 // dcPickType (the default pendingConfig per node type) and dcAddFormValid.
 import { EVENT_CATEGORIES } from '../data/sharedConstants';
-import type { DripGoal, DripGraph, DripTxnHistoryCriteria } from '../data/graphTypes';
+import type { DripGraph, DripTxnHistoryCriteria } from '../data/graphTypes';
 import type { DcNodeType } from '../data/nodeMeta';
 import type { DcAddingAt } from './campaignReducer';
-import { dcGoalLabel } from './labelMeta';
 import { dcNewBranchId } from './idGen';
 import { dcBranchWhatOf, dcCompleteFilterGroups, dcFilterRowComplete, dcFilterGroupsOf } from '../data/filters';
 
@@ -17,7 +16,7 @@ export function dcDefaultTxnHistory(): DripTxnHistoryCriteria {
   return { filters: [], lookbackDuration: 90, lookbackUnit: 'days', existence: 'exists' };
 }
 
-export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
+export function dcDefaultConfig(type: DcNodeType): any {
   const map: Record<DcNodeType, unknown> = {
     ENTRY_SEGMENT: {
       // No filters by default: an audience with none targets everyone.
@@ -66,7 +65,6 @@ export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
     // GoalCheckInfo) — exists only so dcDefaultConfig's Record is total
     // over DcNodeType, and so openEditNode has a type-correct fallback.
     GOAL_CHECK: null,
-    GOAL_EXIT: { reason: dcGoalLabel(goal) || 'Goal achieved' },
     EXIT: { reason: 'Sequence exhausted' },
   };
   return map[type];
