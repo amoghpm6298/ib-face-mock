@@ -1897,3 +1897,59 @@ driving the Send drawer: two timing options, the next-occurrence sentence, no
 number inputs, and the card reading "As soon as they reach this step"), clean
 typecheck, zero lint errors, plus screenshots of the renamed arms and the step
 panel.
+
+## 2026-11-26 (cont'd) — H6 answered by production: a run is per account.
+Quiet hours built; re-entry left alone
+
+Three open questions went to the user. Two came back as decisions and one
+came back as "not sure — I think quibbler / ironbank send only on account
+basis", which was a lead to check rather than a decision to make.
+
+**H6 — a journey run is keyed to the ACCOUNT. Verified in `quibbler`, not
+assumed:**
+- `nudge_subscription` carries a unique constraint on `(account_id,
+  nudge_dfn_id)` — one subscription per account per nudge, enforced by the
+  database.
+- `NudgeSubscriptionV2` is `id`, `nudgeIdentifier`, **`accountId`**,
+  placeholders, timestamps. No customer id, no card id.
+- `NudgeCommunicationData` carries `accountId`, `email`, `mobileNumber`.
+  Again no customer or card anywhere in the path.
+
+So **no `journeyKey` field was added**, and the question the audit framed as
+a design choice turned out not to be one. Offering customer/account/card
+would advertise three answers where production can deliver exactly one. The
+rule is stated instead, on the campaign read-back beside Re-entry, because it
+settles a real case: a customer with two cards on one account goes through a
+card-issued campaign **once, not twice** — which is precisely what DRIP-001
+and DRIP-006 do, both starting on "Virtual card issued".
+
+**H5 — left as is, by decision.** Once per account ever; no warning, no
+change of default. The consequence is written down rather than hidden: a
+campaign set to repeat monthly with re-entry off reaches each account in its
+first month only, and DRIP-004 is configured exactly that way.
+
+**H7 — quiet hours, and only quiet hours.** `guardrails.quietHours` is
+`{ enabled, start, end, behavior }`, on by default at 21:00–09:00 with
+`defer`, beside the two lists that are also on by default. TRAI allows
+promotional messages between 9am and 9pm, so for an Indian issuer this is a
+rule rather than a preference. A window crossing midnight is the ordinary
+case. `behavior` says what happens to a message due inside it — wait and send
+when it lifts, or skip — and the drawer states the trade-off in those words:
+waiting delivers late, skipping means that customer never gets that one, the
+journey carries on either way. The gate refuses missing times, and a start
+equal to its end, which would block every hour rather than none.
+
+Frequency capping, pre-send re-checks, per-channel consent, throttling and
+cross-campaign holdout were deferred by the same decision, not forgotten.
+
+**No timezone field, for the third time in this audit** (dates, send timing,
+now quiet hours). The app has no timezone model and one here would be a claim
+the rest of the product cannot keep.
+
+**`dcQuietHoursSentence` is written once** and read by Review and the
+campaign read-back, so the two cannot describe the same window differently —
+the exact drift the send-timing line had for months.
+
+Verified: 423 unit (413 → 423), 58 e2e (2 new: the Send timing drawer and a
+full quiet-hours pass through Guardrails, Review, submit and the campaign's
+read-back), clean typecheck, zero lint errors, clean build.

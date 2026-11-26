@@ -5,7 +5,7 @@
 // Every action below clones its input graph once, then runs the same
 // mutate-style graph-op functions against that clone — same algorithms,
 // new mutation target, per the migration plan.
-import type { DripGraph, DripGoal, DripGoalCondition } from '../data/graphTypes';
+import type { DripGraph, DripGoal, DripGoalCondition, DripQuietHours } from '../data/graphTypes';
 import type { DcNodeType } from '../data/nodeMeta';
 import { DC_EVENT_ENTITY, DC_PROMOTED_ATTR, dcNormalizeOperator } from '../data/sharedConstants';
 import { dcNewEdgeId, dcNewNodeId } from './idGen';
@@ -517,6 +517,7 @@ export interface DripCampaignSetup {
   controlPct?: number;
   startDate?: string;
   endDate?: string;
+  quietHours?: DripQuietHours;
 }
 
 // Today as YYYY-MM-DD in the viewer's own timezone. The date fields are
@@ -548,6 +549,12 @@ export function dcValidateSetup(setup: DripCampaignSetup): DripIssue[] {
   if (setup.controlPct !== undefined) {
     if (!Number.isFinite(pct) || !Number.isInteger(pct)) at('The control group must be a whole percentage.');
     else if (pct < 0 || pct > 50) at('The control group must be between 0% and 50%.');
+  }
+
+  const q = setup.quietHours;
+  if (q && q.enabled) {
+    if (!q.start || !q.end) at('Quiet hours need a start and an end time.');
+    else if (q.start === q.end) at('Quiet hours start and end at the same time, which blocks every hour of the day.');
   }
 
   const start = String(setup.startDate || '').trim();

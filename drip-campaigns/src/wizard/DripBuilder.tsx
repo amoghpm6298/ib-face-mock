@@ -7,7 +7,7 @@
 // whatever owns the list (Phase 4) to persist.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useState } from 'react';
-import type { DripCampaign, DripGoal, DripGraph } from '../data/graphTypes';
+import type { DripCampaign, DripGoal, DripGraph, DripQuietHours } from '../data/graphTypes';
 import { DC_STEP_TYPES, type DcNodeType } from '../data/nodeMeta';
 import { DC_ENTRY_TYPES } from '../data/typeSub';
 import type { PrevStepSend } from '../data/sharedConstants';
@@ -72,7 +72,7 @@ export interface DripBuilderPayload {
   allowReEntry: boolean;
   reEntryCooloffDuration: number;
   reEntryCooloffUnit: 'days' | 'hours';
-  guardrails: { dnc: boolean; npa: boolean };
+  guardrails: { dnc: boolean; npa: boolean; quietHours: DripQuietHours };
   status: 'DRAFT' | 'PENDING_REVIEW';
   root: DripGraph;
 }
@@ -102,6 +102,13 @@ export function DripBuilder({
   const [reEntryCooloffUnit, setReEntryCooloffUnit] = useState<'days' | 'hours'>(initial?.reEntryCooloffUnit ?? 'days');
   const [dnc, setDnc] = useState(initial?.guardrails?.dnc ?? true);
   const [npa, setNpa] = useState(initial?.guardrails?.npa ?? true);
+  // On by default, like the two lists: TRAI's promotional window is the
+  // rule for an Indian issuer, not a preference. A campaign saved before
+  // this existed opens with the same default rather than silently
+  // unprotected.
+  const [quietHours, setQuietHours] = useState<DripQuietHours>(
+    initial?.guardrails?.quietHours ?? { enabled: true, start: '21:00', end: '09:00', behavior: 'defer' },
+  );
   const [startDate, setStartDate] = useState(initial?.startDate || '');
   const [endDate, setEndDate] = useState(initial?.endDate || '');
   const [goal, setGoal] = useState<DripGoal | null>(initial?.goal || null);
@@ -292,6 +299,7 @@ export function DripBuilder({
     controlPct,
     startDate,
     endDate,
+    quietHours,
   });
   const canSubmit = issues.length === 0;
 
@@ -322,7 +330,7 @@ export function DripBuilder({
       allowReEntry,
       reEntryCooloffDuration: Number(reEntryCooloffDuration),
       reEntryCooloffUnit,
-      guardrails: { dnc, npa },
+      guardrails: { dnc, npa, quietHours },
       status,
       root: graph,
     };
@@ -419,6 +427,8 @@ export function DripBuilder({
               onDncChange={setDnc}
               npa={npa}
               onNpaChange={setNpa}
+              quietHours={quietHours}
+              onQuietHoursChange={setQuietHours}
               onSaveDraft={() => onSaveDraft(buildPayload('DRAFT'))}
               onContinue={() => setStep('review')}
             />
@@ -441,6 +451,7 @@ export function DripBuilder({
               reEntryCooloffUnit={reEntryCooloffUnit}
               dnc={dnc}
               npa={npa}
+              quietHours={quietHours}
               goal={goal}
               graph={graph}
               validationMessage={validationMessage}

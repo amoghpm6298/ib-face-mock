@@ -4,10 +4,11 @@
 // earlier step; this just confirms it before Save as Draft / Submit for
 // Approval, which moved here from the Builder step's old top bar.
 import { dcGoalLabel } from '../reducer/labelMeta';
+import { dcQuietHoursSentence } from '../data/quietHours';
 import { DC_NODE_META } from '../data/nodeMeta';
 import { FilterReadback } from '../components/FilterReadback';
 import { ImportedFilePanel } from '../components/ImportedFilePanel';
-import type { DripGoal, DripGraph } from '../data/graphTypes';
+import type { DripQuietHours, DripGoal, DripGraph } from '../data/graphTypes';
 
 export function ReviewStep({
   name,
@@ -23,6 +24,7 @@ export function ReviewStep({
   reEntryCooloffUnit,
   dnc,
   npa,
+  quietHours,
   goal,
   graph,
   validationMessage,
@@ -44,6 +46,7 @@ export function ReviewStep({
   reEntryCooloffUnit: 'days' | 'hours';
   dnc: boolean;
   npa: boolean;
+  quietHours: DripQuietHours;
   goal: DripGoal | null;
   graph: DripGraph;
   validationMessage: string | null;
@@ -126,6 +129,7 @@ export function ReviewStep({
         <div className="review-row-main">
           {dnc || npa ? [dnc && 'DNC', npa && 'NPA'].filter(Boolean).join(', ') : <span className="dl-row-sub">No exclusion lists applied</span>}
         </div>
+        <div className="review-row-main">{dcQuietHoursSentence(quietHours)}</div>
       </div>
 
       {/* An imported campaign lands in the builder, so the file it came from

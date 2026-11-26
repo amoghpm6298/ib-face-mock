@@ -2,6 +2,7 @@
 // the wizard's own Basic Details, Goal and Guardrails steps; this is the
 // read-back, not a second place to change them.
 import type { DripCampaign } from '../data/graphTypes';
+import { dcQuietHoursSentence } from '../data/quietHours';
 import { dcGoalLabel } from '../reducer/labelMeta';
 import { ImportedFilePanel } from '../components/ImportedFilePanel';
 
@@ -52,6 +53,13 @@ export function BasicDetailsView({ campaign }: { campaign: DripCampaign }) {
       <section className="bd-section">
         <div className="bd-section-title">Re-entry</div>
         <Row label="Re-entry" value={reEntry} />
+        {/* What "one run" counts as. Verified in quibbler, not assumed: the
+            nudge_subscription table is unique on (account_id, nudge_dfn_id)
+            and every NudgeCommunicationData row carries an accountId and no
+            customer or card id. So a run is per account, and re-entry means
+            per account too. Said here because it is the thing that decides
+            whether a customer with two cards gets one journey or two. */}
+        <Row label="Counted per" value="Account. A customer with two cards on one account goes through this campaign once, not twice." />
       </section>
 
       <section className="bd-section">
@@ -73,6 +81,7 @@ export function BasicDetailsView({ campaign }: { campaign: DripCampaign }) {
 
       <section className="bd-section">
         <div className="bd-section-title">Guardrails</div>
+        <Row label="Quiet hours" value={dcQuietHoursSentence(c.guardrails?.quietHours)} />
         {dnc || npa ? (
           <>
             <Row label="Do Not Contact" value={dnc ? 'On' : 'Off'} />

@@ -9,7 +9,7 @@ This module is a **builder only** — it saves journeys as config and nothing ex
 | | Count | Fixed |
 |---|---|---|
 | Critical | 3 | **3** |
-| High | 8 | **5** |
+| High | 8 | **7** |
 | Medium | 9 | **9** |
 | Low | 5 | 0 |
 
@@ -158,7 +158,7 @@ Auto-inserts are decided once, at node creation (`campaignReducer.ts:55-125`). `
 
 **Fix.** Reconcile on goal change. Block submit when the graph contains a `GOAL_CHECK` and `goal` is null.
 
-### H5 · Re-entry defaults off, breaking repeating audiences
+### H5 · Re-entry defaults off, breaking repeating audiences  ⏹ **DECIDED: no change**
 
 **`src/wizard/DripBuilder.tsx:94`** — `useState(initial?.allowReEntry ?? false)`
 **`src/data/graphTypes.ts:189-191`** — the re-entry fields
@@ -169,7 +169,9 @@ The rule tying re-entry to repeating entry exists as prose in `CLAUDE.md`, not i
 
 **Fix.** Warn when `repeat && !allowReEntry`. For `ENTRY_EVENT` add `maxEntriesPerCustomer` and `dedupeWindow`. Make the eligibility rule an executable, tested function.
 
-### H6 · The model never says what one journey run is keyed to
+> **Decided 2026-11-26: leave it as is.** Once per account, ever, is the intended behaviour; no warning, no change of default. The consequence is recorded rather than hidden — DRIP-004 is configured to repeat monthly, so under this rule it reaches each account in its first month only. That remains true of any repeating campaign with re-entry off.
+
+### H6 · The model never says what one journey run is keyed to  ✅ **ANSWERED: the account**
 
 `DripCampaign` (`src/data/graphTypes.ts:168`) has no `journeyKey`. Entry filters mix Customer, Account and Card attributes.
 
@@ -177,7 +179,16 @@ DRIP-001 and DRIP-006 both start on "Virtual card issued". A customer with two c
 
 **Fix.** `journeyKey: 'customer' | 'account' | 'card'`, with any/all quantifiers on card and account filters when the key is customer.
 
-### H7 · Guardrails are two exclusion lists
+> **Answered by production, not by a decision — a run is per ACCOUNT.** Verified in `quibbler`:
+> - `nudges-core/.../domains/NudgeSubscription.groovy` — the `nudge_subscription` table carries a unique constraint on `(account_id, nudge_dfn_id)`. One subscription per account per nudge, enforced by the database.
+> - `domains/NudgeSubscriptionV2.groovy` — the whole entity is `id`, `nudgeIdentifier`, **`accountId`**, placeholders, timestamps. No customer id, no card id.
+> - `domains/NudgeCommunicationData.groovy` — every communication row carries `accountId`, `email`, `mobileNumber`. Again no customer or card id anywhere in the path.
+>
+> So **no `journeyKey` field was added.** Making it configurable would offer three answers where production can only deliver one, which is the kind of claim this builder is not allowed to make. The rule is stated instead, on the campaign's own read-back next to Re-entry, because it is what decides a real case: a customer with two cards on one account goes through a card-issued campaign **once, not twice** — DRIP-001 and DRIP-006 both start on "Virtual card issued", and this is the answer to what happens to their second card.
+>
+> The audit's second half — quantifiers on card filters when the key is the customer — does not arise: the key is never the customer.
+
+### H7 · Guardrails are two exclusion lists  ✅ **FIXED** (quiet hours; the rest deferred by decision)
 
 **`src/wizard/GuardrailsStep.tsx:10`** *(originally cited as `:315` — the file is 54 lines)*
 
@@ -202,6 +213,12 @@ guardrails: {
   onGuardrailHit: 'exit' | 'skipStep';
 }
 ```
+
+> **Built: quiet hours**, the one the user asked for, and the one with a regulator behind it — TRAI allows promotional messages between 9am and 9pm. `guardrails.quietHours` is `{ enabled, start, end, behavior }`, **on by default** at 21:00–09:00 with `defer`, like the two lists beside it. A window crossing midnight is the ordinary case, not an edge one. `behavior` says what happens to a message that comes due inside it: wait and send when the window lifts, or skip it; either way the journey carries on, and the drawer says that trade-off in those words. The submit gate refuses a window with missing times or one whose start equals its end, which would block every hour rather than none. A campaign saved before this existed opens protected rather than silently opted out.
+>
+> **Deferred by decision, not forgotten:** frequency capping, pre-send re-checks, per-channel consent, throttling and cross-campaign holdout. The user chose quiet hours alone for now.
+>
+> No timezone field, for the third time in this audit: the app has no timezone model, and one here would be a claim the rest of the product cannot keep.
 
 ### H8 · Analytics guarantees a positive uplift  ✅ **FIXED**
 
@@ -423,7 +440,7 @@ A second pass, once every label was rebuilt from its own `_config`, found **28 o
 
 ## What is left
 
-**Every Critical and every Medium is closed.** What remains is five Lows and the three Highs below, which are one question rather than three fixes.
+**Every Critical and every Medium is closed, and the three remaining Highs are now answered** — H6 by production (a run is per account), H5 by decision (leave it), H7 in part (quiet hours built, the rest deferred). What is left is five Lows.
 
 **One decision left, not a fix,** and it needs an answer before any code: H6's journey key — what one run is keyed to, customer, account or card — which H5, H7 and M6's variant stickiness all hang off.
 

@@ -165,3 +165,54 @@ test('a Send has no delay field, and says where a gap belongs instead', async ({
 
   await expect(page.locator('.dc-node-card', { hasText: 'Nudge' })).toContainText('As soon as they reach this step');
 });
+
+// H7 — quiet hours, on by default, and said back in plain words.
+test('quiet hours are on by default, editable, and read back on the campaign', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
+  await page.getByRole('button', { name: /Create from scratch/ }).click();
+  await page.locator('input[type=text]').first().fill('Quiet hours');
+  await page.locator('select').first().selectOption('IndusInd Bank (IBL)');
+  await page.locator('.toggle-row .toggle').first().click();
+  await page.getByText('Continue to Goal →').click();
+  await page.waitForTimeout(200);
+  await page.getByText('Continue to Builder →').click();
+  await page.waitForTimeout(300);
+
+  await page.locator('.dc-add-entry-placeholder').click();
+  await page.locator('.dc-type-opt:has-text("Entry · Event")').click();
+  const entry = page.locator('.sd-drawer.open');
+  await entry.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Category' }) }).locator('select').selectOption('Journey Events');
+  await entry.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Event Type' }) }).locator('select').selectOption('Pageload');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(300);
+  await page.locator('.dc-add-btn').click();
+  await page.locator('.dc-type-opt', { hasText: /^Exit/ }).click();
+  await page.locator('.sd-drawer.open input[type=text]').first().fill('done');
+  await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
+  await page.waitForTimeout(400);
+
+  await page.getByText('Continue to Guardrails').click();
+  await page.waitForTimeout(300);
+  await expect(page.locator('.dcb-mid-inner')).toContainText('TRAI allows promotional messages between 9am and 9pm');
+  // On by default, with the TRAI window already filled in.
+  const from = page.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'Quiet from' }) }).locator('input');
+  await expect(from).toHaveValue('21:00');
+  // Switch the behaviour to dropping the message.
+  await page.locator('.f-group', { has: page.locator('label.f-label', { hasText: 'comes due during quiet hours' }) }).locator('select').selectOption('skip');
+  await page.waitForTimeout(150);
+
+  await page.getByText('Continue to Review').click();
+  await page.waitForTimeout(300);
+  await expect(page.locator('.dcb-mid-inner')).toContainText('No messages between 9:00 PM and 9:00 AM');
+  await expect(page.locator('.dcb-mid-inner')).toContainText('is not sent at all');
+
+  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.waitForTimeout(400);
+  await page.locator('table tbody tr', { hasText: 'Quiet hours' }).click();
+  await page.waitForTimeout(500);
+  const details = page.locator('.dv-body, .bd-wrap, main').first();
+  await expect(details).toContainText('No messages between 9:00 PM and 9:00 AM');
+  // And what one run counts as, which is the thing re-entry depends on.
+  await expect(details).toContainText('A customer with two cards on one account goes through this campaign once');
+});
