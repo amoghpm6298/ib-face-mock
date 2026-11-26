@@ -22,6 +22,16 @@ export interface DripNode {
   _config?: Record<string, unknown> | null;
 }
 
+export interface DripQuietHours {
+  enabled: boolean;
+  // When quiet begins and when it lifts. A window crossing midnight
+  // (21:00 -> 09:00) is the normal case, not an edge one.
+  start: string;
+  end: string;
+  // What happens to a message that comes due inside the window.
+  behavior: 'defer' | 'skip';
+}
+
 export interface DripEdge {
   id: string;
   from: string;
@@ -35,6 +45,13 @@ export interface DripEdge {
   // that predate this (legacy branches); the reducer backfills it lazily,
   // same behavior as the original.
   branchId?: string;
+  // What this edge MEANS — 'yes', 'timeout', 'else' and so on. Display text
+  // used to be the only identity an edge had, so renaming an arm or
+  // importing "yes" in lower case re-routed the campaign. See data/ports.ts:
+  // `branchLabel` is now display only, and dcPortOf() derives this for edges
+  // written before it existed. Typed as a string here, and narrowed by
+  // dcIsPort, so this module stays free of imports.
+  port?: string;
 }
 
 export interface DripGraph {
@@ -193,7 +210,17 @@ export interface DripCampaign {
   // just at entry (unlike re-entry, which is a one-time gate). Kept as a
   // small keyed object rather than a flat field per list so adding a new
   // exclusion type later is one more key, not a new top-level field.
-  guardrails?: { dnc: boolean; npa: boolean };
+  guardrails?: {
+    dnc: boolean;
+    npa: boolean;
+    // Quiet hours. TRAI restricts promotional messages to 9am–9pm, so this
+    // is not a nicety for an Indian issuer. `start` is when quiet begins and
+    // `end` when it lifts, so a window crossing midnight (21:00 → 09:00) is
+    // the normal case rather than an edge one. `behavior` says what happens
+    // to a message that comes due inside it: hold it until the window lifts,
+    // or drop it and carry on.
+    quietHours?: DripQuietHours;
+  };
   // The file this campaign was imported from, kept verbatim.
   //
   // An imported campaign is meant to be edited — renamed, re-routed, added

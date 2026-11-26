@@ -1582,3 +1582,432 @@ the three real tags and reads "Smart Tag is any of Dormant 60d"; Block Codes
 says "Comma-separated codes"; and an Entry · Event narrowing reads
 "Transaction Amount is more than 5000" on Review. 167 unit (5 new), 48 e2e,
 clean build.
+
+## 2026-11-25 — The CEP audit's fixes: the goal race, a real submit gate,
+and the seeds made to say what they are
+
+A 25-finding audit against Braze/CleverTap/MoEngage/AJO conventions, then
+twelve of those findings fixed in two batches. Both batches are in the git
+log with their reasoning; `AUDIT.md` carries all 25 with every citation
+resolved against the tree and marks what is now closed.
+
+**The race was the real one (C1/C2).** A Send auto-inserted a Goal Check
+with zero elapsed time after it, so the check could only ever catch
+customers who had converted BEFORE the campaign messaged them, and the last
+one in a sequence routed the whole cohort to "Sequence exhausted" before the
+final message landed. A Send now auto-inserts a **Wait For Event on the
+goal** instead — the primitive already existed, as a timeout-bounded event
+listener, and nothing had reached for it here. It exits the moment the
+customer converts rather than at the next checkpoint, so nobody receives the
+next reminder after converting, and it carries the goal's own conditions so
+it means the goal rather than merely the goal's event type. A **Pause** keeps
+its Goal Check, and that is the right place for one: time has actually
+passed by the time it runs.
+
+**The submit gate (C3).** Node config was checked in exactly one place — the
+drawer's own button — so anything reaching the graph by another route was
+never re-examined. `dcValidateCampaign` re-checks every reachable node
+against the same rule, plus reachability, open slots named by branch,
+non-terminal leaves and steps wired past an Exit.
+
+**What the new checks then found in the seed data, which nobody had found by
+reading it.** 15 zero-delay checkpoints; DRIP-003's four Conditions using a
+retired operator and pointing at a catalogue that no longer exists;
+DRIP-004's goal naming an event different from the one its own graph waits
+for. The argument for building checks rather than reviewing data, made by
+the data.
+
+**Then the labels — 28 of 94 seeded nodes stated something their own
+`_config` did not say.** The canvas reads `label`/`meta` off the stored node
+while the drawer reads `_config`, two copies of the same facts, and nothing
+compared them. Two Conditions read *"Previous step: Clicked?"* over an
+outcome of `READ`, with a WhatsApp send before each — and WhatsApp's
+vocabulary has no `CLICKED` at all, so the canvas asked a question nothing
+behind it could answer. DRIP-003's four milestone checks still read the
+invented spend ladder deleted on 2026-10-23 even though their configs had
+been migrated, and the existing seed test passed throughout because it only
+checked sentences built FROM the config. Twelve sends carried dead channel
+or time text in `meta` from before Send grew its own per-fact rows.
+
+`tests/unit/seedLabels.test.ts` rebuilds all 94 with `dcRecomputeLabelMeta`
+and requires an exact match. **`_config` is now the source of truth for the
+seeds** — the file header used to say the opposite, that `_config` was "a
+plausible reconstruction, not a literal inverse of the display text", and
+that licence is what let them drift. A label there can now only be changed by
+changing the config behind it.
+
+**Import integrity (M9), deliberately not the submit gate.** "nodes is an
+object and edges is an array" was the whole check, so a file whose edges
+pointed at steps it did not contain imported cleanly and opened as a journey
+with arrows into nothing. `graphIntegrityError` rejects that, a node whose
+own `id` disagrees with its key (the canvas resolves handles and counts by
+`node.id` while edges and layout resolve by key), an unknown type, a dangling
+`rootId`, and two edges sharing one id. It is NOT `dcValidateCampaign`: an
+import lands as a DRAFT and opens straight in the builder where that gate is
+already on screen, so refusing a file for being unfinished would refuse the
+normal case. Integrity is what no drawer can repair; completeness is what the
+gate already reports.
+
+**Duplicate variant names (M6).** Both Experiment and Branch derived a new
+arm's name from the arm COUNT, so A/B/C minus B plus one gave a second C —
+two arms with one name on the canvas and on their edge chips, where the name
+is the only thing telling them apart. `dcNextVariantLabel`/`dcNextBranchLabel`
+name against the names already taken instead.
+
+**Two lazy test fixtures were caught by the new import check and were
+genuinely wrong**, not collateral: one carried `nodes: {}` with a rootId
+pointing at nothing, and one renamed node KEYS to `dcn*` while leaving each
+node's own `id` as `n*` — the exact mismatch that breaks rendering.
+
+**The verification lesson of this round.** The first batch was committed on
+316 green unit tests, a clean typecheck and a clean build — and **five e2e
+tests were failing the whole time**, because C1 changed the Send auto-insert
+contract and H2 restricted what can be spliced mid-chain, and I had updated
+only the unit tests. All five were asserting the old contracts correctly;
+they are now updated to the new ones. A contract change is not verified by
+the suite that was written against the contract you changed.
+
+Verified: 346 unit (316 → 346: 7 rebuilding every seeded label, 13 on import
+integrity, 10 on arm naming), 53 e2e (49 + a new `importAndVariants.spec.ts`
+driving the three fixes through real clicks — the seeded milestone and
+previous-message labels as the canvas actually renders them, adding and
+removing Experiment arms, and the Import screen's own error), clean typecheck
+(`tsc -p tsconfig.app.json --noEmit`), zero lint errors, clean build, plus
+screenshots of both seeded canvases confirming the rebuilt labels and that
+blanking the stale Send `meta` lost nothing visible.
+
+## 2026-11-26 — H3: a wait may only mean the goal if its predicate says so
+
+The last of the goal-correctness arc (C1, C2, H4, now H3). A Wait for Event
+auto-wired its Yes arm straight to Goal Reached whenever the event *category
+and type* matched the goal, ignoring the goal's own conditions. With a goal
+of "Transaction, amount is at least ₹5,000", a wait on "Transaction" with no
+filters fires on a ₹50 coffee, and every one of those was recorded as a
+conversion — the one error analytics can never recover from, since a false
+conversion is indistinguishable from a real one afterwards.
+
+**`dcWaitMeetsGoal` compares the whole predicate**: every goal condition
+(operators normalised through `dcNormalizeOperator`, so a legacy spelling
+still reads as the same comparison, and a single stored `value` reads as a
+one-item set, as everything else here does), every scoping field the goal
+names, every non-empty card detail. **Equal or narrower qualifies** —
+conditions are AND'd, so carrying more than the goal does only ever matches
+fewer customers, and everyone matched has met the goal. Broader does not.
+
+A broader wait now gets a **real Goal Check** on its Yes arm instead of an
+assumption, with the check's No arm left open: "the event fired but the goal
+was not met" is a real outcome and only the author knows what follows it.
+Removing that check by hand stays safe — `dcRemoveGoalCheck` rewires to the
+No continuation and collects the Goal Reached, so the bad wiring cannot come
+back by that route.
+
+**Conservative where it cannot tell.** An operator spelling or value shape it
+cannot compare reads as "does not meet the goal", which inserts a check
+rather than asserting one. The costs are not symmetric: an unnecessary Goal
+Check is visible on the canvas and one click to remove, a false Goal Reached
+is silent.
+
+**The validator now checks auto-generated waits too, and that found one of
+mine.** `dcGoalWiringIssues` used to skip them, reasoning that
+`dcReconcileGoal` keeps them in step with the goal — true in the builder,
+false for every graph that never passes through it: seeds, imports, anything
+a script migrated. **DRIP-004's second checkpoint was exactly that.** The C1
+migration in `8b2a169` converted it into a wait built from the goal as it
+stood *before* the same batch corrected that goal, so the two edits never saw
+each other: it listened for `Transaction` while exiting to Goal Reached under
+a goal of `Outcome Issuance`, recording any purchase as a reward redemption.
+Corrected to the event the conversion should have produced. The lesson is the
+general one — a migration and a correction applied in the same batch need to
+be ordered against each other, and an exemption justified by "the builder
+keeps this in sync" is worth nothing for data that never enters the builder.
+
+**Left alone deliberately:** the statusAttr branch (EMI's New Status) already
+inserts a Goal Check rather than auto-wiring, which is safe whatever the
+predicate, and it preserves a distinction worth keeping — "resolved, but not
+to the goal outcome" is not the same as "never resolved".
+
+Verified: 366 unit (346 → 366, a new `goalPredicate.test.ts` covering the
+predicate comparison, what the builder wires in each case, and the validator
+on an existing graph), 54 e2e (a new one building a broader wait through the
+real drawer, seeing the Goal Check appear, then building the same wait
+narrowed to the goal and seeing it exit straight to Goal Reached), clean
+typecheck, zero lint errors, plus a screenshot of the resulting canvas.
+
+## 2026-11-26 (cont'd) — M7/M8: the submit gate becomes one list, and a
+campaign can no longer be addressed to nobody or already finished
+
+**One gate, one list.** Name and issuer were checked in a ternary chain
+inside `DripBuilder`'s own render while everything else went through
+`dcValidateCampaign` — the same split brain C3 fixed for node config, where
+one rule lives in the gate and another in a component and the two drift the
+moment either moves. `dcValidateSetup` is now part of the same validator, so
+anything the gate refuses comes from one place and the banner names all of it
+the same way.
+
+**What it refuses now** (M7): a missing name or issuer; an issuer with no
+programs and the all-programs toggle off; a control group that is not a whole
+number between 0 and 50; an end date before the start, or already past.
+
+**A start date in the past is deliberately not flagged.** Editing a campaign
+that began last month is the ordinary case and the builder cannot tell it
+apart from a typo. Timezones are untouched for the reason the audit raised
+them: this app has no timezone model, a date is a bare calendar day, and
+comparing the strings is exactly as precise as the data is.
+
+**M8 — a campaign whose entry already achieves its goal.** Refused, judged by
+the same `dcEventMeetsGoal` the waits use (renamed from `dcWaitMeetsGoal`
+when it gained this second reader). One comparison covers both halves the
+audit asked for: it is a predicate test, not a name match, so an entry
+carrying the goal's own conditions is caught too, and a BROADER entry is
+correctly allowed — entering on any transaction while aiming for one over
+₹5,000 is a real campaign. It blocks rather than warns because there is no
+honest reading of a funnel that reads 100% on arrival: no message in the
+campaign can have caused anything.
+
+**Finding it in our own test suite.** The programs check failed two existing
+e2e tests immediately — every wizard flow in the suite picked an issuer and
+stopped there, so every campaign they built reached nobody. The tests were
+right about the old behaviour and wrong about what a complete setup is; they
+now answer it, one of them by picking a real program and the other by the
+toggle, so both routes are exercised.
+
+**The seeds are held to these rules too**, which is what a fixture should
+mean. All six named an issuer and listed no programs; they are marked as
+applying to all programs, which is what an issuer-wide demo campaign is.
+
+**Not guessed at:** `onEnd: 'drain' | 'exitAll'` — whether customers
+mid-journey finish or are dropped when a campaign ends. Letting them finish
+is the industry default; a hard stop is right when an offer legally expires.
+Both are defensible, so it stays a decision rather than an invention, next to
+H6's journey key.
+
+Verified: 388 unit (366 → 388, a new `setupValidation.test.ts` covering scope,
+the control group, the dates and the entry-equals-goal rule in all its
+shapes), 56 e2e (2 new: submit refused for a campaign addressed to no
+programs and then accepted once a program is picked, and refused for an entry
+event that is the goal event), clean typecheck, zero lint errors.
+
+## 2026-11-26 (cont'd) — M1: an edge means something, separately from what
+it says. And the end date is a hard stop
+
+**The end-of-campaign rule, decided rather than invented:** at the end date
+the campaign stops, and anyone part-way through the journey stops with it.
+No `onEnd` field, because there is one behaviour — it is stated on Basic
+Details under the dates, and in the campaign's own read-back, since a reader
+cannot infer it from a date. (The date comparison also learnt that these
+fields are `datetime-local`, not `date`: "already passed" is judged on whole
+calendar days, never because a time of day has gone by.)
+
+**M1 — `port`.** Branch polarity was stored only as display text. `'Yes'` /
+`'No'` / `'Anything else'` *were* the wiring, read by three different things:
+`dcRemoveGoalCheck` found its arms with `=== 'Yes'`, reconcile matched the
+catch-all by its label, and analytics decided a fork was a yes/no pair with a
+regex. So an import writing `"yes"`, or anyone renaming an arm, silently
+re-routed the campaign.
+
+`port` (next · yes · no · event · timeout · branch · else) is now written on
+every edge the builder creates and carried by all 88 seeded edges, and
+`branchLabel` is display only. `dcPortOf` derives a port for edges written
+before it existed, **case-insensitively** — the audit's own `"yes"` example
+now routes correctly rather than flipping. An unknown port is refused at
+import.
+
+**The regex was not merely fragile — it was already wrong in our own data.**
+An Experiment's allocation was parsed back out of the edge label with
+`/\((\d+)%\)/`, so what a campaign *reported* depended on how its arms
+happened to be WRITTEN. DRIP-002's arms read `"50% WhatsApp"` — no
+parentheses — so its configured 50/50 matched nothing and the campaign was
+reported on a random split, while DRIP-006's `"WhatsApp-first (60%)"` matched
+and was honoured. Two experiments in one product going down two code paths
+for the same configured thing. Allocation now comes from the owning node's
+`branches[]` matched by `branchId` — which neither seeded experiment actually
+carried, and both now do. Verified in the browser: DRIP-002's arms read
+`SMS (50%) 4,468` and `WhatsApp (50%) 4,468` off 8,936 reached.
+
+**Ports are derived from meaning, not from the label, which is why a Wait's
+arms are `event`/`timeout` while the canvas still reads Yes/No.** The audit
+also wanted those words changed to "Event received" / "Timed out". Not done,
+deliberately: it is now a pure copy decision with no routing consequence,
+which is the whole point of separating the two. Doing it would churn every
+seed label and several e2e assertions for a cosmetic choice.
+
+**A process note on the mechanical rewrite.** The 26 edge-creation sites were
+ported by a scripted replace, and reading every assignment back in context
+afterwards caught one that was wrong: a hand-added Goal Check's No arm had
+picked up `timeout` from a pattern meant for waits. A global replace is a
+fine way to do the typing and a bad way to decide the meaning.
+
+Verified: 404 unit (388 → 404, a new `ports.test.ts` covering derivation
+including the lower-case import case, that every builder-created edge carries
+a port, that renaming an arm or a catch-all cannot re-route or delete it, the
+two seeded allocations, and that every seeded edge states what it means), 56
+e2e, clean typecheck, zero lint errors, plus the analytics screenshot above.
+
+## 2026-11-26 (cont'd) — The delay leaves Send, a wait's arms say what they
+are, and an Exit says what it ends
+
+Three things, and the first was only possible because of the last round.
+
+**Wait for Event's arms read "Event received" / "Timed out"** instead of
+Yes/No, on the canvas and in all 33 seeded edges. A pure copy change — which
+is exactly the point of M1: the ports already carried the meaning, so the
+words could move without touching a single route. The tests that broke were
+the ones finding edges by `branchLabel === 'Yes'`, the very anti-pattern M1
+exists to remove; they look up by port now.
+
+**M3 — the delay leaves Send.** "Relative" timing held a duration and a unit,
+which is a wait nothing can see: not a step on the canvas, not modelled by
+analytics, and — the reason it matters after C1 — not listening for the goal,
+so a customer who converted during those three days was messaged anyway. C1's
+own defect wearing a different hat. A Send now offers a time of day or "as
+soon as they reach this step"; a gap is a Wait step, which is visible,
+counted, and stops when the goal is reached. The form says so where the delay
+used to be.
+
+Next-occurrence is **stated rather than modelled** ("if that time has already
+passed, it sends the next day"), and there is no timezone field, because this
+app has no timezone model and inventing one here would be a claim the rest of
+the product cannot keep — the same call as the dates in M7.
+
+**The migration cost nothing, which is what made this cheap**: all 20 seeded
+Sends held `relativeDuration: 0`, which always meant exactly "immediate". A
+legacy send with a *positive* delay is still rendered honestly and named by
+the submit gate with what to do instead — not migrated, because where the
+Wait goes changes the shape of the journey and that is the author's call.
+
+`dcSendTimingOf` is the one answer to "when does this send", read by the
+drawer, the canvas and the step panel. The last two had drifted into separate
+formats, which is why one seed read "Immediately after previous step" on the
+canvas and "0 days after Previous Step" in the panel.
+
+**M5 — what an Exit ends.** An Exit ends the path it is on, and the run is
+over once every path has ended; Goal Reached ends the whole run, since the
+customer has done the thing the campaign was for. Stated in each drawer, not
+offered as a `terminalScope` setting — for the same reason `onEnd` has none:
+there is one defensible behaviour each, and a toggle would only add a way to
+get it wrong. It also gives re-entry the definition of "finished" it always
+depended on and never had.
+
+**A counting correction worth recording:** the running total reported to the
+user last round ("17 of 25") was two ahead of the facts — 15 were closed at
+that point. It is 17 now, with every Critical and every Medium closed.
+
+Verified: 413 unit (404 → 413, a new `sendDelay.test.ts`), 56 e2e (1 new
+driving the Send drawer: two timing options, the next-occurrence sentence, no
+number inputs, and the card reading "As soon as they reach this step"), clean
+typecheck, zero lint errors, plus screenshots of the renamed arms and the step
+panel.
+
+## 2026-11-26 (cont'd) — H6 answered by production: a run is per account.
+Quiet hours built; re-entry left alone
+
+Three open questions went to the user. Two came back as decisions and one
+came back as "not sure — I think quibbler / ironbank send only on account
+basis", which was a lead to check rather than a decision to make.
+
+**H6 — a journey run is keyed to the ACCOUNT. Verified in `quibbler`, not
+assumed:**
+- `nudge_subscription` carries a unique constraint on `(account_id,
+  nudge_dfn_id)` — one subscription per account per nudge, enforced by the
+  database.
+- `NudgeSubscriptionV2` is `id`, `nudgeIdentifier`, **`accountId`**,
+  placeholders, timestamps. No customer id, no card id.
+- `NudgeCommunicationData` carries `accountId`, `email`, `mobileNumber`.
+  Again no customer or card anywhere in the path.
+
+So **no `journeyKey` field was added**, and the question the audit framed as
+a design choice turned out not to be one. Offering customer/account/card
+would advertise three answers where production can deliver exactly one. The
+rule is stated instead, on the campaign read-back beside Re-entry, because it
+settles a real case: a customer with two cards on one account goes through a
+card-issued campaign **once, not twice** — which is precisely what DRIP-001
+and DRIP-006 do, both starting on "Virtual card issued".
+
+**H5 — left as is, by decision.** Once per account ever; no warning, no
+change of default. The consequence is written down rather than hidden: a
+campaign set to repeat monthly with re-entry off reaches each account in its
+first month only, and DRIP-004 is configured exactly that way.
+
+**H7 — quiet hours, and only quiet hours.** `guardrails.quietHours` is
+`{ enabled, start, end, behavior }`, on by default at 21:00–09:00 with
+`defer`, beside the two lists that are also on by default. TRAI allows
+promotional messages between 9am and 9pm, so for an Indian issuer this is a
+rule rather than a preference. A window crossing midnight is the ordinary
+case. `behavior` says what happens to a message due inside it — wait and send
+when it lifts, or skip — and the drawer states the trade-off in those words:
+waiting delivers late, skipping means that customer never gets that one, the
+journey carries on either way. The gate refuses missing times, and a start
+equal to its end, which would block every hour rather than none.
+
+Frequency capping, pre-send re-checks, per-channel consent, throttling and
+cross-campaign holdout were deferred by the same decision, not forgotten.
+
+**No timezone field, for the third time in this audit** (dates, send timing,
+now quiet hours). The app has no timezone model and one here would be a claim
+the rest of the product cannot keep.
+
+**`dcQuietHoursSentence` is written once** and read by Review and the
+campaign read-back, so the two cannot describe the same window differently —
+the exact drift the send-timing line had for months.
+
+Verified: 423 unit (413 → 423), 58 e2e (2 new: the Send timing drawer and a
+full quiet-hours pass through Guardrails, Review, submit and the campaign's
+read-back), clean typecheck, zero lint errors, clean build.
+
+## 2026-11-26 (cont'd) — the five Lows, and the audit closes
+
+**L1 — copy that had stopped being true.** Goal Check's one-line description
+said "system-generated, not addable" *in the picker that offers it*, under a
+comment claiming it is "never shown in the Add Step picker"; both predate the
+2026-10-12 round that made it addable. Entry · Audience called itself a
+"cohort snapshot" when it can run on a repeating schedule. Three file headers
+still described a three- or four-step flow that has been five steps since
+Guardrails landed.
+
+**L2 — the rail contradicted the page.** Goal Definition says "not every
+campaign needs one", and the stepper marked it unfinished without one.
+"Complete" means nothing on that step blocks submission, and a goal never
+does, so it is always complete now.
+
+**L3 — fixed by checking rather than blocking.** Removing a Goal Reached
+exit reverts its arm to an open slot, and the picker then offers anything,
+including a Send on the path where the customer has already converted. The
+audit suggested restricting the arm to terminal steps; that would refuse a
+legitimate campaign, because "you've earned it" is a real message to send
+there. What must not pass quietly is the path never arriving at Goal Reached
+— then nobody who took it is counted as converted and the campaign
+under-reports its own success with nothing on screen to explain why. The gate
+walks each Goal Check's Yes arm and says so.
+
+**L4 — "New Status = undefined?"** A goal condition can match a set of
+statuses, stored in `values`; the auto-built Goal Check read `.value` alone.
+`dcConditionValueText` renders the value side once, for both the check and
+the exit beneath it: "Successful or Partially Successful".
+
+**L5 — checked in quibbler, deliberately not built.** Nothing in the nudge
+engine distinguishes an entry-time value from a live one: `asOf`,
+`pointInTime`, `atEntry`, `entryTime` and `snapshot` return nothing across
+`nudges-core/src/main`. `ConfigBasedEligibility` is entity + attribute +
+value + filter, and the filters are plain comparisons. The only time-shaped
+concepts are `OfferCycle` (CURRENT/PREVIOUS) and `CurrentDiffFilter` ("within
+N days"), **both relative to now**. A `valueAt: 'entry' | 'evaluation'`
+control would let an author state an intent the engine cannot honour — the
+same reason `journeyKey` was not added for H6. It stays a documented
+limitation, and it is a backend capability question rather than a builder
+one.
+
+**The audit is closed: 25 of 25.** 22 fixed; three closed by answer rather
+than by code — H5 (leave re-entry as it is), H6 (a run is per account, so
+there is nothing to make configurable) and L5. Deferred by decision, and the
+natural next pieces: the rest of H7's guardrails (frequency capping, pre-send
+re-checks, consent, throttling, cross-campaign holdout) and M6's variant
+assignment unit and stickiness.
+
+**The pattern worth keeping from this whole run:** three of the audit's
+prescribed fixes would have added a control to the builder — `journeyKey`,
+`valueAt`, and a configurable `onEnd` — and in all three cases checking the
+real system first, or asking, turned a "build a setting" into "state the one
+behaviour". A setting is a promise that every option works.
+
+Verified: 432 unit (423 → 432), 58 e2e, clean typecheck, zero lint errors,
+clean build.

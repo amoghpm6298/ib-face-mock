@@ -22,6 +22,8 @@
 // only produce the Account smash.
 import type { DripCampaign, DripGoal, DripGraph, DripNode } from './graphTypes';
 import { dcBranchWhatOf, dcFiltersOf } from './filters';
+import { DC_NODE_META } from './nodeMeta';
+import { DC_PORTS, dcIsPort } from './ports';
 import { dcRecomputeLabelMeta } from '../reducer/labelMeta';
 
 const ENTITY_ATTRIBUTE = /^(.+) attribute$/i;
@@ -97,11 +99,79 @@ function normalizeGraph(root: DripGraph, goal: DripGoal | null): DripGraph {
   return { ...root, nodes };
 }
 
+// Structural integrity, checked before anything is imported.
+//
+// "nodes is an object and edges is an array" was the whole check, which let
+// a file through whose edges pointed at steps that were not in it. The
+// builder then rendered a journey with arrows into nothing, or crashed on
+// the first missing lookup, and the manager had a draft they could neither
+// read nor repair.
+//
+// Everything here is a reject, not a warning, because none of it is
+// fixable in the drawer: a manager cannot retype an edge. It is deliberately
+// NOT the submit gate (dcValidateCampaign). That gate reports what is
+// unfinished — an open branch, a step with nothing configured — and an
+// import is allowed to be unfinished: it lands as a DRAFT, straight in the
+// builder, where that same gate is already on screen listing exactly those
+// things. Rejecting an import for them would refuse a file whose only fault
+// is that it is not done yet.
+function graphIntegrityError(root: DripGraph): string | null {
+  if (!root.nodes || typeof root.nodes !== 'object' || Array.isArray(root.nodes)) return 'This is not a drip campaign.';
+  if (!Array.isArray(root.edges)) return 'This is not a drip campaign.';
+
+  const ids = Object.keys(root.nodes);
+  if (!ids.length) return 'This file has no steps in it.';
+
+  for (const id of ids) {
+    const node = root.nodes[id] as DripNode | null | undefined;
+    if (!node || typeof node !== 'object') return `The step "${id}" is empty.`;
+    // An id that disagrees with its own key breaks every edge pointing at
+    // it, silently — the edge resolves by key and the node reports another.
+    if (node.id !== id) return `The step "${id}" is filed under a different id ("${String(node.id)}").`;
+    if (!Object.prototype.hasOwnProperty.call(DC_NODE_META, node.type)) {
+      return `The step "${id}" is a kind of step this builder does not have ("${String(node.type)}").`;
+    }
+  }
+
+  if (root.rootId == null) return 'This file does not say which step starts the journey.';
+  if (!Object.prototype.hasOwnProperty.call(root.nodes, root.rootId)) {
+    return `The journey starts at a step that is not in the file ("${root.rootId}").`;
+  }
+
+  const seenEdgeIds = new Set<string>();
+  for (const edge of root.edges) {
+    if (!edge || typeof edge !== 'object') return 'One of the connections in this file is empty.';
+    if (!edge.id || typeof edge.id !== 'string') return 'One of the connections in this file has no id.';
+    // The reducer reconciles branches by edge id, so a duplicate makes two
+    // different arms the same arm.
+    if (seenEdgeIds.has(edge.id)) return `Two connections in this file share one id ("${edge.id}").`;
+    seenEdgeIds.add(edge.id);
+    if (!Object.prototype.hasOwnProperty.call(root.nodes, edge.from)) {
+      return `A connection comes from a step that is not in the file ("${String(edge.from)}").`;
+    }
+    // to === null is a real, intended state: an open slot the manager fills
+    // in the builder. Only a named step that is missing is wrong.
+    if (edge.to != null && !Object.prototype.hasOwnProperty.call(root.nodes, edge.to)) {
+      return `A connection goes to a step that is not in the file ("${String(edge.to)}").`;
+    }
+    // A port it does not recognise is worse than none at all: with no port,
+    // dcPortOf falls back to reading the label and the campaign still routes
+    // the way it reads, but an unknown value would be carried into the graph
+    // and silently match nothing.
+    if (edge.port !== undefined && !dcIsPort(edge.port)) {
+      return `A connection has a kind this builder does not have ("${String(edge.port)}"). Expected one of: ${DC_PORTS.join(', ')}.`;
+    }
+  }
+  return null;
+}
+
 export function ingestCampaignJson(raw: unknown, nextId: string, sourceText?: string): IngestResult {
   const parsed = asCampaign(raw);
   if (!parsed?.root || typeof parsed.root.nodes !== 'object' || !Array.isArray(parsed.root.edges)) {
     return { ok: false, error: 'This is not a drip campaign.' };
   }
+  const integrity = graphIntegrityError(parsed.root);
+  if (integrity) return { ok: false, error: integrity };
   const name = String(parsed.name ?? '').trim() || 'Untitled';
   const src = parsed as Partial<DripCampaign>;
   const campaign: DripCampaign = {

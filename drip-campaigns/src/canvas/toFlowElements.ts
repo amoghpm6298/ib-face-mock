@@ -3,6 +3,7 @@
 // target), kept separate from the canonical DripGraph shape so the
 // reducer never needs to know React Flow exists.
 import type { Node, Edge } from '@xyflow/react';
+import { dcSendTimingLabel, dcSendTimingOf } from '../data/sendTiming';
 import type { DripGraph, DripGoal } from '../data/graphTypes';
 import { dcIsGoalCheckNode } from '../reducer/campaignReducer';
 import { dcGoalLabel } from '../reducer/labelMeta';
@@ -12,33 +13,6 @@ import { computeDagreLayout, DC_CARD_W, DC_SLOT_SIZE, DC_CARD_H_FALLBACK } from 
 import type { DripCardData } from './nodeTypes';
 import type { DripEdgeData } from './DripEdge';
 
-// 24h "HH:MM" (native <input type=time>'s own format) -> "H:MM AM/PM" for
-// canvas display only — the stored config stays 24h, this is purely a
-// render-time format (node-design refinement: ambiguous "11:00" must read
-// unambiguously as a time of day).
-function formatAbsTime(t: string): string {
-  if (!t) return '';
-  const [hStr, mStr] = t.split(':');
-  const h = parseInt(hStr, 10);
-  if (Number.isNaN(h)) return t;
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${mStr} ${ampm}`;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function formatSendTiming(p: any): string {
-  if (p.timing === 'Absolute') return formatAbsTime(p.absTime);
-  // An imported Send can arrive with no timing filed at all. Say nothing
-  // rather than "undefined undefined after previous step", and do not
-  // invent a send time or a delay to fill the gap — the card simply has no
-  // timing line until someone sets one.
-  const d = p.relativeDuration;
-  if (d === undefined || d === null || d === '' || Number.isNaN(Number(d))) return '';
-  if (Number(d) === 0) return 'Immediately after previous step';
-  if (!p.relativeUnit) return '';
-  return `${d} ${p.relativeUnit} after previous step`;
-}
 
 export interface DripCanvasMetrics {
   nodeCounts: Record<string, number>;
@@ -169,7 +143,7 @@ export function graphToFlowElements(graph: DripGraph, opts: ToFlowOptions): { no
       // Suppressed when identical to the step name (label) — no point
       // saying the same thing twice in two different weights.
       templateName: templateName && templateName !== nd.label ? templateName : undefined,
-      timingLabel: sendConfig ? formatSendTiming(sendConfig) : undefined,
+      timingLabel: sendConfig ? dcSendTimingLabel(dcSendTimingOf(sendConfig)) : undefined,
       fallbackTemplateName,
       autoEdgeId: autoEdge?.id,
       onEdit: opts.onEditNode ? () => opts.onEditNode!(nd.id) : undefined,

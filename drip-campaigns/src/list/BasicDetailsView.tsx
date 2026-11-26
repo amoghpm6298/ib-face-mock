@@ -2,6 +2,7 @@
 // the wizard's own Basic Details, Goal and Guardrails steps; this is the
 // read-back, not a second place to change them.
 import type { DripCampaign } from '../data/graphTypes';
+import { dcQuietHoursSentence } from '../data/quietHours';
 import { dcGoalLabel } from '../reducer/labelMeta';
 import { ImportedFilePanel } from '../components/ImportedFilePanel';
 
@@ -52,12 +53,25 @@ export function BasicDetailsView({ campaign }: { campaign: DripCampaign }) {
       <section className="bd-section">
         <div className="bd-section-title">Re-entry</div>
         <Row label="Re-entry" value={reEntry} />
+        {/* What "one run" counts as. Verified in quibbler, not assumed: the
+            nudge_subscription table is unique on (account_id, nudge_dfn_id)
+            and every NudgeCommunicationData row carries an accountId and no
+            customer or card id. So a run is per account, and re-entry means
+            per account too. Said here because it is the thing that decides
+            whether a customer with two cards gets one journey or two. */}
+        <Row label="Counted per" value="Account. A customer with two cards on one account goes through this campaign once, not twice." />
       </section>
 
       <section className="bd-section">
         <div className="bd-section-title">Schedule</div>
         <Row label="Starts" value={c.startDate || 'Once approved'} />
         <Row label="Ends" value={c.endDate || none('No end date')} />
+        {/* The end date is a hard stop, not a drain: anyone part-way through
+            the journey is stopped with the campaign. Stated here because it
+            decides who stops receiving messages, and a reader cannot infer it
+            from a date. Nothing says it when there is no end date, since
+            nothing then happens. */}
+        {c.endDate ? <Row label="At the end date" value="The campaign stops. Anyone still part-way through the journey is stopped with it." /> : null}
       </section>
 
       <section className="bd-section">
@@ -67,6 +81,7 @@ export function BasicDetailsView({ campaign }: { campaign: DripCampaign }) {
 
       <section className="bd-section">
         <div className="bd-section-title">Guardrails</div>
+        <Row label="Quiet hours" value={dcQuietHoursSentence(c.guardrails?.quietHours)} />
         {dnc || npa ? (
           <>
             <Row label="Do Not Contact" value={dnc ? 'On' : 'Off'} />

@@ -36,7 +36,10 @@ export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
     // primary channel's; fallbackAccount/fallbackTemplateId are a
     // separate pair for the fallback channel, since a template is
     // always locked to one channel and can't be shared across both.
-    SEND: { name: 'Send Message', channel: 'WHATSAPP', account: '', templateId: '', timing: 'Absolute', absTime: '11:00', relativeAnchor: 'Previous Step', relativeDuration: 1, relativeUnit: 'days', fallbackChannel: '', fallbackAccount: '', fallbackTemplateId: '' },
+    // No delay fields: a gap before a message is a Wait step, which the
+    // canvas shows and which stops when the goal is reached. See
+    // data/sendTiming.ts.
+    SEND: { name: 'Send Message', channel: 'WHATSAPP', account: '', templateId: '', timing: 'Absolute', absTime: '11:00', fallbackChannel: '', fallbackAccount: '', fallbackTemplateId: '' },
     PAUSE: { duration: 2, unit: 'days' },
     WAIT_UNTIL: { eventCategory: Object.keys(EVENT_CATEGORIES)[0], eventType: '', duration: 7, unit: 'days', conditions: [], journey: '', batch: '', offerType: '', offerName: '' },
     // No `basis` field anymore — a Condition is always a user-defined
@@ -76,7 +79,16 @@ export function dcDefaultConfig(type: DcNodeType, goal: DripGoal | null): any {
 // order to complete it.
 export function dcAddFormValid(t: DcNodeType, p: any): boolean {
   p = p || {};
-  if (t === 'ENTRY_EVENT' || t === 'WAIT_UNTIL') return !!p.eventType;
+  // A wait with no duration is not a wait. Both of these used to fall
+  // through to `true` — Wait For Event checked only its event, and Pause
+  // was not checked at all — so a timeout of 0, blank or negative reached
+  // the backend contract, meaning either an instant timeout or a run that
+  // waits forever. Durations are also stored as strings by the form, so
+  // this coerces rather than comparing a string to a number.
+  const positiveDuration = Number(p.duration) > 0 && !!p.unit;
+  if (t === 'ENTRY_EVENT') return !!p.eventType;
+  if (t === 'WAIT_UNTIL') return !!p.eventType && positiveDuration;
+  if (t === 'PAUSE') return positiveDuration;
   if (t === 'SEND') {
     if (!(p.account && p.templateId)) return false;
     if (!p.fallbackChannel) return true;
@@ -125,4 +137,39 @@ export function dcDefaultExitReason(graph: DripGraph, addingAt: DcAddingAt | nul
   if (!src) return fallback;
   const baseLabel = src.label.replace(/\?$/, '');
   return `${baseLabel} — ${edge.branchLabel}`;
+}
+
+// The default name for a NEW arm, on an Experiment ('A', 'B', …) and on a
+// Branch ('Branch 1', 'Branch 2', …) — the same two vocabularies this
+// file's own seeds above use.
+//
+// Both forms used to derive it from the arm COUNT, which repeats a name as
+// soon as any arm has been removed: take A/B/C, remove B, and the next
+// "+ Add variant" is C again. Two arms then carry one name, on the canvas
+// and on their edge chips, where the name is the only thing telling them
+// apart — and the duplicate persists into the saved campaign, since an
+// arm's name is what its edge's branchLabel is set from. The count is not
+// the question; "which name is still free" is.
+function takenLabels(branches: { label?: string }[]): Set<string> {
+  return new Set(branches.map((b) => String(b?.label ?? '').trim().toUpperCase()).filter(Boolean));
+}
+
+export function dcNextVariantLabel(branches: { label?: string }[]): string {
+  const taken = takenLabels(branches);
+  for (let i = 0; i < 26; i++) {
+    const letter = String.fromCharCode(65 + i);
+    if (!taken.has(letter)) return letter;
+  }
+  // A 27-variant experiment is not a real thing, but an unlovely name is
+  // still better than a duplicate one.
+  return `Variant ${branches.length + 1}`;
+}
+
+export function dcNextBranchLabel(branches: { label?: string }[]): string {
+  const taken = takenLabels(branches);
+  // With n arms, one of "Branch 1".."Branch n+1" is always free.
+  for (let n = 1; n <= branches.length + 1; n++) {
+    if (!taken.has(`BRANCH ${n}`)) return `Branch ${n}`;
+  }
+  return `Branch ${branches.length + 1}`;
 }

@@ -16,8 +16,9 @@
 // goal at this checkpoint" rate; a single-outgoing linear hop applies a
 // small flat attrition (opt-outs/delivery failures) rather than passing
 // the count through unchanged.
-import type { DripCampaign, DripEdge } from './graphTypes';
+import type { DripCampaign, DripEdge, DripNode } from './graphTypes';
 import { dcIsRoutingNode } from './nodeMeta';
+import { dcPortOf } from './ports';
 
 export interface DripAnalyticsMetrics {
   nodeCounts: Record<string, number>;
@@ -72,11 +73,26 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function computeSplitPcts(edges: DripEdge[], rand: () => number): number[] {
-  const explicit: (number | null)[] = edges.map((e) => {
-    const m = e.branchLabel.match(/\((\d+)%\)/);
-    return m ? parseInt(m[1], 10) / 100 : null;
-  });
+// An Experiment's allocation comes from the node that owns it, matched by
+// branch id. It used to be parsed back out of the edge's display text with
+// /\((\d+)%\)/, which meant the split a campaign actually reported depended on
+// how its arms happened to be WRITTEN: this repo's own DRIP-002 labels its
+// arms "50% WhatsApp", with no parentheses, so its configured 50/50 matched
+// nothing and the campaign was reported on a random split instead — while
+// DRIP-006's "WhatsApp-first (60%)" matched and was honoured. The regex
+// survives only for a legacy edge with no branch id to match on.
+function allocationOf(source: DripNode | undefined, edge: DripEdge): number | null {
+  const branches = ((source?._config || {}) as { branches?: { id?: string; pct?: number }[] }).branches;
+  if (branches && edge.branchId) {
+    const b = branches.find((x) => x.id === edge.branchId);
+    if (b && Number.isFinite(Number(b.pct))) return Number(b.pct) / 100;
+  }
+  const m = edge.branchLabel.match(/\((\d+)%\)/);
+  return m ? parseInt(m[1], 10) / 100 : null;
+}
+
+function computeSplitPcts(edges: DripEdge[], rand: () => number, source?: DripNode): number[] {
+  const explicit: (number | null)[] = edges.map((e) => allocationOf(source, e));
   const explicitSum = explicit.reduce((s: number, v) => s + (v || 0), 0);
   const unexplicitCount = explicit.filter((v) => v === null).length;
 
@@ -89,7 +105,8 @@ function computeSplitPcts(edges: DripEdge[], rand: () => number): number[] {
     const each = remainder / unexplicitCount;
     return explicit.map((v) => (v === null ? each : (v as number)));
   }
-  if (edges.length === 2 && /^Yes$/i.test(edges[0].branchLabel) && /^No$/i.test(edges[1].branchLabel)) {
+  // A yes/no fork, by port rather than by the words on it.
+  if (edges.length === 2 && dcPortOf(edges[0]) === 'yes' && dcPortOf(edges[1]) === 'no') {
     const yesPct = 0.1 + rand() * 0.2; // a modest 10-30% reach the goal at this specific checkpoint
     return [yesPct, 1 - yesPct];
   }
@@ -204,7 +221,7 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
         });
         continue;
       }
-      const pcts = computeSplitPcts(outs, rand);
+      const pcts = computeSplitPcts(outs, rand, graph.nodes[nodeId]);
       outs.forEach((e, i) => {
         const share = Math.round(total * pcts[i]);
         edgeCounts[e.id] = { count: share, pct: Math.round(pcts[i] * 100) };
@@ -219,7 +236,12 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
   // The held-back group converts on its own, at a materially lower rate —
   // 45-70% of the messaged rate, from the same seeded sequence. Rounded
   // down so it can never tie the treatment result at small numbers.
-  const controlRate = conversionRate * (0.45 + rand() * 0.25);
+  // Derived from its own seed, not from the treatment rate. The previous
+  // form was conversionRate * (0.45..0.70), which made control strictly
+  // lower than treatment every time — so uplift was positive by
+  // construction and the dashboard could never show that a campaign had
+  // failed. An independent draw can land either side.
+  const controlRate = Math.max(0, Math.min(1, 0.04 + rand() * 0.16));
   const controlReachedGoal = Math.floor(control * controlRate);
 
   return {

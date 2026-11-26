@@ -5,12 +5,15 @@
 // Every action below clones its input graph once, then runs the same
 // mutate-style graph-op functions against that clone — same algorithms,
 // new mutation target, per the migration plan.
-import type { DripGraph, DripGoal } from '../data/graphTypes';
+import type { DripGraph, DripGoal, DripGoalCondition, DripQuietHours } from '../data/graphTypes';
 import type { DcNodeType } from '../data/nodeMeta';
-import { DC_EVENT_ENTITY, DC_PROMOTED_ATTR } from '../data/sharedConstants';
+import { DC_EVENT_ENTITY, DC_PROMOTED_ATTR, dcNormalizeOperator } from '../data/sharedConstants';
 import { dcNewEdgeId, dcNewNodeId } from './idGen';
 import { dcReconcileBranchEdges, dcRemoveEdge as dcRemoveEdgeOp, dcRemoveGoalCheck as dcRemoveGoalCheckOp, dcRemoveRoot as dcRemoveRootOp } from './graphOps';
 import { dcDecisionBranchSummary, dcGoalLabel, dcRecomputeLabelMeta } from './labelMeta';
+import { dcAddFormValid } from './defaultConfig';
+import { dcSendTimingOf } from '../data/sendTiming';
+import { dcPortOf } from '../data/ports';
 
 function cloneGraph(graph: DripGraph): DripGraph {
   return { nodes: structuredClone(graph.nodes), edges: structuredClone(graph.edges), rootId: graph.rootId };
@@ -30,6 +33,166 @@ export function dcIsGoalCheckNode(node: { type: string }): boolean {
 // splicing into an edge that already connects two real nodes.
 export type DcAddingAt = { kind: 'root' } | { kind: 'edge'; edgeId: string } | { kind: 'growLeaf'; nodeId: string } | { kind: 'midEdge'; edgeId: string };
 
+// How long a Send's auto-inserted wait listens for the goal before moving
+// on. A default, not a claim about the right number — the author edits it
+// like any other wait.
+const DC_SEND_GOAL_WAIT_DAYS = 3;
+
+// ---------------------------------------------------------------------------
+// Does this event-shaped step MEAN the goal, or merely share its event?
+//
+// Asked of a Wait for Event before wiring it to Goal Reached, and of an
+// Entry · Event before letting a campaign submit: if entering the campaign
+// already satisfies the goal, the goal measures nothing.
+//
+// Matching the goal's event category and type is not enough to call the
+// event firing "goal achieved". A goal of "Transaction, amount is at least
+// ₹5,000" with a wait on "Transaction" and no filters fires on a ₹50 coffee,
+// and wiring that straight to Goal Reached records a goal that was never
+// achieved — the one error analytics can never recover from, since a false
+// conversion is indistinguishable from a real one afterwards.
+//
+// Equal or NARROWER qualifies. Conditions on a wait are AND'd, so carrying
+// more of them than the goal does only ever matches fewer customers, and
+// everyone it matches has met the goal. What disqualifies a wait is being
+// BROADER: missing one of the goal's own conditions, or leaving blank a
+// scoping field or card detail the goal names.
+//
+// Deliberately conservative where it cannot tell. An operator spelling it
+// does not recognise, or a value shape it cannot compare, reads as "does not
+// meet the goal" — which inserts a real check rather than asserting one. The
+// costs are not symmetric: an unnecessary Goal Check is visible on the canvas
+// and removable in one click, while a false Goal Reached is silent.
+// ---------------------------------------------------------------------------
+function valuesOf(c: { value?: string; values?: string[]; value2?: string }): string {
+  // A condition saved before multi-select existed carries only `value`;
+  // dcSelectedMulti reads that as a one-item set, and so does this.
+  const set = c.values && c.values.length ? [...c.values] : c.value ? [c.value] : [];
+  return JSON.stringify([set.map((v) => String(v).trim()).sort(), String(c.value2 ?? '').trim()]);
+}
+
+// The value side of a condition as a person reads it. A set joined with
+// "or" rather than a bare `.value`, which is `undefined` on a multi-select.
+function dcConditionValueText(c: DripGoalCondition): string {
+  const set = c.values && c.values.length ? c.values : c.value ? [c.value] : [];
+  if (!set.length) return '';
+  if (set.length === 1) return String(set[0]);
+  return `${set.slice(0, -1).join(', ')} or ${set[set.length - 1]}`;
+}
+
+function sameCondition(a: DripGoalCondition, b: DripGoalCondition): boolean {
+  return (
+    String(a.attribute ?? '').trim() === String(b.attribute ?? '').trim() &&
+    dcNormalizeOperator(a.operator) === dcNormalizeOperator(b.operator) &&
+    valuesOf(a) === valuesOf(b)
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function dcEventMeetsGoal(p: any, goal: DripGoal | null): boolean {
+  if (!goal || !goal.eventType) return false;
+  p = p || {};
+  if (goal.eventCategory !== p.eventCategory || goal.eventType !== p.eventType) return false;
+
+  const mine: DripGoalCondition[] = p.conditions || [];
+  for (const need of goal.conditions || []) {
+    if (!mine.some((have) => sameCondition(have, need))) return false;
+  }
+
+  for (const key of ['journey', 'batch', 'offerType', 'offerName'] as const) {
+    const want = String(goal[key] ?? '').trim();
+    if (want && String(p[key] ?? '').trim() !== want) return false;
+  }
+
+  for (const [key, want] of Object.entries(goal.cardDetails || {})) {
+    if (!want) continue; // an empty detail on the goal means any value
+    if (String((p.cardDetails || {})[key] ?? '').trim() !== String(want).trim()) return false;
+  }
+  return true;
+}
+
+// The outcome wiring for a Wait For Event, shared by the two routes that
+// create one: a hand-placed Wait For Event, and the one auto-inserted
+// after a Send. Keeping it in a single function is what stops the two
+// drifting — the earlier code had this logic inline in one branch only,
+// so anything added to it reached only hand-placed waits.
+function dcAttachWaitOutcome(next: DripGraph, id: string, p: any, goal: DripGoal | null): void {
+  // The wait's own label, used to name a Goal Reached exit wired off it.
+  const { label } = dcRecomputeLabelMeta('WAIT_UNTIL', p, goal);
+    // The event firing at all is only "success" when it's unambiguous
+    // (Card Activated, RP Redeemed). For anything with a real outcome
+    // attribute (EMI Request's New Status — Successful/Failed/Expired/
+    // Cancelled all fire the SAME event), auto-exiting straight to
+    // Goal-Based Exit would silently mislabel a Failed resolution as
+    // success — auto-insert a real outcome check instead.
+    const entity = DC_EVENT_ENTITY[p.eventCategory];
+    const statusAttr = DC_PROMOTED_ATTR[entity];
+    if (statusAttr) {
+      const goalMatchesThisEvent = goal && goal.eventCategory === p.eventCategory && goal.eventType === p.eventType;
+      const goalCond = goalMatchesThisEvent ? (goal!.conditions || []).find((c) => c.attribute === statusAttr) : null;
+      // A goal condition can match a SET of statuses ("any of NOT_DELIVERED,
+      // HARD_BOUNCE"), stored in `values`. Reading `.value` alone printed
+      // "New Status = undefined?" onto the node and into the exit beneath it.
+      const goalCondValue = goalCond ? dcConditionValueText(goalCond) : '';
+      const splitId = dcNewNodeId();
+      if (goalCond) {
+        // This IS a genuine check of the one campaign goal (the event just
+        // fired matches the goal's own event + the goal's own status
+        // condition) — a real GOAL_CHECK, not a generic custom Condition,
+        // even though it's phrased in terms of this specific event's
+        // status attribute rather than dcGoalLabel's own text.
+        next.nodes[splitId] = { id: splitId, type: 'GOAL_CHECK', label: `${statusAttr} = ${goalCondValue}?`, meta: '', _config: null, autoGenerated: true };
+        const goalExitId = dcNewNodeId();
+        const exitId = dcNewNodeId();
+        next.nodes[goalExitId] = { id: goalExitId, type: 'GOAL_EXIT', label: dcGoalLabel(goal)!, meta: '', _config: null, autoGenerated: true };
+        next.nodes[exitId] = { id: exitId, type: 'EXIT', label: `Resolved, but not to the goal outcome (${statusAttr} ≠ ${goalCondValue})`, meta: '', _config: null, autoGenerated: false };
+        next.edges.push({ id: dcNewEdgeId(), from: id, to: splitId, branchLabel: '', autoGenerated: true, port: 'next' });
+        next.edges.push({ id: dcNewEdgeId(), from: splitId, to: goalExitId, branchLabel: 'Yes', autoGenerated: true, port: 'yes' });
+        next.edges.push({ id: dcNewEdgeId(), from: splitId, to: exitId, branchLabel: 'No', autoGenerated: false, port: 'no' });
+      } else {
+        // Waiting on a multi-outcome event that ISN'T what the Goal is
+        // defined against (or no Goal set at all) — no correct default
+        // here, so don't guess. Leave both branches open.
+        next.nodes[splitId] = { id: splitId, type: 'SPLIT', label: `${statusAttr}?`, meta: 'Define what counts as success for this outcome — not the campaign Goal, so nothing is auto-filled', _config: null, autoGenerated: true };
+        next.edges.push({ id: dcNewEdgeId(), from: id, to: splitId, branchLabel: '', autoGenerated: true, port: 'next' });
+        next.edges.push({ id: dcNewEdgeId(), from: splitId, to: null, branchLabel: 'Success outcome', autoGenerated: false, port: 'yes' });
+        next.edges.push({ id: dcNewEdgeId(), from: splitId, to: null, branchLabel: 'Other outcome', autoGenerated: false, port: 'no' });
+      }
+    } else {
+      // Unambiguous event (no status attribute at all — "Card Activated"
+      // firing only ever means one thing). Still only a real Goal Reached
+      // when a campaign Goal is actually defined AND it's specifically
+      // this event — same symmetry as the statusAttr branch above. An
+      // event firing is never automatically "the goal," regardless of
+      // how unambiguous it is, unless a Goal says so.
+      const goalMatchesThisEvent = goal && goal.eventCategory === p.eventCategory && goal.eventType === p.eventType;
+      if (dcEventMeetsGoal(p, goal)) {
+        // This wait's own predicate equals or narrows the goal, so the event
+        // firing under it IS the goal — nothing left to check.
+        const goalExitId = dcNewNodeId();
+        next.nodes[goalExitId] = { id: goalExitId, type: 'GOAL_EXIT', label, meta: '', _config: null, autoGenerated: true };
+        next.edges.push({ id: dcNewEdgeId(), from: id, to: goalExitId, branchLabel: 'Event received', autoGenerated: true, port: 'event' });
+      } else if (goalMatchesThisEvent) {
+        // Right event, broader predicate: the goal asks for something this
+        // wait does not. Insert a real Goal Check rather than assuming —
+        // it evaluates the whole goal, so the author gets the right answer
+        // without having to restate the goal's filters on the wait. Its No
+        // arm is left open: "the event fired but the goal was not met" is a
+        // real outcome, and only the author knows what should follow it.
+        const checkId = dcNewNodeId();
+        const goalExitId = dcNewNodeId();
+        next.nodes[checkId] = { id: checkId, type: 'GOAL_CHECK', label: (dcGoalLabel(goal) || 'Goal') + '?', meta: '', _config: null, autoGenerated: true };
+        next.nodes[goalExitId] = { id: goalExitId, type: 'GOAL_EXIT', label: dcGoalLabel(goal) || 'Goal achieved', meta: '', _config: null, autoGenerated: true };
+        next.edges.push({ id: dcNewEdgeId(), from: id, to: checkId, branchLabel: 'Event received', autoGenerated: true, port: 'event' });
+        next.edges.push({ id: dcNewEdgeId(), from: checkId, to: goalExitId, branchLabel: 'Yes', autoGenerated: true, port: 'yes' });
+        next.edges.push({ id: dcNewEdgeId(), from: checkId, to: null, branchLabel: 'No', autoGenerated: false, port: 'no' });
+      } else {
+        next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'Event received', autoGenerated: false, port: 'event' });
+      }
+    }
+  next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'Timed out', autoGenerated: false, port: 'timeout' });
+}
+
 // Builds the new node (via dcRecomputeLabelMeta, so label/meta logic lives
 // in exactly one place, shared with editing), then any type-specific
 // auto-children as real graph nodes/edges (a Send's own goal-check, a Wait
@@ -43,16 +206,52 @@ export function dcConfirmAddNode(graph: DripGraph, type: DcNodeType, p: any, add
   const id = dcNewNodeId();
   next.nodes[id] = { id, type, label, meta, _config: structuredClone(p), autoGenerated: false };
 
-  // Goal check fires after every step that represents either a real send
-  // (Send — a fallback channel is still the same send, not a second step)
-  // or real time passing (Pause) — not just after a Send. A customer can
-  // convert on their own while a campaign is mid-wait, and without a
-  // check right after the Pause, the next scheduled action would fire
-  // blindly regardless of whether they'd already hit the goal. Wait
-  // Until is the one exception — it already has its own real outcome
-  // check below, a more precise version of this same idea, not something
-  // to layer a second generic check on top of.
-  if (type === 'SEND' || type === 'PAUSE') {
+  // A Send is followed by a WAIT FOR EVENT on the goal, never by a bare
+  // Goal Check.
+  //
+  // The old rule auto-inserted a Goal Check after a Send as well as after
+  // a Pause. After a Send, zero time has passed — the customer cannot
+  // have opened the message, let alone acted on it — so that check could
+  // only ever catch people who had already converted BEFORE the campaign
+  // messaged them. It answered No for everyone else, every time, and the
+  // last one in a sequence routed the whole cohort to "Sequence
+  // exhausted" before the final message had been delivered.
+  //
+  // Waiting on the goal event instead is both correct and more precise:
+  // it exits the moment the customer converts rather than at the next
+  // checkpoint, so nobody receives the next reminder after converting.
+  // Wait For Event already carries a timeout, and already auto-wires to
+  // Goal Reached when the awaited event is the goal — this just reaches
+  // for it automatically instead of leaving the author to know.
+  if (type === 'SEND') {
+    if (goal && goal.eventType) {
+      const waitId = dcNewNodeId();
+      const waitCfg: Record<string, unknown> = {
+        eventCategory: goal.eventCategory,
+        eventType: goal.eventType,
+        // A default window, not a claim about the right one — the author
+        // edits it like any other wait.
+        duration: DC_SEND_GOAL_WAIT_DAYS,
+        unit: 'days',
+        // The goal's own predicate travels with it, so the wait means the
+        // goal rather than merely the goal's event type (H3).
+        conditions: goal.conditions || [],
+        journey: goal.journey || '',
+        batch: goal.batch || '',
+        offerType: goal.offerType || '',
+        offerName: goal.offerName || '',
+        cardDetails: goal.cardDetails,
+      };
+      const wl = dcRecomputeLabelMeta('WAIT_UNTIL', waitCfg, goal);
+      next.nodes[waitId] = { id: waitId, type: 'WAIT_UNTIL', label: wl.label, meta: wl.meta, _config: waitCfg, autoGenerated: true };
+      next.edges.push({ id: dcNewEdgeId(), from: id, to: waitId, branchLabel: '', autoGenerated: true, port: 'next' });
+      // Same outcome wiring a hand-placed Wait For Event gets, built by
+      // the one helper so the two routes cannot drift.
+      dcAttachWaitOutcome(next, waitId, waitCfg, goal);
+    } else {
+      next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: '', autoGenerated: false, port: 'next' });
+    }
+  } else if (type === 'PAUSE') {
     const goalLabel = dcGoalLabel(goal);
     if (goalLabel) {
       const question = goalLabel + '?';
@@ -60,69 +259,18 @@ export function dcConfirmAddNode(graph: DripGraph, type: DcNodeType, p: any, add
       const goalId = dcNewNodeId();
       next.nodes[checkId] = { id: checkId, type: 'GOAL_CHECK', label: question, meta: '', _config: null, autoGenerated: true };
       next.nodes[goalId] = { id: goalId, type: 'GOAL_EXIT', label: question.replace(/\?$/, ''), meta: '', _config: null, autoGenerated: true };
-      next.edges.push({ id: dcNewEdgeId(), from: id, to: checkId, branchLabel: '', autoGenerated: true });
-      next.edges.push({ id: dcNewEdgeId(), from: checkId, to: goalId, branchLabel: 'Yes', autoGenerated: true });
-      next.edges.push({ id: dcNewEdgeId(), from: checkId, to: null, branchLabel: 'No', autoGenerated: false });
+      next.edges.push({ id: dcNewEdgeId(), from: id, to: checkId, branchLabel: '', autoGenerated: true, port: 'next' });
+      next.edges.push({ id: dcNewEdgeId(), from: checkId, to: goalId, branchLabel: 'Yes', autoGenerated: true, port: 'yes' });
+      next.edges.push({ id: dcNewEdgeId(), from: checkId, to: null, branchLabel: 'No', autoGenerated: false, port: 'no' });
     } else {
       // No campaign goal defined — there's nothing real to check, so a
       // "Goal?" Split here would just be dead weight with no meaning
       // behind it. Leave a plain open slot for whatever comes next
       // instead.
-      next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: '', autoGenerated: false });
+      next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: '', autoGenerated: false, port: 'next' });
     }
   } else if (type === 'WAIT_UNTIL') {
-    // The event firing at all is only "success" when it's unambiguous
-    // (Card Activated, RP Redeemed). For anything with a real outcome
-    // attribute (EMI Request's New Status — Successful/Failed/Expired/
-    // Cancelled all fire the SAME event), auto-exiting straight to
-    // Goal-Based Exit would silently mislabel a Failed resolution as
-    // success — auto-insert a real outcome check instead.
-    const entity = DC_EVENT_ENTITY[p.eventCategory];
-    const statusAttr = DC_PROMOTED_ATTR[entity];
-    if (statusAttr) {
-      const goalMatchesThisEvent = goal && goal.eventCategory === p.eventCategory && goal.eventType === p.eventType;
-      const goalCond = goalMatchesThisEvent ? (goal!.conditions || []).find((c) => c.attribute === statusAttr) : null;
-      const splitId = dcNewNodeId();
-      if (goalCond) {
-        // This IS a genuine check of the one campaign goal (the event just
-        // fired matches the goal's own event + the goal's own status
-        // condition) — a real GOAL_CHECK, not a generic custom Condition,
-        // even though it's phrased in terms of this specific event's
-        // status attribute rather than dcGoalLabel's own text.
-        next.nodes[splitId] = { id: splitId, type: 'GOAL_CHECK', label: `${statusAttr} = ${goalCond.value}?`, meta: '', _config: null, autoGenerated: true };
-        const goalExitId = dcNewNodeId();
-        const exitId = dcNewNodeId();
-        next.nodes[goalExitId] = { id: goalExitId, type: 'GOAL_EXIT', label: dcGoalLabel(goal)!, meta: '', _config: null, autoGenerated: true };
-        next.nodes[exitId] = { id: exitId, type: 'EXIT', label: `Resolved, but not to the goal outcome (${statusAttr} ≠ ${goalCond.value})`, meta: '', _config: null, autoGenerated: false };
-        next.edges.push({ id: dcNewEdgeId(), from: id, to: splitId, branchLabel: '', autoGenerated: true });
-        next.edges.push({ id: dcNewEdgeId(), from: splitId, to: goalExitId, branchLabel: 'Yes', autoGenerated: true });
-        next.edges.push({ id: dcNewEdgeId(), from: splitId, to: exitId, branchLabel: 'No', autoGenerated: false });
-      } else {
-        // Waiting on a multi-outcome event that ISN'T what the Goal is
-        // defined against (or no Goal set at all) — no correct default
-        // here, so don't guess. Leave both branches open.
-        next.nodes[splitId] = { id: splitId, type: 'SPLIT', label: `${statusAttr}?`, meta: 'Define what counts as success for this outcome — not the campaign Goal, so nothing is auto-filled', _config: null, autoGenerated: true };
-        next.edges.push({ id: dcNewEdgeId(), from: id, to: splitId, branchLabel: '', autoGenerated: true });
-        next.edges.push({ id: dcNewEdgeId(), from: splitId, to: null, branchLabel: 'Success outcome', autoGenerated: false });
-        next.edges.push({ id: dcNewEdgeId(), from: splitId, to: null, branchLabel: 'Other outcome', autoGenerated: false });
-      }
-    } else {
-      // Unambiguous event (no status attribute at all — "Card Activated"
-      // firing only ever means one thing). Still only a real Goal Reached
-      // when a campaign Goal is actually defined AND it's specifically
-      // this event — same symmetry as the statusAttr branch above. An
-      // event firing is never automatically "the goal," regardless of
-      // how unambiguous it is, unless a Goal says so.
-      const goalMatchesThisEvent = goal && goal.eventCategory === p.eventCategory && goal.eventType === p.eventType;
-      if (goalMatchesThisEvent) {
-        const goalExitId = dcNewNodeId();
-        next.nodes[goalExitId] = { id: goalExitId, type: 'GOAL_EXIT', label, meta: '', _config: null, autoGenerated: true };
-        next.edges.push({ id: dcNewEdgeId(), from: id, to: goalExitId, branchLabel: 'Yes', autoGenerated: true });
-      } else {
-        next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'Yes', autoGenerated: false });
-      }
-    }
-    next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'No', autoGenerated: false });
+    dcAttachWaitOutcome(next, id, p, goal);
   } else if (type === 'SPLIT') {
     // A user-built Condition asks "does the customer satisfy these
     // conditions?" — it has no built-in relationship to the campaign
@@ -132,8 +280,8 @@ export function dcConfirmAddNode(graph: DripGraph, type: DcNodeType, p: any, add
     // still available to add manually on either arm (§5/§10A — disabled
     // elsewhere in the taxonomy, but enabled here, since this is exactly
     // the already-forked branch-arm context that's meant for).
-    next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'Yes', autoGenerated: false });
-    next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'No', autoGenerated: false });
+    next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'Yes', autoGenerated: false, port: 'yes' });
+    next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'No', autoGenerated: false, port: 'no' });
   } else if (type === 'GOAL_CHECK') {
     // A hand-added Goal Check, for the places auto-insertion never
     // reaches (after a Wait for Event, or on a Branch/Experiment/
@@ -151,19 +299,19 @@ export function dcConfirmAddNode(graph: DripGraph, type: DcNodeType, p: any, add
     // for.
     const goalId = dcNewNodeId();
     next.nodes[goalId] = { id: goalId, type: 'GOAL_EXIT', label: dcGoalLabel(goal) || 'Goal achieved', meta: '', _config: null, autoGenerated: true };
-    next.edges.push({ id: dcNewEdgeId(), from: id, to: goalId, branchLabel: 'Yes', autoGenerated: true });
-    next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'No', autoGenerated: false });
+    next.edges.push({ id: dcNewEdgeId(), from: id, to: goalId, branchLabel: 'Yes', autoGenerated: true, port: 'yes' });
+    next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'No', autoGenerated: false, port: 'no' });
   } else if (type === 'DECISION_SPLIT') {
     // One open edge per real branch, evaluated top-to-bottom on the canvas
     // the same order they're listed here, plus one final fixed "Anything
     // else" catch-all edge.
     p.branches.forEach((b: { id?: string; label: string }) => {
-      next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: `${b.label} (${dcDecisionBranchSummary(p, b as never)})`, branchId: b.id, autoGenerated: false });
+      next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: `${b.label} (${dcDecisionBranchSummary(p, b as never)})`, branchId: b.id, autoGenerated: false, port: 'branch' });
     });
-    next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'Anything else', autoGenerated: false });
+    next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: 'Anything else', autoGenerated: false, port: 'else' });
   } else if (type === 'RANDOM_SPLIT') {
     p.branches.forEach((b: { id?: string; label: string; pct: number }) => {
-      next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: `${b.label} (${b.pct}%)`, branchId: b.id, autoGenerated: false });
+      next.edges.push({ id: dcNewEdgeId(), from: id, to: null, branchLabel: `${b.label} (${b.pct}%)`, branchId: b.id, autoGenerated: false, port: 'branch' });
     });
   }
 
@@ -172,7 +320,7 @@ export function dcConfirmAddNode(graph: DripGraph, type: DcNodeType, p: any, add
     const e = next.edges.find((e) => e.id === addingAt.edgeId);
     if (e) e.to = id;
   } else if (addingAt.kind === 'growLeaf') {
-    next.edges.push({ id: dcNewEdgeId(), from: addingAt.nodeId, to: id, branchLabel: '', autoGenerated: false });
+    next.edges.push({ id: dcNewEdgeId(), from: addingAt.nodeId, to: id, branchLabel: '', autoGenerated: false, port: 'next' });
   } else if (addingAt.kind === 'midEdge') {
     // Splice the new node into an edge that already connects two real
     // nodes — the edge now points at the new node instead of its original
@@ -242,6 +390,317 @@ export function dcConfirmEditNode(graph: DripGraph, nodeId: string, type: DcNode
   // there's nothing for a form to submit in the first place.
 
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// Goal reconciliation
+//
+// Auto-generated goal wiring is derived from the goal AT THE MOMENT a node is
+// added. The goal stays editable afterwards, so without this the two drift:
+// a Goal Check keeps asking the old question, a Goal Reached keeps naming the
+// old outcome, and — since a Send's wait now carries the goal's own event and
+// conditions — a wait keeps listening for an event that is no longer the goal
+// and still exits to Goal Reached when it fires.
+//
+// Only autoGenerated nodes are touched. Anything the author placed by hand is
+// theirs, and is reported by dcGoalWiringIssues instead of being rewritten.
+// ---------------------------------------------------------------------------
+export function dcReconcileGoal(graph: DripGraph, goal: DripGoal | null): DripGraph {
+  const next = cloneGraph(graph);
+  const goalLabel = dcGoalLabel(goal);
+  let changed = false;
+
+  for (const n of Object.values(next.nodes)) {
+    if (!n.autoGenerated) continue;
+
+    if (n.type === 'GOAL_CHECK') {
+      const want = (goalLabel || 'Goal') + '?';
+      if (n.label !== want) { n.label = want; changed = true; }
+      continue;
+    }
+    if (n.type === 'GOAL_EXIT') {
+      const want = goalLabel || 'Goal achieved';
+      if (n.label !== want) { n.label = want; n._config = { reason: want }; changed = true; }
+      continue;
+    }
+    // A wait auto-inserted after a Send exists only to listen for the goal,
+    // so it follows the goal. A hand-placed wait is left alone.
+    if (n.type === 'WAIT_UNTIL' && goal && goal.eventType) {
+      const prev = (n._config || {}) as Record<string, unknown>;
+      const cfg: Record<string, unknown> = {
+        ...prev,
+        eventCategory: goal.eventCategory,
+        eventType: goal.eventType,
+        conditions: goal.conditions || [],
+        journey: goal.journey || '',
+        batch: goal.batch || '',
+        offerType: goal.offerType || '',
+        offerName: goal.offerName || '',
+        cardDetails: goal.cardDetails,
+      };
+      const lm = dcRecomputeLabelMeta('WAIT_UNTIL', cfg, goal);
+      if (prev.eventType !== cfg.eventType || prev.eventCategory !== cfg.eventCategory || n.label !== lm.label) {
+        n._config = cfg; n.label = lm.label; n.meta = lm.meta; changed = true;
+      }
+    }
+  }
+  return changed ? next : graph;
+}
+
+// What the author has to resolve before this can be submitted. Reconciliation
+// fixes what it owns; these are the cases where only a person can decide.
+export function dcGoalWiringIssues(graph: DripGraph, goal: DripGoal | null): string[] {
+  const issues: string[] = [];
+  const nodes = Object.values(graph.nodes);
+
+  if (!goal || !goal.eventType) {
+    const stranded = nodes.filter((n) => n.type === 'GOAL_CHECK' || n.type === 'GOAL_EXIT').length;
+    if (stranded > 0) {
+      issues.push(
+        `${stranded} step${stranded > 1 ? 's' : ''} still check for or exit on a campaign goal, but no goal is defined. Define a goal, or remove those steps.`,
+      );
+    }
+    return issues;
+  }
+
+  // A Goal Reached wired off a wait that does not mean the goal records goal
+  // attainment for something that is not the goal.
+  //
+  // Auto-generated waits are checked too, which they did not used to be. The
+  // old reasoning was that dcReconcileGoal keeps them in step with the goal —
+  // true in the builder, and false for every graph that never passes through
+  // it: a seeded campaign, an imported one, anything migrated by a script.
+  // That exemption hid a real defect in this repo's own seed data, where a
+  // wait left listening for Transaction exited to Goal Reached under a goal
+  // of Outcome Issuance, recording any purchase as a reward redemption.
+  for (const n of nodes) {
+    if (n.type !== 'GOAL_EXIT') continue;
+    const incoming = graph.edges.find((e) => e.to === n.id);
+    const src = incoming ? graph.nodes[incoming.from] : null;
+    if (!src || src.type !== 'WAIT_UNTIL') continue;
+    const cfg = (src._config || {}) as { eventType?: string };
+    if (!cfg.eventType) continue;
+    if (cfg.eventType !== goal.eventType) {
+      issues.push(
+        `"${src.label}" waits for ${cfg.eventType} but exits to Goal Reached, and the campaign goal is ${goal.eventType}. That records a goal that was not achieved.`,
+      );
+    } else if (!dcEventMeetsGoal(src._config, goal)) {
+      // Same event, broader predicate — it fires for customers the goal
+      // would not count.
+      issues.push(
+        `"${src.label}" exits to Goal Reached, but it waits for ${cfg.eventType} more broadly than the goal does. Narrow it to match the goal, or put a Goal Check between them.`,
+      );
+    }
+  }
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign validation (submit gate)
+//
+// Until this existed, Submit checked only that the campaign had a name, an
+// issuer, a root and no open slots. Node configuration was checked in exactly
+// one place — the drawer's own primary button — so anything that reached the
+// graph by another route was never re-examined: imported nodes with partial
+// config, the Condition auto-inserted after a Wait For Event (which carries
+// no config at all and therefore checks nothing), nodes whose event filter
+// was cleared by a program change, and any node edited into an invalid state
+// and left there.
+//
+// Every issue carries the node it belongs to so the UI can offer a jump.
+// ---------------------------------------------------------------------------
+export interface DripIssue {
+  nodeId: string | null;
+  message: string;
+}
+
+// ---------------------------------------------------------------------------
+// The campaign's own setup — who it is for and when it runs.
+//
+// These used to be checked, when they were checked at all, in a ternary chain
+// inside the Builder's own render, which is the same split brain C3 fixed for
+// node config: one rule in the gate, another in a component. Everything the
+// submit gate refuses now comes from one list, so the banner can name any of
+// it the same way.
+// ---------------------------------------------------------------------------
+export interface DripCampaignSetup {
+  name: string;
+  issuer: string;
+  applyToAllPrograms?: boolean;
+  programs?: string[];
+  controlPct?: number;
+  startDate?: string;
+  endDate?: string;
+  quietHours?: DripQuietHours;
+}
+
+// Today as YYYY-MM-DD in the viewer's own timezone. The date fields are
+// datetime-local, so a stored value is "YYYY-MM-DDTHH:mm" and its first ten
+// characters are the calendar day. This app has no timezone model at all, so
+// the comparisons below are made on whole days: an end date is "past" only
+// once its day is behind us, never because a time of day has gone by.
+function todayISO(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function dcValidateSetup(setup: DripCampaignSetup): DripIssue[] {
+  const issues: DripIssue[] = [];
+  const at = (message: string) => issues.push({ nodeId: null, message });
+
+  if (!String(setup.name || '').trim()) at('Give this campaign a name before submitting.');
+  if (!String(setup.issuer || '').trim()) at('Choose an issuer before submitting.');
+  // An issuer with no programs and the toggle off reaches nobody: the
+  // campaign is complete, valid and addressed to an empty audience.
+  else if (!setup.applyToAllPrograms && !(setup.programs || []).length) {
+    at('No programs are selected, so this campaign would reach nobody. Pick at least one, or apply it to all programs.');
+  }
+
+  // The control group is bounded by the input's own min/max, which a paste or
+  // a restored draft never passes through, and an emptied field reads as NaN.
+  const pct = Number(setup.controlPct);
+  if (setup.controlPct !== undefined) {
+    if (!Number.isFinite(pct) || !Number.isInteger(pct)) at('The control group must be a whole percentage.');
+    else if (pct < 0 || pct > 50) at('The control group must be between 0% and 50%.');
+  }
+
+  const q = setup.quietHours;
+  if (q && q.enabled) {
+    if (!q.start || !q.end) at('Quiet hours need a start and an end time.');
+    else if (q.start === q.end) at('Quiet hours start and end at the same time, which blocks every hour of the day.');
+  }
+
+  const start = String(setup.startDate || '').trim();
+  const end = String(setup.endDate || '').trim();
+  if (start && end && end < start) at('The end date is before the start date.');
+  const endDay = end.slice(0, 10);
+  // An end date already past means the campaign can never run — true whether
+  // this is a new campaign or an edit of an old one. A START date in the past
+  // is deliberately NOT flagged: editing a campaign that began last month is
+  // the ordinary case, and the builder cannot tell the two apart.
+  if (endDay && endDay < todayISO()) at('The end date has already passed, so this campaign would never run.');
+  return issues;
+}
+
+export function dcValidateCampaign(graph: DripGraph, goal: DripGoal | null, setup?: DripCampaignSetup): DripIssue[] {
+  const issues: DripIssue[] = setup ? dcValidateSetup(setup) : [];
+  if (!graph.rootId) {
+    issues.push({ nodeId: null, message: 'Add an entry step before submitting.' });
+    return issues;
+  }
+
+  // What can actually be reached from the entry step. A mid-edge insert that
+  // left more than one open arm used to drop the rest of the chain here —
+  // still present in `nodes`, still counted on Review, never walked.
+  const reachable = new Set<string>([graph.rootId]);
+  const queue = [graph.rootId];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const e of graph.edges) {
+      if (e.from === cur && e.to && !reachable.has(e.to)) {
+        reachable.add(e.to);
+        queue.push(e.to);
+      }
+    }
+  }
+  for (const n of Object.values(graph.nodes)) {
+    if (!reachable.has(n.id)) {
+      issues.push({ nodeId: n.id, message: `"${n.label}" cannot be reached from the entry step.` });
+    }
+  }
+
+  for (const id of reachable) {
+    const n = graph.nodes[id];
+    if (!n) continue;
+
+    // The same rule the drawer enforces, applied to what was actually saved.
+    if (!dcAddFormValid(n.type, n._config)) {
+      issues.push({ nodeId: n.id, message: `"${n.label}" is not fully configured.` });
+    }
+
+    // A delay stored inside a Send, from before delays moved out into Wait
+    // steps. Reported rather than migrated: turning one into a Wait changes
+    // the shape of the journey, and where that step goes — before or after a
+    // branch, with or without its own goal check — is the author's call.
+    if (n.type === 'SEND' && dcSendTimingOf(n._config).kind === 'legacyDelay') {
+      issues.push({
+        nodeId: n.id,
+        message: `"${n.label}" waits inside the send. Nothing on the canvas shows that wait and it does not stop when the goal is reached. Add a Wait step before it instead.`,
+      });
+    }
+
+    // A branch with nowhere to go strands whoever takes it.
+    const outs = graph.edges.filter((e) => e.from === n.id);
+    const terminal = n.type === 'EXIT' || n.type === 'GOAL_EXIT';
+    if (!terminal && outs.length === 0) {
+      issues.push({ nodeId: n.id, message: `"${n.label}" has no next step.` });
+    }
+    for (const e of outs) {
+      if (e.to === null) {
+        const which = e.branchLabel ? `its "${e.branchLabel}" branch` : 'its next step';
+        issues.push({ nodeId: n.id, message: `"${n.label}" still needs ${which}.` });
+      }
+    }
+    if (terminal && outs.length > 0) {
+      issues.push({ nodeId: n.id, message: `"${n.label}" is an exit, so nothing can follow it.` });
+    }
+  }
+
+  // A campaign whose entry already satisfies its own goal measures nothing:
+  // everyone converts on arrival, the funnel reads 100%, and no message in it
+  // can have caused anything. Judged by the same predicate comparison the
+  // waits use, so a BROADER entry is fine — entering on any transaction while
+  // aiming for one over ₹5,000 is a real campaign. What is not is an entry
+  // that already means the goal.
+  const root = graph.nodes[graph.rootId];
+  if (root && root.type === 'ENTRY_EVENT' && dcEventMeetsGoal(root._config, goal)) {
+    issues.push({
+      nodeId: root.id,
+      message: `Everyone who enters has already achieved the goal — "${root.label}" is the goal event itself. Narrow the goal, or start the campaign on an earlier event.`,
+    });
+  }
+
+  // A Goal Check's Yes arm that no longer ends in Goal Reached. Removing the
+  // Goal Reached exit reverts that arm to an open slot, and the picker then
+  // offers anything — including a Send, on the path where the customer has
+  // already converted.
+  //
+  // Not blocked, because a message after conversion is a real thing to want:
+  // "you've earned it" belongs exactly there. What must not pass quietly is
+  // the path never arriving at Goal Reached, because then nobody who took it
+  // is counted as having converted, and the campaign under-reports its own
+  // success for a reason nothing on screen explains.
+  for (const n of Object.values(graph.nodes)) {
+    if (n.type !== 'GOAL_CHECK' || !reachable.has(n.id)) continue;
+    const yes = graph.edges.find((e) => e.from === n.id && dcPortOf(e) === 'yes');
+    if (!yes || !yes.to) continue; // an open arm is already reported above
+    const seen = new Set<string>([yes.to]);
+    const queue = [yes.to];
+    let reachesGoalExit = false;
+    while (queue.length) {
+      const cur = queue.shift()!;
+      if (graph.nodes[cur]?.type === 'GOAL_EXIT') {
+        reachesGoalExit = true;
+        break;
+      }
+      for (const e of graph.edges) {
+        if (e.from === cur && e.to && !seen.has(e.to)) {
+          seen.add(e.to);
+          queue.push(e.to);
+        }
+      }
+    }
+    if (!reachesGoalExit) {
+      issues.push({
+        nodeId: n.id,
+        message: `The Yes arm of "${n.label}" never reaches Goal Reached, so nobody who takes it is counted as having achieved the goal. End that path with a Goal Reached step.`,
+      });
+    }
+  }
+
+  for (const m of dcGoalWiringIssues(graph, goal)) issues.push({ nodeId: null, message: m });
+  return issues;
 }
 
 export function dcRemoveEdge(graph: DripGraph, edgeId: string): DripGraph {

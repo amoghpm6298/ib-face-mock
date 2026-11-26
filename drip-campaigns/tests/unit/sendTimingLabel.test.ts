@@ -34,15 +34,26 @@ describe('a Send card’s timing line', () => {
     ['a blank duration', { relativeDuration: '', relativeUnit: 'days' }],
     ['a null duration', { relativeDuration: null, relativeUnit: 'days' }],
     ['a non-numeric duration', { relativeDuration: 'soon', relativeUnit: 'days' }],
-    ['a duration with no unit', { relativeDuration: 3 }],
   ])('%s says nothing rather than something made up', (_name, cfg) => {
     const label = timingOf({ channel: 'SMS', ...cfg });
     expect(label).toBe('');
     expect(String(label)).not.toContain('undefined');
   });
 
-  it('a real relative timing is untouched', () => {
-    expect(timingOf({ channel: 'SMS', relativeDuration: 3, relativeUnit: 'days' })).toBe('3 days after previous step');
-    expect(timingOf({ channel: 'SMS', relativeDuration: 0, relativeUnit: 'days' })).toBe('Immediately after previous step');
+  it('a send with no delay goes as soon as the customer reaches it', () => {
+    expect(timingOf({ channel: 'SMS', timing: 'Immediate' })).toBe('As soon as they reach this step');
+    // A legacy "Relative" with a zero delay always meant exactly that.
+    expect(timingOf({ channel: 'SMS', timing: 'Relative', relativeDuration: 0, relativeUnit: 'days' })).toBe('As soon as they reach this step');
+  });
+
+  it('a legacy delay inside a send is still shown, not silently dropped', () => {
+    // The builder no longer offers this — a gap is a Wait step now — but a
+    // campaign saved before that still says what it does, and the submit
+    // gate asks for it to be moved out. Hiding it would leave a send going
+    // out three days later than the canvas claims.
+    expect(timingOf({ channel: 'SMS', timing: 'Relative', relativeDuration: 3, relativeUnit: 'days' })).toBe('3 days after the previous step');
+    // Even with no unit filed, since the delay itself is the thing worth
+    // saying; 'days' is the only unit a saved one could have meant.
+    expect(timingOf({ channel: 'SMS', timing: 'Relative', relativeDuration: 3 })).toBe('3 days after the previous step');
   });
 });
