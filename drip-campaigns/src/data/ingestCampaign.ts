@@ -23,6 +23,7 @@
 import type { DripCampaign, DripGoal, DripGraph, DripNode } from './graphTypes';
 import { dcBranchWhatOf, dcFiltersOf } from './filters';
 import { DC_NODE_META } from './nodeMeta';
+import { DC_PORTS, dcIsPort } from './ports';
 import { dcRecomputeLabelMeta } from '../reducer/labelMeta';
 
 const ENTITY_ATTRIBUTE = /^(.+) attribute$/i;
@@ -152,6 +153,13 @@ function graphIntegrityError(root: DripGraph): string | null {
     // in the builder. Only a named step that is missing is wrong.
     if (edge.to != null && !Object.prototype.hasOwnProperty.call(root.nodes, edge.to)) {
       return `A connection goes to a step that is not in the file ("${String(edge.to)}").`;
+    }
+    // A port it does not recognise is worse than none at all: with no port,
+    // dcPortOf falls back to reading the label and the campaign still routes
+    // the way it reads, but an unknown value would be carried into the graph
+    // and silently match nothing.
+    if (edge.port !== undefined && !dcIsPort(edge.port)) {
+      return `A connection has a kind this builder does not have ("${String(edge.port)}"). Expected one of: ${DC_PORTS.join(', ')}.`;
     }
   }
   return null;

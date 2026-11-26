@@ -223,13 +223,19 @@ Terminal counting also sums per path rather than per run, so a campaign with par
 
 ## Medium
 
-### M1 · Branch polarity is stored as display text
+### M1 · Branch polarity is stored as display text  ✅ **FIXED**
 
 `'Yes'` / `'No'` / `'Anything else'` strings are the only port identity, consumed by `graphOps.ts:109` reconcile and by analytics. Wait for Event's "event happened" arm is labelled `''` when a status check follows (`campaignReducer.ts:97`). Experiment percentages are parsed back out of labels with a regex.
 
 An import using `"yes"`, a reordered edge list, or a renamed label silently flips routing.
 
 **Fix.** `port: 'yes'|'no'|'event'|'timeout'|'else'|<branchId>` on `DripEdge`; `branchLabel` for display only. Rename Wait for Event's ports to **Event received** / **Timed out**.
+
+> **Fixed.** `port` (`src/data/ports.ts`: next · yes · no · event · timeout · branch · else) is written on every edge the builder creates and carried by all 88 seeded edges. `branchLabel` is display only now: renaming an arm on the canvas cannot change where anyone goes. The three readers that made the text load-bearing were converted — `dcRemoveGoalCheck`'s `=== 'Yes'`, reconcile's catch-all match, and analytics' yes/no regex — and `dcPortOf` derives a port for edges written before this existed, **case-insensitively**, so the audit's own example of an import writing `"yes"` now routes correctly instead of silently flipping. An unknown `port` is refused at import.
+>
+> **The regex was not only fragile, it was wrong in this repo's own data.** An Experiment's allocation was parsed back out of the edge label with `/\((\d+)%\)/`, so what a campaign reported depended on how its arms happened to be written. DRIP-002's arms read `"50% WhatsApp"` — no parentheses — so its configured 50/50 matched nothing and the campaign was reported on a *random* split, while DRIP-006's `"WhatsApp-first (60%)"` matched and was honoured. Two experiments, same product, two different code paths. Allocation now comes from the owning node's `branches[]`, matched by `branchId` — which neither seeded experiment actually had, and both now do.
+>
+> **Not done, now a free decision rather than a coupled one:** renaming Wait for Event's displayed arms to "Event received" / "Timed out". The ports already say that; the canvas still reads Yes/No. Changing the words is now purely a copy choice with no routing consequence, which is the point.
 
 ### M2 · Wait and Wait for Event have no duration validation  ✅ **FIXED**
 
@@ -401,8 +407,10 @@ A second pass, once every label was rebuilt from its own `_config`, found **28 o
 
 ## What is left
 
-**Next:** M1 is the deepest thing left — branch polarity stored as display text, where an import using `"yes"` or a renamed label silently flips routing. It touches reconcile, analytics and every saved campaign at once, so it wants its own pass rather than being bundled.
+**Next:** M3 (Send's own relative delay duplicates the Wait node and bypasses the goal checks) and M5 (a parallel path has no terminal scope, so "finished" is undefined for a fan-out campaign). M5 is partly answered already: a campaign now stops everyone at its end date, and the same question — what ends a *run* — is H6's.
 
-**Two decisions, not fixes,** and both are the same shape — they need an answer before any code: H6's journey key (what one run is keyed to: customer, account or card), which H5, H7 and M6's variant stickiness all hang off; and M7's `onEnd` (whether customers mid-journey finish or are dropped when a campaign ends).
+**One decision left, not a fix,** and it needs an answer before any code: H6's journey key — what one run is keyed to, customer, account or card — which H5, H7 and M6's variant stickiness all hang off.
+
+**Decided 2026-11-26:** `onEnd` is a hard stop. At the end date the campaign stops and anyone part-way through the journey stops with it. Stated on Basic Details and in the campaign's own read-back; no configuration, because there is one behaviour.
 
 **Then H5, H6 and H7 together** — re-entry, journey key and guardrails are one question: what is a journey run keyed to, and when is it finished. H6 is a decision rather than a fix.

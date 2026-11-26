@@ -35,6 +35,13 @@ export interface DripEdge {
   // that predate this (legacy branches); the reducer backfills it lazily,
   // same behavior as the original.
   branchId?: string;
+  // What this edge MEANS — 'yes', 'timeout', 'else' and so on. Display text
+  // used to be the only identity an edge had, so renaming an arm or
+  // importing "yes" in lower case re-routed the campaign. See data/ports.ts:
+  // `branchLabel` is now display only, and dcPortOf() derives this for edges
+  // written before it existed. Typed as a string here, and narrowed by
+  // dcIsPort, so this module stays free of imports.
+  port?: string;
 }
 
 export interface DripGraph {

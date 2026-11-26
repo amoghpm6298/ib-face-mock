@@ -1786,3 +1786,59 @@ the control group, the dates and the entry-equals-goal rule in all its
 shapes), 56 e2e (2 new: submit refused for a campaign addressed to no
 programs and then accepted once a program is picked, and refused for an entry
 event that is the goal event), clean typecheck, zero lint errors.
+
+## 2026-11-26 (cont'd) — M1: an edge means something, separately from what
+it says. And the end date is a hard stop
+
+**The end-of-campaign rule, decided rather than invented:** at the end date
+the campaign stops, and anyone part-way through the journey stops with it.
+No `onEnd` field, because there is one behaviour — it is stated on Basic
+Details under the dates, and in the campaign's own read-back, since a reader
+cannot infer it from a date. (The date comparison also learnt that these
+fields are `datetime-local`, not `date`: "already passed" is judged on whole
+calendar days, never because a time of day has gone by.)
+
+**M1 — `port`.** Branch polarity was stored only as display text. `'Yes'` /
+`'No'` / `'Anything else'` *were* the wiring, read by three different things:
+`dcRemoveGoalCheck` found its arms with `=== 'Yes'`, reconcile matched the
+catch-all by its label, and analytics decided a fork was a yes/no pair with a
+regex. So an import writing `"yes"`, or anyone renaming an arm, silently
+re-routed the campaign.
+
+`port` (next · yes · no · event · timeout · branch · else) is now written on
+every edge the builder creates and carried by all 88 seeded edges, and
+`branchLabel` is display only. `dcPortOf` derives a port for edges written
+before it existed, **case-insensitively** — the audit's own `"yes"` example
+now routes correctly rather than flipping. An unknown port is refused at
+import.
+
+**The regex was not merely fragile — it was already wrong in our own data.**
+An Experiment's allocation was parsed back out of the edge label with
+`/\((\d+)%\)/`, so what a campaign *reported* depended on how its arms
+happened to be WRITTEN. DRIP-002's arms read `"50% WhatsApp"` — no
+parentheses — so its configured 50/50 matched nothing and the campaign was
+reported on a random split, while DRIP-006's `"WhatsApp-first (60%)"` matched
+and was honoured. Two experiments in one product going down two code paths
+for the same configured thing. Allocation now comes from the owning node's
+`branches[]` matched by `branchId` — which neither seeded experiment actually
+carried, and both now do. Verified in the browser: DRIP-002's arms read
+`SMS (50%) 4,468` and `WhatsApp (50%) 4,468` off 8,936 reached.
+
+**Ports are derived from meaning, not from the label, which is why a Wait's
+arms are `event`/`timeout` while the canvas still reads Yes/No.** The audit
+also wanted those words changed to "Event received" / "Timed out". Not done,
+deliberately: it is now a pure copy decision with no routing consequence,
+which is the whole point of separating the two. Doing it would churn every
+seed label and several e2e assertions for a cosmetic choice.
+
+**A process note on the mechanical rewrite.** The 26 edge-creation sites were
+ported by a scripted replace, and reading every assignment back in context
+afterwards caught one that was wrong: a hand-added Goal Check's No arm had
+picked up `timeout` from a pattern meant for waits. A global replace is a
+fine way to do the typing and a bad way to decide the meaning.
+
+Verified: 404 unit (388 → 404, a new `ports.test.ts` covering derivation
+including the lower-case import case, that every builder-created edge carries
+a port, that renaming an arm or a catch-all cannot re-route or delete it, the
+two seeded allocations, and that every seeded edge states what it means), 56
+e2e, clean typecheck, zero lint errors, plus the analytics screenshot above.

@@ -186,6 +186,7 @@ export function BasicDetailsStep({
           </div>
         </div>
         <p className="f-hint" style={{ margin: 0 }}>Leave blank to activate immediately once approved.</p>
+        <p className="f-hint" style={{ margin: '4px 0 0' }}>At the end date the campaign stops. Anyone still part-way through the journey is stopped with it, and receives no further messages.</p>
       </div>
 
       <div className="dcb-step-footer">

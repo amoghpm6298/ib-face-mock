@@ -58,6 +58,12 @@ export function BasicDetailsView({ campaign }: { campaign: DripCampaign }) {
         <div className="bd-section-title">Schedule</div>
         <Row label="Starts" value={c.startDate || 'Once approved'} />
         <Row label="Ends" value={c.endDate || none('No end date')} />
+        {/* The end date is a hard stop, not a drain: anyone part-way through
+            the journey is stopped with the campaign. Stated here because it
+            decides who stops receiving messages, and a reader cannot infer it
+            from a date. Nothing says it when there is no end date, since
+            nothing then happens. */}
+        {c.endDate ? <Row label="At the end date" value="The campaign stops. Anyone still part-way through the journey is stopped with it." /> : null}
       </section>
 
       <section className="bd-section">
