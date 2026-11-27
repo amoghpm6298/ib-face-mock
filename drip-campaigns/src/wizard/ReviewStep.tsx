@@ -2,7 +2,7 @@
 // refinement). A plain read-back of what's about to be submitted, not a
 // new data-entry surface — every field here is already set on an
 // earlier step; this just confirms it before Save as Draft / Submit for
-// Approval, which moved here from the Builder step's old top bar.
+// Submit, which moved here from the Builder step's old top bar.
 import { dcGoalLabel } from '../reducer/labelMeta';
 import { dcConversionSentence } from '../data/conversionWindow';
 import { dcQuietHoursSentence } from '../data/quietHours';
@@ -96,7 +96,7 @@ export function ReviewStep({
 
       <div className="wiz-section">
         <div className="wiz-group-label">Schedule</div>
-        <div className="review-row-main">{startDate ? `Starts ${startDate.replace('T', ' ')}` : 'Starts immediately once approved'}</div>
+        <div className="review-row-main">{startDate ? `Starts ${startDate.replace('T', ' ')}` : 'Starts as soon as it is submitted'}</div>
         {endDate && <div className="dl-row-sub">Ends {endDate.replace('T', ' ')}</div>}
       </div>
 
@@ -154,7 +154,7 @@ export function ReviewStep({
           Save as Draft
         </button>
         <button className="btn primary" onClick={onSubmit}>
-          Submit for Approval
+          Submit
         </button>
       </div>
     </div>

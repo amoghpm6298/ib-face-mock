@@ -53,9 +53,10 @@ describe('generateDripAnalytics', () => {
       });
   });
 
-  it('a KILLED campaign has zero "still active"', () => {
-    const killed = LIVE_CAMPAIGNS.find((c) => c.status === 'KILLED') || { ...LIVE_CAMPAIGNS[0], status: 'KILLED' as const };
-    const { totals } = generateDripAnalytics(killed);
+  it('a TERMINATED campaign has zero "still active"', () => {
+    const terminated =
+      LIVE_CAMPAIGNS.find((c) => c.status === 'TERMINATED') || { ...LIVE_CAMPAIGNS[0], status: 'TERMINATED' as const };
+    const { totals } = generateDripAnalytics(terminated);
     expect(totals.stillActive).toBe(0);
   });
 

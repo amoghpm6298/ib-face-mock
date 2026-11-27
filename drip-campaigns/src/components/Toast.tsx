@@ -1,5 +1,5 @@
 // Native replacement for the original's showToast() — same role (a
-// transient confirmation after save/approve/pause/kill), real React
+// transient confirmation after save/submit/terminate), real React
 // state instead of a global DOM singleton.
 import { useEffect } from 'react';
 

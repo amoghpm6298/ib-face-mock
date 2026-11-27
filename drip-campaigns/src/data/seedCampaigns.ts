@@ -932,7 +932,9 @@ export const DRIP_CAMPAIGNS: DripCampaign[] =  [
       }
     },
     "controlPct": 5,
-    "status": "PAUSED",
+    "startDate": "2026-09-01T10:00",
+    "endDate": "2026-10-31T23:59",
+    "status": "EXPIRED",
     "root": {
       "nodes": {
         "dcn45": {
@@ -1085,9 +1087,9 @@ export const DRIP_CAMPAIGNS: DripCampaign[] =  [
       }
     },
     "controlPct": 10,
-    "startDate": "",
-    "endDate": "",
-    "status": "PENDING_REVIEW",
+    "startDate": "2026-12-05T10:00",
+    "endDate": "2027-03-31T23:59",
+    "status": "SCHEDULED",
     "root": {
       "nodes": {
         "dcn53": {
@@ -1376,9 +1378,9 @@ export const DRIP_CAMPAIGNS: DripCampaign[] =  [
       }
     },
     "controlPct": 10,
-    "startDate": "",
-    "endDate": "",
-    "status": "PENDING_REVIEW",
+    "startDate": "2026-12-01T09:30",
+    "endDate": "2027-02-28T23:59",
+    "status": "SCHEDULED",
     "root": {
       "nodes": {
         "dcn72": {

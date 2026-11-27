@@ -84,7 +84,7 @@ describe('when it runs', () => {
     expect(msgs({ startDate: past(), endDate: future() })).toBe('');
   });
 
-  it('accepts no dates at all — that is "starts once approved"', () => {
+  it('accepts no dates at all — that is "starts as soon as it is submitted"', () => {
     expect(msgs({ startDate: '', endDate: '' })).toBe('');
   });
 });

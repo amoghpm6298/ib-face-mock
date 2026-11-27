@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 // Campaign tab. A DRAFT opens the builder instead, whose canvas is already
 // on screen — same canvas component either way.
 async function openJourney(page: import('@playwright/test').Page, name: string, isDraft = false) {
-  await page.goto('/');
+  await page.goto('./');
   await page.locator('table tbody tr', { hasText: name }).click();
   await page.waitForTimeout(400);
   if (!isDraft) {
@@ -39,7 +39,7 @@ test('a seeded previous-message check reads the outcome its config names', async
 });
 
 test('a new Experiment variant is never named the same as one already there', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Variant naming');
@@ -91,7 +91,7 @@ test('a new Experiment variant is never named the same as one already there', as
 });
 
 test('the Import screen says what is wrong with a file it will not take', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.locator('.create-choose-card', { hasText: 'Import' }).click();
   await page.waitForTimeout(200);
@@ -122,7 +122,7 @@ test('the Import screen says what is wrong with a file it will not take', async 
 // nowhere to hide a delay. A gap is a Wait step, which the canvas shows and
 // which stops the moment the goal is reached.
 test('a Send has no delay field, and says where a gap belongs instead', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Send timing');
@@ -168,7 +168,7 @@ test('a Send has no delay field, and says where a gap belongs instead', async ({
 
 // H7 — quiet hours, on by default, and said back in plain words.
 test('quiet hours are on by default, editable, and read back on the campaign', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Quiet hours');
@@ -207,7 +207,7 @@ test('quiet hours are on by default, editable, and read back on the campaign', a
   await expect(page.locator('.dcb-mid-inner')).toContainText('No messages between 9:00 PM and 9:00 AM');
   await expect(page.locator('.dcb-mid-inner')).toContainText('is not sent at all');
 
-  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.locator('button:has-text("Submit")').click();
   await page.waitForTimeout(400);
   await page.locator('table tbody tr', { hasText: 'Quiet hours' }).click();
   await page.waitForTimeout(500);
@@ -220,7 +220,7 @@ test('quiet hours are on by default, editable, and read back on the campaign', a
 // Commit 2 — the Goal step says what counts as a conversion, suggests a
 // window from the journey, and reads both back on Review and the campaign.
 test('the goal carries a conversion window and an exit rule, read back everywhere', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Conversion settings');
@@ -272,7 +272,7 @@ test('the goal carries a conversion window and an exit rule, read back everywher
   await expect(page.locator('.dcb-mid-inner')).toContainText('within 21 days');
   await expect(page.locator('.dcb-mid-inner')).toContainText('Customers stop receiving messages once they convert');
 
-  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.locator('button:has-text("Submit")').click();
   await page.waitForTimeout(400);
   await page.locator('table tbody tr', { hasText: 'Conversion settings' }).click();
   await page.waitForTimeout(500);
@@ -285,7 +285,7 @@ test('the goal carries a conversion window and an exit rule, read back everywher
 // the Goal step offers to resolve it where the switch is rather than leaving
 // the submit gate to refuse two steps later.
 test('turning exit on offers to clear the Goal Checks it would make dead', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Goal check clash');

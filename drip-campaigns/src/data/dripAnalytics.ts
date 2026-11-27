@@ -152,10 +152,10 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
       remainingIndegree[id] = (incomingEdges[id] || []).length;
     });
 
-    // A kill switch exits everyone immediately, regardless of position —
+    // Terminating a campaign takes everyone out immediately, regardless of position —
     // nobody is left "still active." Otherwise, a modest slice of the
     // treatment group hasn't reached any terminal state yet.
-    const stillActiveFrac = campaign.status === 'KILLED' ? 0 : 0.05 + rand() * 0.06;
+    const stillActiveFrac = campaign.status === 'TERMINATED' ? 0 : 0.05 + rand() * 0.06;
     const rootEntered = Math.round(entered * (1 - stillActiveFrac));
     stillActive = entered - rootEntered;
 
@@ -168,8 +168,8 @@ export function generateDripAnalytics(campaign: DripCampaign): DripAnalyticsData
       const total = nodeCounts[nodeId] || 0;
       if (node.type === 'PAUSE' || node.type === 'WAIT_UNTIL') {
         // Some of the people who reached a wait are still sitting on it.
-        // A killed campaign exited everyone, so nobody is waiting.
-        const waitingFrac = campaign.status === 'KILLED' ? 0 : 0.08 + ((seedFromId(nodeId) % 17) / 100);
+        // A terminated campaign took everyone out, so nobody is waiting.
+        const waitingFrac = campaign.status === 'TERMINATED' ? 0 : 0.08 + ((seedFromId(nodeId) % 17) / 100);
         waitingByNodeId[nodeId] = Math.round(total * waitingFrac);
       }
       if (node.type === 'SEND') {

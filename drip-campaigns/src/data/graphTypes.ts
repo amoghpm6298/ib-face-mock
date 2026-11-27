@@ -204,7 +204,11 @@ export interface DripGoal {
 }
 
 export type DripCampaignStatus =
-  | 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'SCHEDULED' | 'PAUSED' | 'KILLED' | 'CHANGES_REQUESTED';
+  // Draft while it is being built, then four live states. Submitting puts a
+  // campaign straight into Scheduled — there is no approval step yet, and
+  // maker-checker comes later. There is no Pause: a campaign runs until its
+  // end date passes (Expired) or someone ends it (Terminated).
+  | 'DRAFT' | 'SCHEDULED' | 'ACTIVE' | 'EXPIRED' | 'TERMINATED';
 
 export interface DripCampaign {
   id: string;

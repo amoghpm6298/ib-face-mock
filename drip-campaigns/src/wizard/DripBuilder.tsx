@@ -74,7 +74,7 @@ export interface DripBuilderPayload {
   reEntryCooloffDuration: number;
   reEntryCooloffUnit: 'days' | 'hours';
   guardrails: { dnc: boolean; npa: boolean; quietHours: DripQuietHours };
-  status: 'DRAFT' | 'PENDING_REVIEW';
+  status: 'DRAFT' | 'SCHEDULED';
   root: DripGraph;
 }
 
@@ -317,7 +317,7 @@ export function DripBuilder({
         ? issues[0].message
         : `${issues[0].message} (and ${issues.length - 1} more to resolve)`;
 
-  function buildPayload(status: 'DRAFT' | 'PENDING_REVIEW'): DripBuilderPayload {
+  function buildPayload(status: 'DRAFT' | 'SCHEDULED'): DripBuilderPayload {
     // Never persist a half-filled goal (category picked, no event type
     // yet) — same discipline the old GoalDrawer's disabled Save button
     // enforced, now applied at save time since Goal Definition no longer
@@ -347,7 +347,7 @@ export function DripBuilder({
       setShowValidation(true);
       return;
     }
-    onSubmit(buildPayload('PENDING_REVIEW'));
+    onSubmit(buildPayload('SCHEDULED'));
   }
 
   // "Complete" means nothing on that step is blocking submission. A goal is

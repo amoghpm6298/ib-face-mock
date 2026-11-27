@@ -1,6 +1,6 @@
 // Step 3 of 4 — the canvas, beside the persistent left rail. Its own
 // top bar (Undo/Redo + Continue to Review) lives in DripBuilder.tsx;
-// Save as Draft/Submit for Approval and the on-demand validation banner
+// Save as Draft/Submit and the on-demand validation banner
 // both moved to the new Review step, so this component is just the
 // canvas, nothing else.
 import { DripCanvas } from '../canvas/DripCanvas';

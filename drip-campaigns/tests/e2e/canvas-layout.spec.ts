@@ -11,7 +11,7 @@ const SEED_CAMPAIGN_COUNT = 6;
 test.describe('Branch-label chip overlap (the original bug)', () => {
   for (let rowIndex = 0; rowIndex < SEED_CAMPAIGN_COUNT; rowIndex++) {
     test(`seed campaign row ${rowIndex}: no two branch-label chips overlap`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('./');
       const row = page.locator('table tbody tr').nth(rowIndex);
       const name = await row.locator('td').first().innerText();
       await row.click();
@@ -46,7 +46,7 @@ test.describe('Branch-label chip overlap (the original bug)', () => {
 
 test.describe('Bare connector pill (the original "what is this?" bug)', () => {
   test('a bare (unlabeled) connector chip is invisible at rest and only reveals on hover', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
     await page.getByRole('button', { name: /Create from scratch/ }).click();
     await page.locator('input[type=text]').first().fill('Bare Chip Regression');
@@ -149,7 +149,7 @@ test('adding a step never leaves two cards overlapping', async ({ page }) => {
       return { count: cards.length, hits, ratio: Math.max(...hs) / Math.min(...hs) };
     });
 
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Import/ }).click();
   await page.locator('textarea').fill(TALL_SEND_CAMPAIGN);

@@ -10,7 +10,7 @@
 // conflated control-group and timing into one bucket. Same fields, same
 // data, same validation — this is an information-architecture and copy
 // pass, not a new form.
-import { PROGRAM_OPTIONS, computeMakerCheckerFlag } from '../data/sharedConstants';
+import { PROGRAM_OPTIONS } from '../data/sharedConstants';
 import { ChipPicker } from '../components/ChipPicker';
 
 export function BasicDetailsStep({
@@ -129,11 +129,6 @@ export function BasicDetailsStep({
             </p>
           )}
         </div>
-        {issuer && computeMakerCheckerFlag(issuer, applyToAllPrograms ? PROGRAM_OPTIONS[issuer] || [] : programs) && (
-          <p className="f-hint" style={{ color: 'var(--warning-text)', margin: 0 }}>
-            Maker-checker applies — this issuer/program requires a separate approver.
-          </p>
-        )}
       </div>
 
       <div className="wiz-section">
@@ -141,7 +136,7 @@ export function BasicDetailsStep({
           <label className="f-label">Control group %</label>
           <input className="f-input" type="number" min={0} max={50} value={controlPct} onChange={(e) => onControlPctChange(Number(e.target.value))} />
         </div>
-        <p className="f-hint" style={{ margin: 0 }}>Held back as a baseline to measure uplift.</p>
+        <p className="f-hint" style={{ margin: 0 }}>A random slice of the audience, held back at entry so there is a baseline to measure uplift against. They are not counted as entered and never come back into this campaign.</p>
       </div>
 
       <div className="wiz-section">
@@ -185,7 +180,7 @@ export function BasicDetailsStep({
             <input className="f-input" type="datetime-local" value={endDate} onChange={(e) => onEndDateChange(e.target.value)} />
           </div>
         </div>
-        <p className="f-hint" style={{ margin: 0 }}>Leave blank to activate immediately once approved.</p>
+        <p className="f-hint" style={{ margin: 0 }}>Leave blank to start as soon as it is submitted.</p>
         <p className="f-hint" style={{ margin: '4px 0 0' }}>At the end date the campaign stops. Anyone still part-way through the journey is stopped with it, and receives no further messages.</p>
       </div>
 
