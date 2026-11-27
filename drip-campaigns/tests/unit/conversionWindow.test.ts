@@ -5,7 +5,7 @@
 // converting takes the customer out of the journey.
 import { describe, expect, it } from 'vitest';
 import type { DripGoal, DripGraph } from '../../src/data/graphTypes';
-import { dcJourneyLengthDays, dcSuggestConversionWindow, dcConversionSentence } from '../../src/data/conversionWindow';
+import { dcJourneyLengthDays, dcSuggestConversionWindow, dcConversionSentence, dcWindowNote } from '../../src/data/conversionWindow';
 import { dcValidateSetup } from '../../src/reducer/campaignReducer';
 import { DRIP_CAMPAIGNS } from '../../src/data/seedCampaigns';
 
@@ -82,12 +82,18 @@ describe('saying what will be counted', () => {
 
   it('names the event, the window, and that both groups are measured alike', () => {
     expect(dcConversionSentence(goal)).toBe(
-      'A conversion is the first Virtual card activated by the same account after it enters, within 13 days. The held-back group is measured the same way.',
+      'A conversion is someone doing Virtual card activated after they enter this campaign. It counts if it happens within 13 days of them entering. The held-back group is measured the same way.',
+    );
+  });
+
+  it('drops the window for the Goal step, where the field below already shows it', () => {
+    expect(dcConversionSentence(goal, { withWindow: false })).toBe(
+      'A conversion is someone doing Virtual card activated after they enter this campaign.',
     );
   });
 
   it('says so plainly when no window is set, rather than implying one', () => {
-    expect(dcConversionSentence({ ...goal, conversionWindow: undefined })).toContain('with no time limit set');
+    expect(dcConversionSentence({ ...goal, conversionWindow: undefined })).toContain('No time limit is set');
   });
 
   it('says nothing at all with no goal', () => {
@@ -131,5 +137,32 @@ describe('the seeds', () => {
       const journey = dcJourneyLengthDays(c.root);
       expect({ id: c.id, covers: Number(c.goal.conversionWindow!.duration) >= journey }).toEqual({ id: c.id, covers: true });
     }
+  });
+});
+
+describe('explaining the number', () => {
+  const goal = (duration: number, unit = 'days') => ({ conversionWindow: { duration, unit } });
+
+  it('says the window covers the journey, with room after the last message', () => {
+    expect(dcWindowNote(goal(13), 10)).toMatch(/runs about 10 days, so that covers it/);
+  });
+
+  it('calls out a window SHORTER than the journey — the last message lands after the clock stops', () => {
+    const note = dcWindowNote(goal(5), 10);
+    expect(note).toMatch(/last message goes out after this window closes/);
+    expect(note).toMatch(/would not be counted/);
+  });
+
+  it('reads hours against the journey in days, not as days', () => {
+    // 12 hours is half a day, so it is short of a 10-day journey.
+    expect(dcWindowNote(goal(12, 'hours'), 10)).toMatch(/after this window closes/);
+  });
+
+  it('falls back to the reason alone when there is no journey yet', () => {
+    expect(dcWindowNote(goal(7), 0)).toMatch(/probably was not nudged by this campaign/);
+  });
+
+  it('says the reason when no window is set at all', () => {
+    expect(dcWindowNote(null, 10)).toMatch(/keeps the report honest/);
   });
 });

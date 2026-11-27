@@ -23,7 +23,7 @@ import { ConditionsSection } from './ConditionRows';
 import { EventScopingFields, CardEventDetailFields } from './EventScopingFields';
 import { EVENT_CATEGORIES, dcValidEventType, resolveEntryEventAttrSource } from '../data/sharedConstants';
 import type { DripGoal } from '../data/graphTypes';
-import { dcConversionSentence } from '../data/conversionWindow';
+import { dcConversionSentence, dcWindowNote } from '../data/conversionWindow';
 
 const BLANK_GOAL: DripGoal = { eventCategory: Object.keys(EVENT_CATEGORIES)[0], eventType: '', conditions: [] };
 
@@ -32,6 +32,7 @@ export function GoalDefinitionStep({
   onGoalChange,
   goalCheckCount,
   onRemoveGoalChecks,
+  journeyLengthDays,
   onSaveDraft,
   onContinue,
 }: {
@@ -42,6 +43,9 @@ export function GoalDefinitionStep({
   // submit gate to refuse two steps later.
   goalCheckCount: number;
   onRemoveGoalChecks: () => void;
+  // How long the journey runs, so the window can be explained against it —
+  // and a window shorter than the journey can be called out.
+  journeyLengthDays: number;
   onSaveDraft: () => void;
   onContinue: () => void;
 }) {
@@ -98,61 +102,71 @@ export function GoalDefinitionStep({
       })()}
 
       {draft.eventType ? (
-        <div className="wiz-section">
-          <div className="wiz-group-label">Counting conversions</div>
+        <>
+          {/* Two separate things, deliberately apart. The window changes a
+              number in a report; the toggle changes who gets messaged. Under
+              one "Counting conversions" heading each one read as the other's
+              kind of thing. */}
+          <div className="wiz-section">
+            <div className="wiz-group-label">What counts as a conversion</div>
+            <p className="f-hint" style={{ margin: '0 0 12px' }}>{dcConversionSentence(draft, { withWindow: false })}</p>
 
-          <div className="f-group">
-            <label className="f-label">Conversion window</label>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input
-                className="f-input"
-                type="number"
-                min={1}
-                style={{ maxWidth: 120 }}
-                value={draft.conversionWindow?.duration ?? ''}
-                onChange={(e) => onGoalChange({ ...draft, conversionWindow: { duration: Number(e.target.value), unit: draft.conversionWindow?.unit ?? 'days' } })}
+            <div className="f-group">
+              <label className="f-label">Count it if it happens within</label>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input
+                  className="f-input"
+                  type="number"
+                  min={1}
+                  style={{ maxWidth: 110 }}
+                  value={draft.conversionWindow?.duration ?? ''}
+                  onChange={(e) => onGoalChange({ ...draft, conversionWindow: { duration: Number(e.target.value), unit: draft.conversionWindow?.unit ?? 'days' } })}
+                />
+                <select
+                  className="f-input"
+                  style={{ maxWidth: 110 }}
+                  value={draft.conversionWindow?.unit ?? 'days'}
+                  onChange={(e) => onGoalChange({ ...draft, conversionWindow: { duration: draft.conversionWindow?.duration ?? 1, unit: e.target.value as 'days' | 'hours' } })}
+                >
+                  <option value="days">days</option>
+                  <option value="hours">hours</option>
+                </select>
+                <span className="f-hint" style={{ margin: 0 }}>of them entering.</span>
+              </div>
+              <p className="f-hint">{dcWindowNote(draft, journeyLengthDays)}</p>
+              <p className="f-hint">This affects reporting only. It does not change who gets messaged.</p>
+            </div>
+          </div>
+
+          <div className="wiz-section">
+            <div className="wiz-group-label">While the campaign runs</div>
+            <div className="toggle-row">
+              <div>
+                <div className="toggle-row-label">Stop messaging once they convert</div>
+                <div className="toggle-row-sub">They get no further messages from this campaign, wherever they are in the journey.</div>
+              </div>
+              <div
+                className={`toggle ${draft.exitOnConversion !== false ? 'on' : ''}`}
+                onClick={() => onGoalChange({ ...draft, exitOnConversion: draft.exitOnConversion === false })}
               />
-              <select
-                className="f-input"
-                style={{ maxWidth: 120 }}
-                value={draft.conversionWindow?.unit ?? 'days'}
-                onChange={(e) => onGoalChange({ ...draft, conversionWindow: { duration: draft.conversionWindow?.duration ?? 1, unit: e.target.value as 'days' | 'hours' } })}
-              >
-                <option value="days">days</option>
-                <option value="hours">hours</option>
-              </select>
             </div>
-            <p className="f-hint">Measured from the moment an account enters, not from the last message. Suggested from the length of the journey when the goal was set; change it if that is not the window you mean.</p>
+            {draft.exitOnConversion === false ? (
+              <p className="f-hint" style={{ marginTop: 10 }}>They carry on through the journey after converting. Add a Goal Check step if you want to branch on it.</p>
+            ) : null}
+
+            {draft.exitOnConversion !== false && goalCheckCount > 0 ? (
+              <div className="dcb-validation-banner" style={{ marginTop: 12 }}>
+                <span>
+                  This campaign has {goalCheckCount} Goal Check step{goalCheckCount > 1 ? 's' : ''}. {goalCheckCount > 1 ? 'They' : 'It'} cannot fire while
+                  customers stop on conversion, because anyone who converts has already left.
+                </span>{' '}
+                <button type="button" className="btn secondary" style={{ marginLeft: 8 }} onClick={onRemoveGoalChecks}>
+                  Remove {goalCheckCount > 1 ? 'them' : 'it'}
+                </button>
+              </div>
+            ) : null}
           </div>
-
-          <div className="toggle-row">
-            <div>
-              <div className="toggle-row-label">Stop messaging customers once they convert</div>
-              <div className="toggle-row-sub">Checked wherever they are in the journey, not just at a step that asks. On by default.</div>
-            </div>
-            <div
-              className={`toggle ${draft.exitOnConversion !== false ? 'on' : ''}`}
-              onClick={() => onGoalChange({ ...draft, exitOnConversion: draft.exitOnConversion === false })}
-            />
-          </div>
-
-          {draft.exitOnConversion !== false && goalCheckCount > 0 ? (
-            <div className="dcb-validation-banner" style={{ marginTop: 12 }}>
-              <span>
-                This campaign has {goalCheckCount} Goal Check step{goalCheckCount > 1 ? 's' : ''}. {goalCheckCount > 1 ? 'They' : 'It'} cannot fire while
-                customers exit on conversion, because anyone who converts has already left.
-              </span>{' '}
-              <button type="button" className="btn secondary" style={{ marginLeft: 8 }} onClick={onRemoveGoalChecks}>
-                Remove {goalCheckCount > 1 ? 'them' : 'it'}
-              </button>
-            </div>
-          ) : null}
-
-          <p className="f-hint" style={{ marginTop: 10 }}>{dcConversionSentence(draft)}</p>
-          {draft.exitOnConversion === false ? (
-            <p className="f-hint">With this off, customers carry on through the journey after converting. Add a Goal Check step if you want to branch on it.</p>
-          ) : null}
-        </div>
+        </>
       ) : null}
 
       <div className="dcb-step-footer">

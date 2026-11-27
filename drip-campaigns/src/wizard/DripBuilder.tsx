@@ -7,7 +7,7 @@
 // whatever owns the list (Phase 4) to persist.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useState } from 'react';
-import { dcSuggestConversionWindow } from '../data/conversionWindow';
+import { dcJourneyLengthDays, dcSuggestConversionWindow } from '../data/conversionWindow';
 import type { DripCampaign, DripGoal, DripGraph, DripQuietHours } from '../data/graphTypes';
 import { DC_STEP_TYPES, type DcNodeType } from '../data/nodeMeta';
 import { DC_ENTRY_TYPES } from '../data/typeSub';
@@ -398,6 +398,7 @@ export function DripBuilder({
               goal={goal}
               onGoalChange={changeGoal}
               goalCheckCount={Object.values(graph.nodes).filter((n) => n.type === 'GOAL_CHECK').length}
+              journeyLengthDays={dcJourneyLengthDays(graph)}
               onRemoveGoalChecks={() => {
                 // Each removal keeps whatever was under its No arm, exactly
                 // as removing it from the canvas would.
