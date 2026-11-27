@@ -65,7 +65,7 @@ export function BasicDetailsView({ campaign }: { campaign: DripCampaign }) {
 
       <section className="bd-section">
         <div className="bd-section-title">Schedule</div>
-        <Row label="Starts" value={c.startDate || 'Once approved'} />
+        <Row label="Starts" value={c.startDate || 'As soon as it is submitted'} />
         <Row label="Ends" value={c.endDate || none('No end date')} />
         {/* The end date is a hard stop, not a drain: anyone part-way through
             the journey is stopped with the campaign. Stated here because it

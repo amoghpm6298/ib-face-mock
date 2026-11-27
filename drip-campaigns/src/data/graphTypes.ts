@@ -170,10 +170,16 @@ export interface DripGoal {
   // further messages from this campaign, wherever it is in the journey. On
   // by default.
   //
-  // Deliberately NOT worded as "removed the moment it fires": whether the
-  // engine can cancel a message already queued, or only decline to send it
-  // when its turn comes, is unconfirmed — see the note in AUDIT.md. The
-  // weaker claim is true either way.
+  // The engine supports this directly. A CancelEventDefinition names an
+  // event (with optional conditions); when it arrives, the customer's
+  // SCHEDULED sends are cancelled, recorded as CANCEL_EVENT_RECEIVED. A
+  // due send is also re-checked just before dispatch.
+  //
+  // What is cancelled is a scheduled send, not a message sitting in a
+  // queue — no message exists until the send comes due. The limit is the
+  // state machine: NudgeExecutionStatus allows SCHEDULED and IN_PROGRESS
+  // to reach CANCELLED, but DISPATCH_QUEUED cannot, so a send already
+  // handed over for delivery goes out even if the customer has converted.
   exitOnConversion?: boolean;
   // How long after ENTRY a conversion still counts toward this campaign.
   // Suggested once when the goal is first set and never recomputed.
@@ -198,7 +204,11 @@ export interface DripGoal {
 }
 
 export type DripCampaignStatus =
-  | 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'SCHEDULED' | 'PAUSED' | 'KILLED' | 'CHANGES_REQUESTED';
+  // Draft while it is being built, then four live states. Submitting puts a
+  // campaign straight into Scheduled — there is no approval step yet, and
+  // maker-checker comes later. There is no Pause: a campaign runs until its
+  // end date passes (Expired) or someone ends it (Terminated).
+  | 'DRAFT' | 'SCHEDULED' | 'ACTIVE' | 'EXPIRED' | 'TERMINATED';
 
 export interface DripCampaign {
   id: string;

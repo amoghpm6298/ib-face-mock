@@ -1,5 +1,5 @@
 // Ported from renderDripView/dripCampaignAction — read-only campaign
-// view with status actions (approve/pause/resume/kill/edit-new-version).
+// view with its two actions (edit as a new version, terminate).
 import { useState } from 'react';
 import { DRIP_STATUS_META } from '../data/statusMeta';
 import { dcCountSends } from '../reducer/graphOps';
@@ -13,8 +13,10 @@ import type { DripCampaign } from '../data/graphTypes';
 
 // All three tabs are always there. A campaign that never launched has no
 // customers to report on, so Analytics says so plainly rather than being
-// hidden — a missing tab reads as a missing feature.
-const ANALYTICS_STATUSES = ['ACTIVE', 'PAUSED', 'SCHEDULED', 'KILLED'];
+// hidden — a missing tab reads as a missing feature. Scheduled is not on
+// this list: it has been submitted but its start date hasn't arrived, so
+// nobody has entered it yet.
+const ANALYTICS_STATUSES = ['ACTIVE', 'EXPIRED', 'TERMINATED'];
 type ViewTab = 'basic' | 'campaign' | 'analytics';
 const TAB_LABELS: Record<ViewTab, string> = { basic: 'Basic Details', campaign: 'Campaign', analytics: 'Analytics' };
 
@@ -29,7 +31,7 @@ export function DripView({
   campaign: DripCampaign;
   allCampaigns: DripCampaign[];
   onBack: () => void;
-  onAction: (id: string, action: 'approve' | 'pause' | 'kill-confirmed') => void;
+  onAction: (id: string, action: 'terminate-confirmed') => void;
   onEditNewVersion: (c: DripCampaign) => void;
   onOpenVersion: (id: string) => void;
 }) {
@@ -48,11 +50,11 @@ export function DripView({
       <a href="#" onClick={(e) => { e.preventDefault(); onOpenVersion(priorVersion.id); }}>
         {priorVersion.name}
       </a>{' '}
-      — pending approval, doesn't affect customers already enrolled on the live version.
+      — it runs on its own and doesn't affect customers already enrolled on the live version.
     </p>
   ) : newerVersion ? (
     <p className="f-hint" style={{ margin: '6px 0 0' }}>
-      A newer version of this campaign is pending approval — this version keeps running for everyone already enrolled until then.
+      A newer version of this campaign exists — this version keeps running for everyone already enrolled in it.
     </p>
   ) : null;
 
@@ -78,24 +80,16 @@ export function DripView({
         {c.description && <p className="page-sub" style={{ marginTop: 4 }}>{c.description}</p>}
         {versionNote}
         <div className="dv-header-actions">
-          {c.status === 'PENDING_REVIEW' && (
-            <button className="btn primary" onClick={() => onAction(c.id, 'approve')}>
-              {c.startDate ? `Approve (starts ${c.startDate.replace('T', ' ')})` : 'Approve & Activate'}
-            </button>
-          )}
-          {['ACTIVE', 'PAUSED', 'SCHEDULED'].includes(c.status) && (
-            <button className="btn secondary" onClick={() => onAction(c.id, 'pause')}>
-              {c.status === 'PAUSED' ? 'Resume' : 'Pause'}
-            </button>
-          )}
-          {['ACTIVE', 'PAUSED', 'SCHEDULED', 'PENDING_REVIEW'].includes(c.status) && (
+          {['ACTIVE', 'SCHEDULED'].includes(c.status) && (
             <button className="btn secondary" onClick={() => onEditNewVersion(c)}>
               Edit (new version)
             </button>
           )}
-          {['ACTIVE', 'PAUSED', 'SCHEDULED'].includes(c.status) && (
-            <button className="btn danger" onClick={() => setKillConfirmOpen(true)}>
-              Kill Switch
+          {/* Ending a campaign early is rare and irreversible, so it is a
+              quiet link rather than a button competing with Edit. */}
+          {['ACTIVE', 'SCHEDULED'].includes(c.status) && (
+            <button className="dv-terminate-link" onClick={() => setKillConfirmOpen(true)}>
+              Terminate
             </button>
           )}
         </div>
@@ -140,10 +134,10 @@ export function DripView({
       )}
 
       <Modal open={killConfirmOpen} onClose={() => setKillConfirmOpen(false)}>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Kill switch — "{c.name}"</div>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Terminate "{c.name}"</div>
         <p style={{ fontSize: 13, color: 'var(--gray-600)', lineHeight: 1.5 }}>
-          This immediately exits <b>every customer currently enrolled</b>, regardless of where they are in the sequence. Not the same as Pause — there's no resuming from this. Use it only for a real
-          incident (e.g. a template that shouldn't have gone out).
+          This takes <b>every customer currently in the campaign</b> out of it, wherever they are in the journey. It cannot be undone and the campaign cannot be restarted. Use it for a real incident,
+          such as a template that should not have gone out.
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
           <button className="btn secondary" onClick={() => setKillConfirmOpen(false)}>
@@ -153,10 +147,10 @@ export function DripView({
             className="btn danger"
             onClick={() => {
               setKillConfirmOpen(false);
-              onAction(c.id, 'kill-confirmed');
+              onAction(c.id, 'terminate-confirmed');
             }}
           >
-            Kill this campaign
+            Terminate
           </button>
         </div>
       </Modal>

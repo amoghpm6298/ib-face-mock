@@ -474,12 +474,21 @@ that no longer exists). H3's predicate comparison survives — M8 still asks it
 of an Entry · Event. The findings stay marked fixed above: they were, and
 then the ground moved.
 
-**What the engine still has to confirm** is in `QUIBBLER-REQUIREMENTS.md`.
-The builder says a converted account "receives no further messages" rather
-than "is removed the moment they convert", because whether a queued message
-can be cancelled on the event — as opposed to declined when its turn comes —
-could not be established from reading `quibbler`. The weaker wording is true
-either way, and no screen depends on the stronger one.
+**The engine question is answered** (2026-11-27). An earlier version of this
+section said we could not tell whether a queued message is re-checked before
+being sent. It is: `NudgeSchedulerCron` re-checks a due execution and cancels
+it, and `NudgeCancelReason` enumerates why — including
+`CANCEL_EVENT_RECEIVED`, backed by a `CancelEventDefinition` of an event
+selector plus optional conditions. So cancel-on-conversion is a real
+primitive, and the hedged wording has been dropped.
+
+Two further things that search found, which change the costs recorded above:
+`FREQUENCY_LIMIT_REACHED` and `COOLDOWN_PERIOD_ACTIVE` mean frequency caps
+and cooldowns are already enforced engine-side (`FrequencyPolicy`), and
+`QUIET_HOURS_DROPPED` means quiet hours are too. Frequency capping, listed
+under H7 as not built, is therefore a builder-side gap rather than a platform
+one. `QUIBBLER-REQUIREMENTS.md` now carries the mapping questions that are
+actually left.
 
 ## What is left
 

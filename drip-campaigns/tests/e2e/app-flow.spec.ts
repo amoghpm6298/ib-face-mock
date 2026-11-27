@@ -3,12 +3,12 @@
 import { test, expect } from '@playwright/test';
 
 test('list shows the 6 real seed campaigns with correctly colored status badges', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await expect(page.locator('table tbody tr')).toHaveCount(6);
   // Every status variant present in the seed data should render a real
   // colored pill, not plain unstyled text (the real bug caught during
   // Phase 4 verification — only 2 of 5 badge color classes existed).
-  for (const label of ['Active', 'Draft', 'Paused', 'Pending Approval']) {
+  for (const label of ['Active', 'Draft', 'Scheduled']) {
     const badge = page.locator('.badge', { hasText: label }).first();
     await expect(badge).toBeVisible();
     const bg = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
@@ -17,7 +17,7 @@ test('list shows the 6 real seed campaigns with correctly colored status badges'
 });
 
 test('Analytics shows the two totals and an annotated journey for a live campaign', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   // DRIP-001 "Card Activation Reminder" is ACTIVE in the seed data.
   await page.locator('table tbody tr', { hasText: 'Card Activation Reminder' }).click();
   await page.waitForTimeout(400);
@@ -32,7 +32,7 @@ test('Analytics shows the two totals and an annotated journey for a live campaig
 });
 
 test('row click opens the real read-only view, landing on the setup read-back', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   const firstRowName = await page.locator('table tbody tr').first().locator('td').first().locator('b').innerText();
   await page.locator('table tbody tr').first().click();
   await page.waitForTimeout(500);
@@ -44,32 +44,35 @@ test('row click opens the real read-only view, landing on the setup read-back', 
   expect(await page.locator('.dc-node-card').count()).toBeGreaterThan(5);
 });
 
-test('Pause/Resume via real clicks updates the badge and shows a toast', async ({ page }) => {
-  await page.goto('/');
+// Terminate is the only action on a live campaign — there is no Pause,
+// and submitting needs no approval.
+test('a live campaign offers only Edit and Terminate — no Pause, no Approve', async ({ page }) => {
+  await page.goto('./');
   await page.locator('table tbody tr', { hasText: 'Active' }).first().click();
   await page.waitForTimeout(500);
-  await page.getByRole('button', { name: 'Pause' }).click();
-  await expect(page.locator('.badge:has-text("Paused")')).toBeVisible();
-  await page.getByRole('button', { name: 'Resume' }).click();
-  await expect(page.locator('.badge:has-text("Active")')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit (new version)' })).toBeVisible();
+  await expect(page.locator('.dv-terminate-link')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pause' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Resume' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Approve/ })).toHaveCount(0);
 });
 
-test('Kill Switch requires real confirmation; Cancel does not kill, confirming does', async ({ page }) => {
-  await page.goto('/');
+test('Terminate requires real confirmation; Cancel leaves it Active, confirming terminates it', async ({ page }) => {
+  await page.goto('./');
   await page.locator('table tbody tr', { hasText: 'Active' }).first().click();
   await page.waitForTimeout(500);
-  await page.getByRole('button', { name: 'Kill Switch' }).click();
-  await expect(page.getByText('immediately exits')).toBeVisible();
+  await page.locator('.dv-terminate-link').click();
+  await expect(page.getByText('every customer currently in the campaign')).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.locator('.badge:has-text("Active")')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Kill Switch' }).click();
-  await page.getByRole('button', { name: 'Kill this campaign' }).click();
-  await expect(page.locator('.badge:has-text("Killed")')).toBeVisible();
+  await page.locator('.dv-terminate-link').click();
+  await page.locator('.modal').getByRole('button', { name: 'Terminate' }).click();
+  await expect(page.locator('.badge:has-text("Terminated")')).toBeVisible();
 });
 
-test('full create -> build -> submit flow lands in the list as Pending Approval', async ({ page }) => {
-  await page.goto('/');
+test('full create -> build -> submit flow lands in the list as Scheduled', async ({ page }) => {
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('App Flow Spec Campaign');
@@ -97,24 +100,24 @@ test('full create -> build -> submit flow lands in the list as Pending Approval'
   await page.locator('.sd-drawer.open .sd-foot button.btn.primary').click();
   await page.waitForTimeout(400);
 
-  // Submit for Approval now lives on the Review step, not the Builder
+  // Submit now lives on the Review step, not the Builder
   // header — navigate there via Guardrails (the new step between
   // Builder and Review) first.
   await page.getByText('Continue to Guardrails').click();
   await page.waitForTimeout(300);
   await page.getByText('Continue to Review').click();
   await page.waitForTimeout(300);
-  await expect(page.getByRole('button', { name: 'Submit for Approval' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(page.getByRole('button', { name: 'Submit' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Submit' }).click();
   await page.waitForTimeout(400);
 
   const newRow = page.locator('tr', { hasText: 'App Flow Spec Campaign' });
   await expect(newRow).toHaveCount(1);
-  await expect(newRow.locator('.badge:has-text("Pending Approval")')).toBeVisible();
+  await expect(newRow.locator('.badge:has-text("Scheduled")')).toBeVisible();
 });
 
 test('Save as Draft is always available from any step, even with open branches, and resuming a draft lands back on the Builder step', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Draft Spec Campaign');

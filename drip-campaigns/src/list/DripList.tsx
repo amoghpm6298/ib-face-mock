@@ -14,7 +14,7 @@ import { DC_NODE_META, type DcNodeType } from '../data/nodeMeta';
 import { dcGoalLabel } from '../reducer/labelMeta';
 import type { DripCampaign, DripCampaignStatus } from '../data/graphTypes';
 
-type KpiKey = 'total' | 'ACTIVE' | 'PENDING_REVIEW' | 'DRAFT' | 'PAUSED';
+type KpiKey = 'total' | 'ACTIVE' | 'SCHEDULED' | 'DRAFT' | 'EXPIRED';
 
 export function DripList({ campaigns, onOpen, onCreate }: { campaigns: DripCampaign[]; onOpen: (c: DripCampaign) => void; onCreate: () => void }) {
   const [search, setSearch] = useState('');
@@ -33,9 +33,9 @@ export function DripList({ campaigns, onOpen, onCreate }: { campaigns: DripCampa
     () => ({
       total: campaigns.length,
       ACTIVE: campaigns.filter((c) => c.status === 'ACTIVE').length,
-      PENDING_REVIEW: campaigns.filter((c) => c.status === 'PENDING_REVIEW').length,
+      SCHEDULED: campaigns.filter((c) => c.status === 'SCHEDULED').length,
       DRAFT: campaigns.filter((c) => c.status === 'DRAFT').length,
-      PAUSED: campaigns.filter((c) => c.status === 'PAUSED').length,
+      EXPIRED: campaigns.filter((c) => c.status === 'EXPIRED').length,
     }),
     [campaigns],
   );
@@ -85,16 +85,16 @@ export function DripList({ campaigns, onOpen, onCreate }: { campaigns: DripCampa
           <div className="kpi-value">{kpis.ACTIVE}</div>
         </div>
         <div className="kpi-card">
-          <div className="kpi-label">Pending Approval</div>
-          <div className="kpi-value">{kpis.PENDING_REVIEW}</div>
+          <div className="kpi-label">Scheduled</div>
+          <div className="kpi-value">{kpis.SCHEDULED}</div>
         </div>
         <div className="kpi-card">
           <div className="kpi-label">Draft</div>
           <div className="kpi-value">{kpis.DRAFT}</div>
         </div>
         <div className="kpi-card">
-          <div className="kpi-label">Paused</div>
-          <div className="kpi-value">{kpis.PAUSED}</div>
+          <div className="kpi-label">Expired</div>
+          <div className="kpi-value">{kpis.EXPIRED}</div>
         </div>
       </div>
 

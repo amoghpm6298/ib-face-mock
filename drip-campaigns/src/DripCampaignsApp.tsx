@@ -63,41 +63,35 @@ export function DripCampaignsApp() {
     if (view.kind === 'editDraft') {
       // Never went live — edited in place, no versioning needed.
       setCampaigns((cs) => cs.map((c) => (c.id === view.id ? { ...c, ...payload, id: c.id } : c)));
-      setToast({ message: `"${payload.name}" submitted for approval.` });
+      setToast({ message: `"${payload.name}" submitted — it is Scheduled and starts on its start date.` });
     } else if (view.kind === 'editNewVersion') {
       const id = nextId(campaigns);
       setCampaigns((cs) => [...cs, { id, ...payload, versionOf: view.original.id }]);
-      setToast({ message: `"${payload.name}" submitted for approval as a new version.` });
+      setToast({ message: `"${payload.name}" scheduled as a new version.` });
     } else {
       const id = nextId(campaigns);
       setCampaigns((cs) => [...cs, { id, ...payload, versionOf: null }]);
-      setToast({ message: `"${payload.name}" submitted for approval.` });
+      setToast({ message: `"${payload.name}" submitted — it is Scheduled and starts on its start date.` });
     }
     setView({ kind: 'list' });
   }
 
-  function handleAction(id: string, action: 'approve' | 'pause' | 'kill-confirmed') {
+  // Terminate is the only action on a live campaign. There is no pause and
+  // no approval step: submitting schedules it, and it expires on its own
+  // when the end date passes.
+  function handleAction(id: string, action: 'terminate-confirmed') {
     setCampaigns((cs) =>
       cs.map((c) => {
         if (c.id !== id) return c;
-        if (action === 'pause') {
-          const status = c.status === 'PAUSED' ? (c.startDate ? 'SCHEDULED' : 'ACTIVE') : 'PAUSED';
-          setToast({ message: status === 'PAUSED' ? `"${c.name}" paused — new entries stop, in-flight customers freeze at their current step.` : `"${c.name}" resumed.` });
-          return { ...c, status };
-        }
-        if (action === 'kill-confirmed') {
-          setToast({ message: `"${c.name}" killed — every enrolled customer has been exited.`, type: 'error' });
-          return { ...c, status: 'KILLED' };
-        }
-        if (action === 'approve') {
-          const status = c.startDate ? 'SCHEDULED' : 'ACTIVE';
-          setToast({ message: status === 'SCHEDULED' ? `"${c.name}" approved — scheduled to start ${(c.startDate || '').replace('T', ' ')}.` : `"${c.name}" approved and active.` });
-          return { ...c, status };
+        if (action === 'terminate-confirmed') {
+          setToast({ message: `"${c.name}" terminated — every customer in it has been taken out.`, type: 'error' });
+          return { ...c, status: 'TERMINATED' as const };
         }
         return c;
       }),
     );
   }
+
 
   let body: React.ReactNode;
   if (view.kind === 'list') {

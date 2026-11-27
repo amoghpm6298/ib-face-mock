@@ -11,7 +11,7 @@ import { test, expect } from '@playwright/test';
 import { MILESTONE_OFFERS } from '../../src/data/sharedConstants';
 
 async function startNewCampaign(page: import('@playwright/test').Page, name: string) {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill(name);
@@ -32,7 +32,7 @@ async function startNewCampaign(page: import('@playwright/test').Page, name: str
 // Goal Definition step instead of skipping it, for the handful of tests
 // that specifically exercise that auto-insert behavior.
 async function startNewCampaignWithGoal(page: import('@playwright/test').Page, name: string, eventCategory: string, eventType: string) {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill(name);
@@ -393,11 +393,11 @@ test('Random Split requires branches to sum to 100%', async ({ page }) => {
   await expect(page.locator('.sd-drawer.open .sd-foot button.btn.primary')).toBeEnabled();
 });
 
-test('Submit for Approval shows an on-demand validation banner with open branches, clears once every branch resolves', async ({ page }) => {
+test('Submit shows an on-demand validation banner with open branches, clears once every branch resolves', async ({ page }) => {
   await startNewCampaign(page, 'Builder Spec: Submit Gating');
   await addEntryEvent(page, 'Journey Events', 'Pageload');
 
-  // Submit for Approval lives on the Review step now — get there via
+  // Submit lives on the Review step now — get there via
   // Builder's topbar (-> Guardrails) then Guardrails' own footer (-> Review).
   await page.getByText('Continue to Guardrails').click();
   await page.waitForTimeout(300);
@@ -407,8 +407,8 @@ test('Submit for Approval shows an on-demand validation banner with open branche
   // The button itself is never disabled (on-demand validation, not a
   // permanent rail warning) — clicking it while incomplete surfaces a
   // banner instead of silently doing nothing.
-  await expect(page.locator('button:has-text("Submit for Approval")')).toBeEnabled();
-  await page.locator('button:has-text("Submit for Approval")').click();
+  await expect(page.locator('button:has-text("Submit")')).toBeEnabled();
+  await page.locator('button:has-text("Submit")').click();
   await page.waitForTimeout(200);
   await expect(page.locator('.dcb-validation-banner')).toBeVisible();
   // The gate names the step that is unfinished rather than saying "a branch
@@ -431,7 +431,7 @@ test('Submit for Approval shows an on-demand validation banner with open branche
   await page.waitForTimeout(300);
   await page.getByText('Continue to Review').click();
   await page.waitForTimeout(300);
-  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.locator('button:has-text("Submit")').click();
   await page.waitForTimeout(400);
   await expect(page.locator('.dcb-validation-banner')).toHaveCount(0);
   await expect(page.locator('table tbody tr', { hasText: 'Builder Spec: Submit Gating' })).toBeVisible();
@@ -679,7 +679,7 @@ test('Entry · Audience: a Transactions filter carries lookback and direction, a
 test('Goal Definition: Journey Events shows its own scoping fields + a locked-attribute condition row, and both survive save/reopen', async ({ page }) => {
   // The Goal step is a plain full-width page (dcb-mid-inner), not a side
   // drawer — unlike every node's own config form.
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Builder Spec: Journey Events Goal');
@@ -1152,7 +1152,7 @@ test('Card events: the replaced list, Card control updated details, and the roun
 });
 
 test('A sample activation campaign opens on Virtual card issued with the goal Virtual card activated', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.locator('tr', { hasText: 'Card Activation Reminder' }).first().click();
   await page.waitForTimeout(600);
   await expect(page.locator('.page-sub', { hasText: 'Goal: Virtual card activated' })).toBeVisible();
@@ -1162,7 +1162,7 @@ test('A sample activation campaign opens on Virtual card issued with the goal Vi
 });
 
 test('Campaign view: three tabs, and Basic Details reads back the setup', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.locator('tr', { hasText: 'Card Activation Reminder' }).first().click();
   await page.waitForTimeout(600);
 
@@ -1175,7 +1175,7 @@ test('Campaign view: three tabs, and Basic Details reads back the setup', async 
 });
 
 test('Campaign view: clicking a step opens it read-only, without starting an edit', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.locator('tr', { hasText: 'Card Activation Reminder' }).first().click();
   await page.waitForTimeout(600);
   await page.locator('.dv-tab', { hasText: 'Campaign' }).click();
@@ -1199,7 +1199,7 @@ test('Campaign view: clicking a step opens it read-only, without starting an edi
 });
 
 test('Campaign view: Analytics totals, arrow splits, and following one path', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   // Card Activation Reminder is a straight line now that conversion is not
   // drawn on the canvas, so it has no fork to measure. OS to EMI still
   // splits — a real Experiment, which is what this is about.
@@ -1244,7 +1244,7 @@ test('Campaign view: Analytics totals, arrow splits, and following one path', as
 });
 
 test('Campaign view: a campaign that never ran says so on Analytics', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.locator('tr', { hasText: 'Card Issuance to Activation' }).first().click();
   await page.waitForTimeout(600);
   // The tab is there either way — a missing tab reads as a missing feature.
@@ -1266,7 +1266,7 @@ test('Campaign view: a campaign that never ran says so on Analytics', async ({ p
 // M7 — an issuer with no programs and the all-programs toggle off reaches
 // nobody. The campaign was otherwise complete and submitted happily.
 test('Submit refuses a campaign addressed to no programs, and accepts it once that is answered', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByRole('button', { name: '+ Create Drip Campaign' }).click();
   await page.getByRole('button', { name: /Create from scratch/ }).click();
   await page.locator('input[type=text]').first().fill('Builder Spec: No Programs');
@@ -1287,7 +1287,7 @@ test('Submit refuses a campaign addressed to no programs, and accepts it once th
   await page.waitForTimeout(300);
   await page.getByText('Continue to Review').click();
   await page.waitForTimeout(300);
-  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.locator('button:has-text("Submit")').click();
   await page.waitForTimeout(200);
   await expect(page.locator('.dcb-validation-banner')).toContainText('reach nobody');
 
@@ -1307,7 +1307,7 @@ test('Submit refuses a campaign addressed to no programs, and accepts it once th
   await page.waitForTimeout(300);
   await page.getByText('Continue to Review').click();
   await page.waitForTimeout(300);
-  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.locator('button:has-text("Submit")').click();
   await page.waitForTimeout(400);
   await expect(page.locator('table tbody tr', { hasText: 'Builder Spec: No Programs' })).toBeVisible();
 });
@@ -1327,7 +1327,7 @@ test('Submit refuses a campaign whose entry event is the goal event itself', asy
   await page.waitForTimeout(300);
   await page.getByText('Continue to Review').click();
   await page.waitForTimeout(300);
-  await page.locator('button:has-text("Submit for Approval")').click();
+  await page.locator('button:has-text("Submit")').click();
   await page.waitForTimeout(200);
   await expect(page.locator('.dcb-validation-banner')).toContainText('already achieved the goal');
 });
