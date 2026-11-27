@@ -170,12 +170,16 @@ export interface DripGoal {
   // further messages from this campaign, wherever it is in the journey. On
   // by default.
   //
-  // The engine can do this properly: a CancelEventDefinition names an event
-  // (with optional conditions) and cancels the queued messages when it
-  // arrives, recorded as CANCEL_EVENT_RECEIVED. A due message is also
-  // re-checked before it is sent. So the goal event becomes the cancel
-  // event, and conversion stops messages at the moment it happens rather
-  // than at the moment the next one was due.
+  // The engine supports this directly. A CancelEventDefinition names an
+  // event (with optional conditions); when it arrives, the customer's
+  // SCHEDULED sends are cancelled, recorded as CANCEL_EVENT_RECEIVED. A
+  // due send is also re-checked just before dispatch.
+  //
+  // What is cancelled is a scheduled send, not a message sitting in a
+  // queue — no message exists until the send comes due. The limit is the
+  // state machine: NudgeExecutionStatus allows SCHEDULED and IN_PROGRESS
+  // to reach CANCELLED, but DISPATCH_QUEUED cannot, so a send already
+  // handed over for delivery goes out even if the customer has converted.
   exitOnConversion?: boolean;
   // How long after ENTRY a conversion still counts toward this campaign.
   // Suggested once when the goal is first set and never recomputed.

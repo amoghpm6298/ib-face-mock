@@ -31,6 +31,12 @@ All three are already enforced engine-side. The mapping we need confirmed:
 - **Conversion** → a `CancelEventDefinition` naming the campaign's goal event.
   It takes an optional `ConditionNode`, so the goal's own conditions should
   travel with it rather than only the bare event type.
+  - What this cancels is a **scheduled send**, not a queued message: no
+    message exists until the send comes due. `NudgeExecutionStatus` lets
+    `SCHEDULED` and `IN_PROGRESS` reach `CANCELLED`; `DISPATCH_QUEUED`
+    cannot. So a send already handed over for delivery still goes out.
+    Worth confirming that this is the intended boundary rather than an
+    accident of the state machine.
 - **Quiet hours** → whatever drives `QUIET_HOURS_DROPPED`. The builder offers
   both "wait until the window lifts" and "skip it"; we need to know whether
   the engine supports both or only the drop.
