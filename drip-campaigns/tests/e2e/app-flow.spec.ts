@@ -2,13 +2,13 @@
 // project's own scratchpad verification.
 import { test, expect } from '@playwright/test';
 
-test('list shows the 6 real seed campaigns with correctly colored status badges', async ({ page }) => {
+test('list shows the 9 real seed campaigns with correctly colored status badges', async ({ page }) => {
   await page.goto('./');
-  await expect(page.locator('table tbody tr')).toHaveCount(6);
+  await expect(page.locator('table tbody tr')).toHaveCount(9);
   // Every status variant present in the seed data should render a real
   // colored pill, not plain unstyled text (the real bug caught during
   // Phase 4 verification — only 2 of 5 badge color classes existed).
-  for (const label of ['Active', 'Draft', 'Scheduled']) {
+  for (const label of ['Active', 'Draft', 'Scheduled', 'Expired', 'Terminated']) {
     const badge = page.locator('.badge', { hasText: label }).first();
     await expect(badge).toBeVisible();
     const bg = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);

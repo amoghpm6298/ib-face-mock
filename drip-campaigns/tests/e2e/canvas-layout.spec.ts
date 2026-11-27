@@ -6,7 +6,7 @@
 // reintroduce either class of bug, so this is guarded permanently.
 import { test, expect } from '@playwright/test';
 
-const SEED_CAMPAIGN_COUNT = 6;
+const SEED_CAMPAIGN_COUNT = 9;
 
 test.describe('Branch-label chip overlap (the original bug)', () => {
   for (let rowIndex = 0; rowIndex < SEED_CAMPAIGN_COUNT; rowIndex++) {

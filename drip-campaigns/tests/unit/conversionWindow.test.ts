@@ -123,11 +123,22 @@ describe('the submit gate', () => {
 });
 
 describe('the seeds', () => {
-  it('every campaign with a goal carries a window and exits on conversion', () => {
+  it('every campaign with a goal carries a window and says either way whether it exits on conversion', () => {
     for (const c of DRIP_CAMPAIGNS) {
       if (!c.goal?.eventType) continue;
       expect({ id: c.id, window: Number(c.goal.conversionWindow?.duration) > 0 }).toEqual({ id: c.id, window: true });
-      expect(c.goal.exitOnConversion).toBe(true);
+      expect({ id: c.id, set: typeof c.goal.exitOnConversion }).toEqual({ id: c.id, set: 'boolean' });
+    }
+  });
+
+  // A Goal Check is only offered while exit on conversion is off: with it on,
+  // an account that converts has already left, so the check could only ever
+  // answer No. The seeds have to honour that both ways round.
+  it('a Goal Check appears only where the campaign does not exit on conversion', () => {
+    for (const c of DRIP_CAMPAIGNS) {
+      if (!c.root) continue;
+      const hasCheck = Object.values(c.root.nodes).some((n) => n.type === 'GOAL_CHECK');
+      if (hasCheck) expect({ id: c.id, exits: c.goal?.exitOnConversion }).toEqual({ id: c.id, exits: false });
     }
   });
 

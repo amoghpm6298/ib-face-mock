@@ -1,4 +1,4 @@
-// Sanity-checks the 6 seed campaigns extracted from the live prototype —
+// Sanity-checks the 9 seed campaigns —
 // confirms the port didn't silently corrupt anything (every edge's `to`/
 // `from` resolves to a real node or null, every node is reachable from
 // root, root exists for every non-empty graph).
@@ -8,9 +8,11 @@ import { dcGraphHasOpenBranches } from '../../src/reducer/graphOps';
 import { dcFilterSentences, dcFiltersOf } from '../../src/data/filters';
 
 describe('Seed campaign data integrity', () => {
-  it('has exactly the 6 real campaigns', () => {
-    expect(DRIP_CAMPAIGNS.length).toBe(6);
-    expect(DRIP_CAMPAIGNS.map((c) => c.id)).toEqual(['DRIP-001', 'DRIP-002', 'DRIP-003', 'DRIP-004', 'DRIP-005', 'DRIP-006']);
+  it('has exactly the 9 real campaigns', () => {
+    expect(DRIP_CAMPAIGNS.length).toBe(9);
+    expect(DRIP_CAMPAIGNS.map((c) => c.id)).toEqual([
+      'DRIP-001', 'DRIP-002', 'DRIP-003', 'DRIP-004', 'DRIP-005', 'DRIP-006', 'DRIP-007', 'DRIP-008', 'DRIP-009',
+    ]);
   });
 
   it.each(DRIP_CAMPAIGNS.map((c) => [c.id, c] as const))('%s: every edge resolves to a real node or an open slot', (_id, campaign) => {

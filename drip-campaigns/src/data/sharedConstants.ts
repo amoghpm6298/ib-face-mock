@@ -36,6 +36,11 @@ export const COMMS_TEMPLATES: CommsTemplate[] = [
   { id: 'CT-3301', name: 'EMI Conversion SMS', channelType: 'SMS', partnerName: 'IndusInd Bank (IBL)', vendorName: 'Karix', accountName: 'IBL-Karix-Txns', createdOn: '22 Jul 2026, 10:12', message: 'Hi ${customerFirstName}, convert your recent purchase to EMI in just 2 taps: ${shortUrl}' },
   { id: 'CT-3288', name: 'Festive Offer Email', channelType: 'EMAIL', partnerName: 'IndusInd Bank (IBL)', vendorName: 'Karix', accountName: 'IBL-Karix-Mktg', createdOn: '18 Jul 2026, 15:40', body: '<h2>Hi ${customerFirstName}</h2><p>Your festive EMI offer is here.</p>' },
   { id: 'CT-3270', name: 'Activation Reminder WhatsApp', channelType: 'WHATSAPP', partnerName: 'Yes Bank', vendorName: 'Gupshup', accountName: 'YES-Gupshup-Onb', createdOn: '10 Jul 2026, 09:05', message: 'Hi ${customerFirstName}, activate your card now: ${shortUrl}' },
+  // Yes Bank had exactly one template, on WhatsApp, so a Yes Bank campaign
+  // had no SMS to fall back to — and a seeded one reached for IndusInd's
+  // SMS template instead. One SMS template per issuer is the minimum for
+  // the two-channel sequences every campaign here runs.
+  { id: 'CT-3271', name: 'Reactivation Reminder SMS', channelType: 'SMS', partnerName: 'Yes Bank', vendorName: 'Gupshup', accountName: 'YES-Gupshup-Txns', createdOn: '12 Jul 2026, 11:20', message: 'Hi ${customerFirstName}, your card is waiting — spend once to unlock your reward: ${shortUrl}' },
   { id: 'CT-3255', name: 'OS-to-EMI RCS Push', channelType: 'RCS', partnerName: 'IndusInd Bank (IBL)', vendorName: 'Karix', accountName: 'IBL-Karix-Txns', createdOn: '02 Jul 2026, 12:00', message: 'Convert your outstanding balance to easy EMIs, ${customerFirstName}.' },
   { id: 'CT-3310', name: 'Auth-to-EMI Consent WhatsApp', channelType: 'WHATSAPP', partnerName: 'IndusInd Bank (IBL)', vendorName: 'Karix', accountName: 'IBL-Karix-Txns', createdOn: '10 Sep 2026, 09:00', message: 'Hi ${customerFirstName}, you have an eligible transaction — convert to EMI in 2 taps: ${shortUrl}' },
   { id: 'CT-3311', name: 'Auth-to-EMI Reminder WhatsApp', channelType: 'WHATSAPP', partnerName: 'IndusInd Bank (IBL)', vendorName: 'Karix', accountName: 'IBL-Karix-Txns', createdOn: '10 Sep 2026, 09:05', message: 'Still deciding? Your EMI conversion offer is open for a limited time: ${shortUrl}' },
