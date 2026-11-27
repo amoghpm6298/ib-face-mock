@@ -1,10 +1,16 @@
 # What the drip builder needs from the nudge engine
 
-Short note for whoever owns `quibbler`. The builder now lets a campaign
-manager say three things it cannot enforce on its own. Nothing here is urgent
-until a drip campaign actually runs through the engine, but the builder's
-wording was chosen around what is and is not confirmed, so it is worth
-agreeing before it reaches anyone.
+Short note for whoever owns `quibbler`.
+
+**Most of this is already answered by the engine.** An earlier draft asked
+whether a queued message is re-checked before it is sent. It is:
+`NudgeSchedulerCron` re-checks a due execution and cancels it outright, and
+`NudgeCancelReason` lists what for — `CANCEL_EVENT_RECEIVED`,
+`FREQUENCY_LIMIT_REACHED`, `COOLDOWN_PERIOD_ACTIVE`, `NUDGE_DEACTIVATED`,
+`DUPLICATE_IDEMPOTENCY_KEY`, `QUIET_HOURS_DROPPED`, `EXPIRED`.
+
+What is left is a mapping question, not a capability one: how the builder's
+settings should be expressed as nudge definitions.
 
 ## 1. A pending message is not dispatched when it should not be
 
@@ -20,23 +26,21 @@ time it would go out, the account:
 - **is inside quiet hours**, in which case the message either waits until the
   window lifts or is dropped, as the campaign says.
 
-This is a check **before dispatch**, not a promise to cancel anything. That
-distinction is why the UI says "receives no further messages" rather than "is
-removed the moment they convert".
+All three are already enforced engine-side. The mapping we need confirmed:
 
-What exists today, from reading the repo: `NudgeCommunicationData` rows are
-queued with `dispatched = false` and picked up by a cron, which is the right
-shape for a pre-dispatch check. What could not be established from a quick
-read is whether the dispatch path re-checks eligibility at that point. **That
-is the question to answer first** — everything else here depends on it.
+- **Conversion** → a `CancelEventDefinition` naming the campaign's goal event.
+  It takes an optional `ConditionNode`, so the goal's own conditions should
+  travel with it rather than only the bare event type.
+- **Quiet hours** → whatever drives `QUIET_HOURS_DROPPED`. The builder offers
+  both "wait until the window lifts" and "skip it"; we need to know whether
+  the engine supports both or only the drop.
 
-## 2. Cancelling on the event is optional
+## 2. Frequency caps exist, and the builder does not use them yet
 
-If the engine can drop queued messages the moment the goal event arrives,
-good: the behaviour is sharper and the wording can be strengthened. If it
-cannot, the pre-dispatch check in (1) gives the same outcome a little later,
-and the builder's current wording already covers it. **No UI depends on
-cancellation**, by choice.
+`FrequencyPolicy` carries `frequencyCaps` and a `CoolDownDefinition`, both
+enforced at send time. The builder has no UI for either. When we add one, the
+open design question is scope — per campaign, per label, or workspace-wide —
+and whether a campaign can be exempted, not whether the platform can do it.
 
 ## 3. Conversion is counted per account, within a window
 

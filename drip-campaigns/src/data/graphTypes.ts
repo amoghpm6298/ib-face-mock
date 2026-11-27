@@ -170,10 +170,12 @@ export interface DripGoal {
   // further messages from this campaign, wherever it is in the journey. On
   // by default.
   //
-  // Deliberately NOT worded as "removed the moment it fires": whether the
-  // engine can cancel a message already queued, or only decline to send it
-  // when its turn comes, is unconfirmed — see the note in AUDIT.md. The
-  // weaker claim is true either way.
+  // The engine can do this properly: a CancelEventDefinition names an event
+  // (with optional conditions) and cancels the queued messages when it
+  // arrives, recorded as CANCEL_EVENT_RECEIVED. A due message is also
+  // re-checked before it is sent. So the goal event becomes the cancel
+  // event, and conversion stops messages at the moment it happens rather
+  // than at the moment the next one was due.
   exitOnConversion?: boolean;
   // How long after ENTRY a conversion still counts toward this campaign.
   // Suggested once when the goal is first set and never recomputed.
