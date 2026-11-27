@@ -52,7 +52,7 @@ describe('seeded labels rebuild from their own config', () => {
 
   it('covers every seeded node, so a campaign losing its graph cannot pass vacuously', () => {
     const counted = DRIP_CAMPAIGNS.reduce((t, c) => t + (c.root ? Object.keys(c.root.nodes).length : 0), 0);
-    expect(counted).toBe(76);
-    expect(DRIP_CAMPAIGNS.filter((c) => c.root).length).toBe(6);
+    expect(counted).toBe(101);
+    expect(DRIP_CAMPAIGNS.filter((c) => c.root).length).toBe(9);
   });
 });
